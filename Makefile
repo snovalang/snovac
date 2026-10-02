@@ -31,10 +31,11 @@ SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd
        dump.c ast.c \
        lex.c lex_token.c lex_literal.c \
        parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
-       parse_decl.c parse_decl_parts.c \
-       eval.c eval_expr.c eval_stmt.c eval_string.c \
+       parse_decl.c parse_decl_parts.c parse_ptr.c \
+       eval.c eval_expr.c eval_stmt.c eval_string.c rt_mem.c rt_ptr.c rt_defer.c \
        socket_abi.c native_dispatch.c \
        diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
+       check_ptr.c borrow.c borrow_expr.c borrow_flow.c borrow_task.c \
        snbc.c value.c vm.c emit_bc.c link_append.c
 OBJS = $(addprefix $(BUILD)/,$(SRCS:.c=.o))
 DEPS = $(OBJS:.o=.d)
@@ -46,7 +47,8 @@ TEST_SYMBOL_BIN = $(BUILD)/test_symbol$(EXE)
 TEST_PACKAGE_BIN = $(BUILD)/test_package$(EXE)
 TEST_PACKAGE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
                      $(BUILD)/symbol.o $(BUILD)/package.o $(BUILD)/ast.o \
-                     $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o
+                     $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o \
+                     $(BUILD)/driver_utils.o
 TEST_TYPES_BIN = $(BUILD)/test_types$(EXE)
 TEST_TYPES_OBJS = $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o \
                    $(BUILD)/types.o
@@ -57,18 +59,22 @@ TEST_RESOLVE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
                      $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o \
                      $(BUILD)/parse.o $(BUILD)/parse_type.o $(BUILD)/parse_expr.o \
                      $(BUILD)/parse_primary.o $(BUILD)/parse_stmt.o \
-                     $(BUILD)/parse_decl.o $(BUILD)/parse_decl_parts.o
+                     $(BUILD)/parse_decl.o $(BUILD)/parse_decl_parts.o \
+                     $(BUILD)/parse_ptr.o $(BUILD)/driver_utils.o
 TEST_CHECK_BIN = $(BUILD)/test_check$(EXE)
-TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtins.o $(BUILD)/check.o
+TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtins.o $(BUILD)/check.o \
+                  $(BUILD)/check_ptr.o $(BUILD)/borrow.o $(BUILD)/borrow_expr.o \
+                  $(BUILD)/borrow_flow.o $(BUILD)/borrow_task.o
 
 RT_SRCS = driver_utils.c project.c target.c native_backend.c pulsar.c async.c \
           dump.c ast.c \
           lex.c lex_token.c lex_literal.c \
           parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
-          parse_decl.c parse_decl_parts.c \
-          eval.c eval_expr.c eval_stmt.c eval_string.c \
+          parse_decl.c parse_decl_parts.c parse_ptr.c \
+          eval.c eval_expr.c eval_stmt.c eval_string.c rt_mem.c rt_ptr.c rt_defer.c \
           socket_abi.c native_dispatch.c \
           diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
+          check_ptr.c borrow.c borrow_expr.c borrow_flow.c borrow_task.c \
           snbc.c value.c vm.c emit_bc.c link_append.c
 RT_OBJS = $(addprefix $(BUILD)/,$(RT_SRCS:.c=.o))
 LIB_RT  = $(BUILD)/libsnovart.a

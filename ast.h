@@ -46,7 +46,8 @@ void sn_list_push(SnArena *a, SnList *l, void *item);
 typedef enum {
     SN_TYPE_NAME,  /* Foo, a.b.Foo, List<T>, Result<T, E> */
     SN_TYPE_FUNC,  /* (A, B) -> R */
-    SN_TYPE_TUPLE  /* (K, V) — element types live in `params` */
+    SN_TYPE_TUPLE, /* (K, V) — element types live in `params` */
+    SN_TYPE_REF    /* &T, or &T? when is_nullable — pointee in `pointee` */
 } SnTypeKind;
 
 struct SnType {
@@ -56,7 +57,9 @@ struct SnType {
     SnList args;      /* NAME: SnType* generic arguments */
     SnList params;    /* FUNC: SnType* parameter types */
     SnType *ret;      /* FUNC: return type */
+    SnType *pointee;  /* REF: type behind & */
     uint8_t is_optional; /* T? optional syntax */
+    uint8_t is_nullable; /* REF: &T? may be null; &T itself never is */
 };
 
 /* ── expressions ──────────────────────────────────────────────────────────── */
@@ -79,7 +82,8 @@ typedef enum {
     SN_EXPR_IS,      /* e is T     */
     SN_EXPR_MATCH,   /* match e { } used in expression position */
     SN_EXPR_IF,      /* if c { a } else { b } used in expression position */
-    SN_EXPR_STRUCT_LIT /* UserDto { id: "1" } — construction by field list */
+    SN_EXPR_STRUCT_LIT, /* UserDto { id: "1" } — construction by field list */
+    SN_EXPR_NULL        /* null — only inhabits &T? */
 } SnExprKind;
 
 typedef struct SnParam SnParam;
@@ -105,6 +109,10 @@ struct SnExpr {
     SnStmt *else_body;
     SnList field_names; /* STRUCT_LIT: const char* — values are in `args` */
     uint8_t interpolated; /* STRING: contains at least one ${...} */
+    /* Set by the pointer/borrow passes. 0 = none. */
+    uint8_t adjust;        /* 1 auto-deref, 2 auto-reborrow at this node */
+    uint8_t storage;       /* 1 stack, 2 heap; 0 means heap at runtime */
+    uint8_t bounds_proven; /* index proven inside a fat pointer's length */
 
     /* Set by check.c (P2.5), NULL before it runs. plan.md G2: every SnExpr
      * gets a resolved type; SN_T_ERROR (never NULL) marks a node whose type

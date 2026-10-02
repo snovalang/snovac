@@ -11,8 +11,11 @@
  * Generics, pattern matching, async/pulsars and the remaining ~590 @native
  * intrinsics are later phases — see specs/20260719/snovac-c-toolchain/plan.md.
  *
- * Memory: every value lives in the arena and is released in one shot when the
- * program ends. Reference counting arrives with the bytecode VM (P3 proper).
+ * Memory: arrays, objects and pointers live in a frame owned by the function
+ * (or by one loop iteration). The frame is freed when that owner ends, after
+ * `defer` calls run. A value whose address does not escape stays in the stack
+ * pool; an escaping pointer is marked for the heap. There is no garbage
+ * collector.
  */
 #ifndef SNOVAC_EVAL_H
 #define SNOVAC_EVAL_H

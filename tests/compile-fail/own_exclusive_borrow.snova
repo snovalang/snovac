@@ -1,0 +1,8 @@
+package tests.own_exclusive_borrow
+
+func main(): int {
+    var a = [1, 2, 3]
+    let p = &a
+    let q = &a
+    return p.len()
+}

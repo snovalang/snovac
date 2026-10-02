@@ -74,7 +74,8 @@ fi
 # assert real program output, not parser shape.
 RP="$DIR/run-pass"
 [ -d "$RP" ] || RP="$DIR/../../tests/run-pass"
-for name in hello string_comment_url array_field_access counter extension_invocation; do
+for name in hello string_comment_url array_field_access counter extension_invocation \
+  own_ptr own_stack own_loop_live own_defer_ok own_defer_lifo own_defer_fail own_defer_use; do
   if [ -f "$RP/$name.snova" ] && [ -f "$RP/$name.stdout" ]; then
     got="$("$SNOVAC" run "$RP/$name.snova" 2>&1 || true)"
     assert "run: $name" "$(cat "$RP/$name.stdout")" "$got"

@@ -81,19 +81,21 @@ static SnType *wrap_array_suffix(P *p, SnType *inner) {
 SnType *parse_type(P *p) {
     SnSpan span = cur(p)->span;
 
-    /* Reference and raw-pointer types: `&T`, `&mut T`, `*mut T`, `*const T`.
-     * `mut` and `const` here are ordinary identifiers to the lexer, so they are
-     * matched by text. Referentness is not modelled in the AST yet — P2 owns
-     * that — but the syntax has to parse. */
-    if (at(p, SN_TOK_AMP) || at(p, SN_TOK_STAR)) {
+    /* `&T` is a non-null pointer. `&T?` is the nullable form: the `?` is
+     * parsed onto the pointee and lifted onto the pointer. There is no
+     * separate `mut` marker — exclusive vs shared is a borrow property. */
+    if (at(p, SN_TOK_AMP)) {
         advance_p(p);
-        if (at(p, SN_TOK_IDENT) &&
-            (strcmp(cur(p)->text, "mut") == 0 ||
-             strcmp(cur(p)->text, "const") == 0)) {
-            advance_p(p);
+        SnType *inner = parse_type(p);
+        SnType *r = (SnType *)sn_arena_calloc(p->arena, sizeof(SnType));
+        r->kind = SN_TYPE_REF;
+        r->span = span;
+        r->pointee = inner;
+        if (inner && inner->is_optional) {
+            inner->is_optional = 0;
+            r->is_nullable = 1;
         }
-        accept(p, SN_TOK_CONST);
-        return wrap_array_suffix(p, parse_type(p));
+        return wrap_array_suffix(p, r);
     }
 
     /* Function type, `func` form: `func(DataValue) -> DataValue`. */

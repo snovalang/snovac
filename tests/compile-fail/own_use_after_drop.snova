@@ -1,0 +1,10 @@
+package tests.own_use_after_drop
+
+func main(): int {
+    var p: &int? = null
+    {
+        var x = 1
+        p = &x
+    }
+    return 0
+}

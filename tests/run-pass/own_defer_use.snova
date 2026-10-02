@@ -1,0 +1,14 @@
+package tests.run_pass.own_defer_use
+
+import builtin.console.Console
+
+func lenOf(xs: Array<int>): int {
+    Console.printline(xs.len())
+    return 0
+}
+
+func main(): int {
+    var xs = [1, 2, 3, 4]
+    defer lenOf(xs)
+    return 0
+}

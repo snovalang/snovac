@@ -1,0 +1,6 @@
+package tests.own_null_deref
+
+func main(): int {
+    var p: &int? = null
+    return *p
+}

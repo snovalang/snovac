@@ -2,7 +2,9 @@
 
 #include <string.h>
 
+#include "borrow.h"
 #include "builtins.h"
+#include "check_ptr.h"
 
 void sn_checker_init(SnChecker *c, SnArena *a, SnInternTable *it, SnDiagSink *diag,
                       SnResolver *resolver, SnTypeTable *types) {
@@ -262,6 +264,8 @@ static SnTypeRep *sn_check_resolve_type_base(SnChecker *c, const SnType *t) {
         SnTypeRep *ret = sn_check_resolve_type(c, t->ret);
         return sn_type_func(c->types, params, (uint32_t)t->params.len, ret);
     }
+    case SN_TYPE_REF:
+        return sn_check_resolve_ref(c, t);
     case SN_TYPE_TUPLE:
         /* types.c's SnTypeTag (plan.md §5) has no tuple tag. Documented gap
          * — degrade rather than mis-tag a tuple as something it isn't. */
@@ -559,7 +563,7 @@ static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
             }
         }
 
-        SnTypeRep *base_ty = sn_check_expr(c, local, e->lhs);
+        SnTypeRep *base_ty = sn_ptr_peel(e->lhs, sn_check_expr(c, local, e->lhs));
         if (is_error(base_ty)) {
             e->resolved_type = sn_type_error(c->types);
             return NULL;
@@ -676,7 +680,7 @@ static SnTypeRep *check_binary(SnChecker *c, SnExpr *e, SnTypeRep *lt, SnTypeRep
         break;
     case SN_TOK_EQ:
     case SN_TOK_NE:
-        if (lt == rt) {
+        if (lt == rt || sn_ptr_null_cmp(lt, rt)) {
             return sn_type_bool(c->types);
         }
         break;
@@ -713,6 +717,10 @@ static SnTypeRep *check_binary(SnChecker *c, SnExpr *e, SnTypeRep *lt, SnTypeRep
 }
 
 static SnTypeRep *check_unary(SnChecker *c, SnExpr *e, SnTypeRep *operand) {
+    SnTypeRep *ptr_ty = NULL;
+    if (sn_check_ptr_unary(c, e, operand, &ptr_ty)) {
+        return ptr_ty;
+    }
     if (is_error(operand)) {
         return sn_type_error(c->types);
     }
@@ -795,6 +803,8 @@ static void check_call_args(SnChecker *c, SnExpr *call_expr, const SnSymbol *cal
         }
         arg_tys[i] = adopt_literal_type(c, SN_LIST_AT(call_expr->args, SnExpr, i),
                                         arg_tys[i], expected);
+        arg_tys[i] = sn_ptr_adapt_arg(c, SN_LIST_AT(call_expr->args, SnExpr, i),
+                                      arg_tys[i], expected);
         if (types_clash(c, arg_tys[i], expected)) {
             sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, call_expr->span,
                         "argument %zu (`%s`) has the wrong type", i + 1, p->name);
@@ -817,6 +827,8 @@ static void check_call_against_functype(SnChecker *c, SnExpr *call_expr,
     for (size_t i = 0; i < nargs; i++) {
         arg_tys[i] = adopt_literal_type(c, SN_LIST_AT(call_expr->args, SnExpr, i),
                                         arg_tys[i], ft->args[i]);
+        arg_tys[i] = sn_ptr_adapt_arg(c, SN_LIST_AT(call_expr->args, SnExpr, i),
+                                      arg_tys[i], ft->args[i]);
         if (types_clash(c, arg_tys[i], ft->args[i])) {
             sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, call_expr->span,
                         "argument %zu has the wrong type", i + 1);
@@ -982,6 +994,9 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     case SN_EXPR_BOOL:
         result = sn_type_bool(c->types);
         break;
+    case SN_EXPR_NULL:
+        result = sn_type_ref(c->types, NULL, 1);
+        break;
 
     case SN_EXPR_THIS: {
         SnSymbol *self_sym =
@@ -999,6 +1014,10 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
         break;
 
     case SN_EXPR_CALL: {
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && sn_rt_probe_name(e->lhs->text)) {
+            result = sn_type_int(c->types);
+            break;
+        }
         /* `Partial<User>(name: "Ada", age: 36)` — construction of an
          * intrinsic generic. No symbol exists for the callee; the type IS the
          * result. Resolved before resolve_value_symbol so the callee is never
@@ -1118,7 +1137,7 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     }
 
     case SN_EXPR_INDEX: {
-        SnTypeRep *base_ty = sn_check_expr(c, local, e->lhs);
+        SnTypeRep *base_ty = sn_ptr_peel(e->lhs, sn_check_expr(c, local, e->lhs));
         SnTypeRep *idx_ty = sn_check_expr(c, local, e->rhs);
         (void)idx_ty; /* not enforced to be `int` in this pass — documented gap */
         if (is_error(base_ty)) {
@@ -1198,6 +1217,7 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
         SnTypeRep *target_ty = e->lhs->resolved_type;
         SnTypeRep *value_ty = sn_check_expr(c, local, e->rhs);
         value_ty = adopt_literal_type(c, e->rhs, value_ty, target_ty);
+        value_ty = sn_ptr_adapt_arg(c, e->rhs, value_ty, target_ty);
 
         if (target_sym && !is_mutable_symbol(c, target_sym)) {
             sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_IMMUTABLE_REASSIGN, e->span,
@@ -1524,6 +1544,7 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
 
         if (declared) {
             init_ty = adopt_literal_type(c, s->expr, init_ty, declared);
+            init_ty = sn_ptr_adapt_arg(c, s->expr, init_ty, declared);
             if (types_clash(c, init_ty, declared)) {
                 sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_LET_TYPE_MISMATCH, s->span,
                             "`%s`'s declared type does not match its initializer",
@@ -1670,6 +1691,9 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
         break;
 
     case SN_STMT_DEFER:
+        if (s->expr) {
+            sn_check_expr(c, local, s->expr);
+        }
         if (s->then_br) {
             sn_check_stmt(c, local, s->then_br);
         }
@@ -1934,6 +1958,7 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
                            sn_intern_cstr(c->intern, "constructor"));
     c->in_async_body = decl->is_async;
     sn_check_stmt(c, &params_scope, decl->body);
+    sn_borrow_func(c, decl);
     if (!c->in_constructor && c->current_return_type && !is_error(c->current_return_type) &&
         c->current_return_type->tag != SN_T_UNIT &&
         !stmt_always_returns(decl->body)) {

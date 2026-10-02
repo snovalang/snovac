@@ -42,7 +42,11 @@ typedef enum {
     SN_T_NAMED,   /* class/struct/enum/interface, with generic args */
     SN_T_TYPEVAR, /* type parameter T within a generic scope */
     SN_T_FUNC,    /* (A, B) -> C — lambdas and function references */
-    SN_T_ARRAY    /* element type in args[0] — see file header */
+    SN_T_ARRAY,   /* element type in args[0] — see file header */
+    /* `&T`. Pointee is `ret`. `nargs == 1` means the pointer itself is
+     * nullable (`&T?`); `nargs == 0` is non-null. A null literal is a
+     * nullable ref whose pointee is NULL. */
+    SN_T_REF
 } SnTypeTag;
 
 typedef struct SnTypeRep {
@@ -94,6 +98,10 @@ SnTypeRep *sn_type_typevar(SnTypeTable *t, SnSymbol *decl);
 SnTypeRep *sn_type_func(SnTypeTable *t, SnTypeRep **params, uint32_t nparams,
                          SnTypeRep *ret);
 SnTypeRep *sn_type_array(SnTypeTable *t, SnTypeRep *elem);
+SnTypeRep *sn_type_ref(SnTypeTable *t, SnTypeRep *pointee, int nullable);
+int sn_type_is_ref(const SnTypeRep *t);
+SnTypeRep *sn_type_pointee(const SnTypeRep *t);
+int sn_type_ref_nullable(const SnTypeRep *t);
 
 /* Pointer equality — provided so call sites can read `sn_type_equals(a, b)`
  * instead of a bare `a == b` next to non-hash-consed pointer comparisons,
