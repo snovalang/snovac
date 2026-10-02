@@ -46,7 +46,8 @@ TEST_SYMBOL_BIN = $(BUILD)/test_symbol$(EXE)
 TEST_PACKAGE_BIN = $(BUILD)/test_package$(EXE)
 TEST_PACKAGE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
                      $(BUILD)/symbol.o $(BUILD)/package.o $(BUILD)/ast.o \
-                     $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o
+                     $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o \
+                     $(BUILD)/driver_utils.o
 TEST_TYPES_BIN = $(BUILD)/test_types$(EXE)
 TEST_TYPES_OBJS = $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o \
                    $(BUILD)/types.o
@@ -57,7 +58,8 @@ TEST_RESOLVE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
                      $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o \
                      $(BUILD)/parse.o $(BUILD)/parse_type.o $(BUILD)/parse_expr.o \
                      $(BUILD)/parse_primary.o $(BUILD)/parse_stmt.o \
-                     $(BUILD)/parse_decl.o $(BUILD)/parse_decl_parts.o
+                     $(BUILD)/parse_decl.o $(BUILD)/parse_decl_parts.o \
+                     $(BUILD)/driver_utils.o
 TEST_CHECK_BIN = $(BUILD)/test_check$(EXE)
 TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtins.o $(BUILD)/check.o
 
