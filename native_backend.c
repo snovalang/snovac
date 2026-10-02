@@ -485,7 +485,7 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
 
   /* Locate the runtime static lib + headers next to the running binary,
    * trying every layout snovac can plausibly be found in:
-   *   - installed:    <prefix>/bin/snovac, <prefix>/lib/libsnovart.a,
+   *   - installed:    <prefix>/bin/snl, <prefix>/lib/libsnovart.a,
    *                   <prefix>/include/ (see "make install")
    *   - dev build:    snovac/build/snovac, snovac/build/libsnovart.a,
    *                   headers directly under snovac/
@@ -504,7 +504,7 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
     snprintf(lib_path, sizeof(lib_path), "%s/../../snovart/build/libsnovart.a", g_exe_dir);
 
     if (!path_is_file(lib_path) || !path_is_dir(inc_dir)) {
-      /* Installed layout: <prefix>/bin/snovac -> <prefix>/include, <prefix>/lib/libsnovart.a */
+      /* Installed layout: <prefix>/bin/snl -> <prefix>/include, <prefix>/lib/libsnovart.a */
       snprintf(inc_dir, sizeof(inc_dir), "%s/../include", g_exe_dir);
       snprintf(lib_path, sizeof(lib_path), "%s/../lib/libsnovart.a", g_exe_dir);
 

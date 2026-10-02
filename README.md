@@ -6,31 +6,37 @@ The official, reference compiler for **Snovalang** written in pure, zero-depende
 
 ## Quick Install
 
+The installers put the `snl` command on `PATH`. The subcommands (`run`, `build`, `check`, `get`, `tidy`, and the `--emit` / `--check-*` flags) stay the same.
+
 ### Windows (PowerShell)
 
-Install `snovac` natively on Windows with a single PowerShell command:
+`install.ps1` installs `snl.exe` into `%USERPROFILE%\.snova\bin`. Set `SNOVA_INSTALL_DIR` to choose another prefix; the executable is still copied into the `bin` directory under that prefix.
 
 ```powershell
 irm https://raw.githubusercontent.com/supernovalang/snovac/master/install.ps1 | iex
 ```
 
-Or from an existing clone:
+From a clone of this repository:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 ### macOS & Linux (Bash)
 
-Install `snovac` instantly on macOS or Linux with a single command:
+`install.sh` installs `snl` into `$HOME/.snova/bin`. Set `SNOVA_INSTALL_DIR` to choose another directory. On Unix that variable is the directory that receives the `snl` binary, not a prefix above `bin`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
 ```
 
 Or using `wget`:
+
 ```bash
 wget -qO- https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
 ```
+
+Both commands run `install.sh`. If the latest GitHub release has no prebuilt archive, the script clones this repository and builds it with `make`.
 
 ## Features
 
@@ -53,62 +59,80 @@ cd snovac
 make
 ```
 
-The compiled binary will be located at `build/snovac`.
+`make` writes the toolchain binary to `build/snl`. The same file is also copied to `build/sncli` and `build/snovac` so those local paths keep working.
+
+Install that binary with the Makefile:
+
+```bash
+make install
+```
+
+On Linux and macOS this copies `build/snl` to `$HOME/.snova/bin/snl`, installs `libsnovart.a` under `$HOME/.snova/lib` and the headers under `$HOME/.snova/include`, and runs `scripts/install_path.sh` so bash, zsh, and fish pick up `$HOME/.snova/bin`. Override the prefix with `make install PREFIX=/your/prefix` (`snl` is then `/your/prefix/bin/snl`).
+
+On Windows, `make install` runs `scripts/install_windows.ps1` and installs `%USERPROFILE%\.snova\bin\snl.exe`.
+
+Remove the installed binary, runtime library, and headers with:
+
+```bash
+make uninstall
+```
+
+`make uninstall` leaves the `PATH` lines in shell startup files in place.
 
 ## Usage & CLI Reference
 
 ### Informational & Diagnostics
 
-- **`snovac --version`** (`-V`):
+- **`snl --version`** (`-V`):
   Displays the current version of the compiler.
 
-- **`snovac --help`** (`-h`):
+- **`snl --help`** (`-h`):
   Displays command-line usage instructions and available options.
 
-- **`snovac --target-info`**:
+- **`snl --target-info`**:
   Prints host and target architectures, detected operating system, executable paths, and active environment overrides (`SNOVA_TARGET_OS`, `SNOVA_TARGET_ARCH`, `SNOVA_TARGET`).
 
 ### Single-File Inspection & Compilation
 
-- **`snovac --emit=tokens <file.snova>`**:
+- **`snl --emit=tokens <file.snova>`**:
   Runs lexical analysis and dumps the token stream with source spans (line:col).
 
-- **`snovac --check-lex <file.snova>`**:
+- **`snl --check-lex <file.snova>`**:
   Validates lexical tokens without generating an AST; exits with non-zero code on syntax/lexer errors.
 
-- **`snovac --emit=ast <file.snova>`**:
+- **`snl --emit=ast <file.snova>`**:
   Parses the source file and dumps the formatted AST (Abstract Syntax Tree).
 
-- **`snovac --check-parse <file.snova>`**:
+- **`snl --check-parse <file.snova>`**:
   Performs lexical analysis and syntax parsing; reports syntax errors with diagnostics.
 
-- **`snovac check <file.snova>`**:
+- **`snl check <file.snova>`**:
   Performs symbol resolution, scope analysis, and static type-checking on a single file.
 
-- **`snovac run <file.snova>`**:
+- **`snl run <file.snova>`**:
   Compiles and directly executes a single Snovalang source file in the bytecode VM runtime.
 
-- **`snovac build <file.snova> [-o output] [--target=triple]`**:
+- **`snl build <file.snova> [-o output] [--target=triple]`**:
   Compiles a single file to a standalone native binary or bytecode unit. Supports cross-compilation target triples (e.g. `aarch64-apple-darwin`, `x86_64-linux-gnu`).
 
 ### Package & Dependency Management
 
-- **`snovac get [<repo-url>] [--version=<ver>] [--project=<path>]`**:
+- **`snl get [<repo-url>] [--version=<ver>] [--project=<path>]`**:
   Fetches dependencies into `.snovalang/deps/` and manages the `mod.sno` manifest.
   - **Adding a direct dependency**:
     ```bash
     # Add dependency with automatic or default version
-    snovac get https://github.com/supernovalang/snova-http
+    snl get https://github.com/supernovalang/snova-http
 
     # Add dependency with a specific version or tag
-    snovac get https://github.com/supernovalang/snova-http --version 1.0.0
-    snovac get github.com/supernovalang/snova-http@1.0.0
+    snl get https://github.com/supernovalang/snova-http --version 1.0.0
+    snl get github.com/supernovalang/snova-http@1.0.0
     ```
   - **Sychronizing existing dependencies**:
     ```bash
     # Resolves and downloads all dependencies declared in mod.sno
-    snovac get
-    snovac get --project ./my-project
+    snl get
+    snl get --project ./my-project
     ```
   - **Features**:
     - **Transitive Resolution**: Recursively fetches dependencies declared in dependencies' manifests.
@@ -118,27 +142,27 @@ The compiled binary will be located at `build/snovac`.
     - **Safe Execution**: Uses direct process invocation without shell string interpolation.
     - **Idempotency**: Running `get` multiple times preserves modifications, does not re-clone existing folders, and outputs deterministic manifests.
 
-- **`snovac tidy [--project] [<path>]`**:
+- **`snl tidy [--project] [<path>]`**:
   Scans project imports across all source files, removes unused dependencies, and synchronizes `mod.sno`.
   ```bash
-  snovac tidy
-  snovac tidy --project ./my-project
+  snl tidy
+  snl tidy --project ./my-project
   ```
 
 ### Project-Wide Operations
 
 A project is discovered by locating the nearest `mod.sno`, `snova.sno`, or `snova.toml` manifest. Source roots include `src/` (or project root) and vendored `.snovalang/deps/`.
 
-- **`snovac --check-parse-project <path>`**:
+- **`snl --check-parse-project <path>`**:
   Recursively discovers and parses all `.snova` source files across the project and dependencies.
 
-- **`snovac check --project <path> [--no-typecheck]`**:
+- **`snl check --project <path> [--no-typecheck]`**:
   Builds the project package graph, links imports, resolves types and symbols across packages, and type-checks declaration bodies. Adding `--no-typecheck` skips body checks while verifying interface signatures and imports.
 
-- **`snovac run --project <path> [--offline-cache[=<dir>]]`**:
+- **`snl run --project <path> [--offline-cache[=<dir>]]`**:
   Executes a multi-file project across its packages and resolved dependencies.
 
-- **`snovac build --project <path> [-o output] [--target=triple] [--runtime] [--offline-cache[=<dir>]]`**:
+- **`snl build --project <path> [-o output] [--target=triple] [--runtime] [--offline-cache[=<dir>]]`**:
   Compiles an entire project and its dependencies into a bundled executable. `--runtime` links the native runtime library into the final binary.
 
 ## Environment Variables

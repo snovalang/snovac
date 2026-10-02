@@ -1,5 +1,5 @@
 # ==============================================================================
-# Snovalang Compiler (snovac) Universal Windows One-Line Installer
+# Snovalang toolchain Windows installer. Installs snl.exe.
 # Usage: irm https://raw.githubusercontent.com/supernovalang/snovac/master/install.ps1 | iex
 # Or:    powershell -ExecutionPolicy Bypass -File install.ps1
 # ==============================================================================
@@ -24,7 +24,7 @@ Write-Host @"
  \___ \| '_ \ / _ \ \ / / _` | '_ \ / _ \ '__| 
   ___) | | | | (_) \ V / (_| | | | |  __/ |    
  |____/|_| |_|\___/ \_/ \__,_|_| |_|\___|_|    
-           Snovalang Compiler (snovac)
+           Snovalang toolchain (snl)
 "@ -ForegroundColor Cyan
 
 # 1. Detect Architecture
@@ -54,10 +54,16 @@ try {
         Write-Host "[✓] Downloaded release archive." -ForegroundColor Green
         Expand-Archive -Path $ZipPath -DestinationPath (Join-Path $TempDir "extracted") -Force
         
-        $binSource = Join-Path $TempDir "extracted\snovac.exe"
-        if (Test-Path $binSource) {
+        $candidates = @(
+            (Join-Path $TempDir "extracted\snl.exe"),
+            (Join-Path $TempDir "extracted\bin\snl.exe"),
+            (Join-Path $TempDir "extracted\snovac.exe"),
+            (Join-Path $TempDir "extracted\bin\snovac.exe")
+        )
+        $binSource = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($binSource) {
             New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-            Copy-Item -Path $binSource -Destination (Join-Path $BinDir "snovac.exe") -Force
+            Copy-Item -Path $binSource -Destination (Join-Path $BinDir "snl.exe") -Force
             $Installed = $true
         }
     } catch {
@@ -73,15 +79,16 @@ try {
         }
 
         if (Test-Path (Join-Path $SourceDir "Makefile")) {
-            Write-Host "==> Compiling snovac from source..." -ForegroundColor Cyan
+            Write-Host "==> Compiling snl from source..." -ForegroundColor Cyan
             Push-Location $SourceDir
             try {
                 if (Get-Command make -ErrorAction SilentlyContinue) {
                     make
                 } elseif (Get-Command gcc -ErrorAction SilentlyContinue) {
-                    gcc -std=c11 -O2 -g -pthread -o build/snovac.exe *.c
+                    New-Item -ItemType Directory -Path build -Force | Out-Null
+                    gcc -std=c11 -O2 -g -pthread -o build/snl.exe *.c
                 } else {
-                    Write-Error "GCC or Make is required to compile snovac from source on Windows. Install MinGW-w64 or use a pre-built binary."
+                    Write-Error "GCC or Make is required to compile snl from source on Windows. Install MinGW-w64 or use a pre-built binary."
                 }
                 
                 # Execute native install script
@@ -112,8 +119,8 @@ try {
 
     if ($Installed) {
         Write-Host ""
-        Write-Host "Snovalang Compiler (snovac) was successfully installed!" -ForegroundColor Green
-        Write-Host "Run 'snovac --version' or 'snovac --target-info' to get started." -ForegroundColor Cyan
+        Write-Host "Snovalang toolchain (snl) was successfully installed!" -ForegroundColor Green
+        Write-Host "Run 'snl --version' or 'snl --target-info' to get started." -ForegroundColor Cyan
     }
 } finally {
     Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue

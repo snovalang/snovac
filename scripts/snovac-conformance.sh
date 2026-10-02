@@ -15,7 +15,7 @@
 
 set -eu
 
-SNOVAC="${1:-build/snovac}"
+SNOVAC="${1:-build/snl}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$ROOT"
 
@@ -25,7 +25,7 @@ case "$SNOVAC" in
 esac
 
 if [ ! -x "$SNOVAC" ]; then
-  echo "error: snovac not built at $SNOVAC (run: make -C snovac)" >&2
+  echo "error: snl not built at $SNOVAC (run: make -C snovac)" >&2
   exit 2
 fi
 

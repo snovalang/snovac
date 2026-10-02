@@ -24,7 +24,7 @@ else
   EXTRA_LIBS := -lpthread
 endif
 
-BIN      = $(BUILD)/sncli$(EXE)
+BIN      = $(BUILD)/snl$(EXE)
 
 SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd_build.c cmd_tidy.c cmd_get.c \
        target.c native_backend.c pulsar.c async.c \
@@ -102,17 +102,18 @@ all: $(BIN) $(LIB_RT)
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(EXTRA_LIBS)
 ifeq ($(OS),Windows_NT)
-	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item '$@' '$(BUILD)/snovac$(EXE)' -Force"
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item '$@' '$(BUILD)/snovac$(EXE)' -Force; Copy-Item '$@' '$(BUILD)/sncli$(EXE)' -Force"
 else
-	@cp $@ $(BUILD)/snovac$(EXE) 2>/dev/null || true
+	@cp $@ $(BUILD)/snovac$(EXE)
+	@cp $@ $(BUILD)/sncli$(EXE)
 endif
 
 $(LIB_RT): $(RT_OBJS)
 	ar rcs $@ $(RT_OBJS)
 
-# Installs the snovac binary into BINDIR, its runtime static lib + headers
-# (needed by `snovac build --runtime`, which shells out to $(CC) again at
-# run time) into LIBDIR/INCDIR, snova-std (if present) into
+# Installs the toolchain binary as `snl` into BINDIR, its runtime static lib
+# + headers (needed by `snl build --runtime`, which shells out to $(CC) again
+# at run time) into LIBDIR/INCDIR, snova-std (if present) into
 # STD_INSTALL_DIR, and wires BINDIR onto PATH for every common shell:
 #   - bash   (~/.bashrc and ~/.bash_profile)
 #   - zsh    (~/.zshrc)
@@ -124,8 +125,8 @@ ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install_windows.ps1 -Prefix "$(PREFIX)" -BinDir "$(BINDIR)" -LibDir "$(LIBDIR)" -IncDir "$(INCDIR)" -Bin "$(BIN)" -LibRt "$(LIB_RT)"
 else
 	@mkdir -p $(BINDIR) $(LIBDIR) $(INCDIR)
-	install -m 755 $(BIN) $(BINDIR)/snovac$(EXE)
-	@echo "✓ Installed snovac CLI to $(BINDIR)/snovac$(EXE)"
+	install -m 755 $(BIN) $(BINDIR)/snl$(EXE)
+	@echo "✓ Installed snl to $(BINDIR)/snl$(EXE)"
 	install -m 644 $(LIB_RT) $(LIBDIR)/libsnovart.a
 	install -m 644 *.h $(INCDIR)/
 	@echo "✓ Installed runtime lib + headers to $(LIBDIR), $(INCDIR)"
@@ -141,10 +142,10 @@ uninstall:
 ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall_windows.ps1 -Prefix "$(PREFIX)" -BinDir "$(BINDIR)" -LibDir "$(LIBDIR)" -IncDir "$(INCDIR)"
 else
-	rm -f $(BINDIR)/snovac$(EXE)
+	rm -f $(BINDIR)/snl$(EXE) $(BINDIR)/snovac$(EXE) $(BINDIR)/sncli$(EXE)
 	rm -f $(LIBDIR)/libsnovart.a
 	rm -f $(addprefix $(INCDIR)/,$(notdir $(wildcard *.h)))
-	@echo "✓ Removed snovac from $(BINDIR)/snovac$(EXE) (and its runtime lib/headers)"
+	@echo "✓ Removed snl from $(BINDIR)/snl$(EXE) (and its runtime lib/headers)"
 	@echo "Note: PATH entries added by 'make install' in shell rc files /"
 	@echo "the PowerShell profile are left untouched; remove them manually if desired."
 	@echo "Note: snova-std installed to $(STD_INSTALL_DIR) is left untouched."

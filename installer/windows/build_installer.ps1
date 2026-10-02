@@ -15,7 +15,7 @@ $OutDir = Join-Path $BuildDir "installer"
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " Building Native Windows Installers for snovac v$Version" -ForegroundColor Cyan
+Write-Host " Building Native Windows Installers for snl v$Version" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
 # 1. Package Portable ZIP Archive
@@ -25,7 +25,7 @@ New-Item -ItemType Directory -Path (Join-Path $StageDir "bin") -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $StageDir "lib") -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $StageDir "include") -Force | Out-Null
 
-Copy-Item -Path (Join-Path $BuildDir "snovac.exe") -Destination (Join-Path $StageDir "bin\snovac.exe") -Force
+Copy-Item -Path (Join-Path $BuildDir "snl.exe") -Destination (Join-Path $StageDir "bin\snl.exe") -Force
 Copy-Item -Path (Join-Path $BuildDir "libsnovart.a") -Destination (Join-Path $StageDir "lib\libsnovart.a") -Force
 Get-ChildItem -Path $RootDir -Filter "*.h" -File | ForEach-Object {
     Copy-Item -Path $_.FullName -Destination (Join-Path $StageDir "include") -Force
@@ -34,7 +34,7 @@ Copy-Item -Path (Join-Path $RootDir "README.md") -Destination $StageDir -Force
 Copy-Item -Path (Join-Path $RootDir "install.ps1") -Destination $StageDir -Force
 Copy-Item -Path (Join-Path $RootDir "scripts\install_windows.ps1") -Destination (Join-Path $StageDir "install_windows.ps1") -Force
 
-$batContent = "@echo off`r`necho Installing Snovalang Compiler (snovac)...`r`npowershell -ExecutionPolicy Bypass -NoProfile -File `"%~dp0install_windows.ps1`"`r`npause"
+$batContent = "@echo off`r`necho Installing Snovalang toolchain (snl)...`r`npowershell -ExecutionPolicy Bypass -NoProfile -File `"%~dp0install_windows.ps1`"`r`npause"
 Set-Content -Path (Join-Path $StageDir "install.bat") -Value $batContent -Encoding ASCII
 
 $ZipFile = Join-Path $OutDir "snovac-windows-x86_64.zip"

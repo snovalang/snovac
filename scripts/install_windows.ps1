@@ -1,4 +1,4 @@
-# install_windows.ps1 ? Native Windows Installer for Snovalang (snovac)
+# install_windows.ps1 — Native Windows installer for the snl command.
 
 param(
     [string]$Prefix = "",
@@ -38,9 +38,16 @@ if ([string]::IsNullOrEmpty($ScriptDir)) { $ScriptDir = (Get-Location).Path }
 $RootDir = [System.IO.Path]::GetFullPath((Join-Path $ScriptDir ".."))
 
 if ([string]::IsNullOrEmpty($Bin)) {
-    $Bin = Join-Path $RootDir "build\snovac.exe"
-    if (-not (Test-Path $Bin)) {
-        $Bin = Join-Path $RootDir "snovac.exe"
+    $binCandidates = @(
+        (Join-Path $RootDir "build\snl.exe"),
+        (Join-Path $RootDir "build\sncli.exe"),
+        (Join-Path $RootDir "build\snovac.exe"),
+        (Join-Path $RootDir "snl.exe"),
+        (Join-Path $RootDir "snovac.exe")
+    )
+    $Bin = $binCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $Bin) {
+        $Bin = Join-Path $RootDir "build\snl.exe"
     }
 }
 if ([string]::IsNullOrEmpty($LibRt)) {
@@ -51,7 +58,7 @@ if ([string]::IsNullOrEmpty($LibRt)) {
 }
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " Installing Snovalang Compiler (snovac) for Windows" -ForegroundColor Cyan
+Write-Host " Installing Snovalang toolchain (snl) for Windows" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host " Target Prefix : $Prefix"
 Write-Host " Binary Dir    : $BinDir"
@@ -66,12 +73,10 @@ New-Item -ItemType Directory -Path $IncDir -Force | Out-Null
 
 # 3. Copy Binary and Libraries
 if (Test-Path $Bin) {
-    Copy-Item -Path $Bin -Destination (Join-Path $BinDir "sncli.exe") -Force
-    Copy-Item -Path $Bin -Destination (Join-Path $BinDir "snovac.exe") -Force
-    Write-Host "[OK] Installed sncli CLI to $(Join-Path $BinDir 'sncli.exe')" -ForegroundColor Green
-    Write-Host "[OK] Updated snovac CLI to $(Join-Path $BinDir 'snovac.exe')" -ForegroundColor Green
+    Copy-Item -Path $Bin -Destination (Join-Path $BinDir "snl.exe") -Force
+    Write-Host "[OK] Installed snl to $(Join-Path $BinDir 'snl.exe')" -ForegroundColor Green
 } else {
-    Write-Error "Could not find binary at '$Bin'. Please build sncli first."
+    Write-Error "Could not find binary at '$Bin'. Build it with 'make' first."
 }
 
 if (Test-Path $LibRt) {
@@ -152,6 +157,8 @@ $lines = @(
     "`$LibDir = '$LibDir'",
     "`$IncDir = '$IncDir'",
     "",
+    "Remove-Item -Path (Join-Path `$BinDir 'snl.exe') -Force",
+    "Remove-Item -Path (Join-Path `$BinDir 'sncli.exe') -Force",
     "Remove-Item -Path (Join-Path `$BinDir 'snovac.exe') -Force",
     "Remove-Item -Path (Join-Path `$LibDir 'libsnovart.a') -Force",
     "Remove-Item -Path (Join-Path `$IncDir '*.h') -Force",
@@ -159,7 +166,7 @@ $lines = @(
     "Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\snovac' -Force -Recurse",
     "",
     "if (-not `$Quiet) {",
-    "    Write-Host 'Snovalang (snovac) was successfully uninstalled.' -ForegroundColor Green",
+    "    Write-Host 'Snovalang (snl) was successfully uninstalled.' -ForegroundColor Green",
     "}"
 )
 Set-Content -Path $uninstallScript -Value $lines -Force
@@ -170,7 +177,7 @@ try {
     if (-not (Test-Path $uninstallRegKey)) {
         New-Item -Path $uninstallRegKey -Force | Out-Null
     }
-    Set-ItemProperty -Path $uninstallRegKey -Name "DisplayName" -Value "Snovalang Compiler (snovac)"
+    Set-ItemProperty -Path $uninstallRegKey -Name "DisplayName" -Value "Snovalang toolchain (snl)"
     Set-ItemProperty -Path $uninstallRegKey -Name "DisplayVersion" -Value $Version
     Set-ItemProperty -Path $uninstallRegKey -Name "Publisher" -Value "Snovalang Project"
     Set-ItemProperty -Path $uninstallRegKey -Name "InstallLocation" -Value $Prefix
@@ -178,13 +185,13 @@ try {
     Set-ItemProperty -Path $uninstallRegKey -Name "QuietUninstallString" -Value "powershell.exe -ExecutionPolicy Bypass -File `"$uninstallScript`" -Quiet"
     Set-ItemProperty -Path $uninstallRegKey -Name "NoModify" -Value 1 -Type DWord
     Set-ItemProperty -Path $uninstallRegKey -Name "NoRepair" -Value 1 -Type DWord
-    Write-Host "[OK] Registered snovac in Windows Installed Apps (Control Panel)" -ForegroundColor Green
+    Write-Host "[OK] Registered snl in Windows Installed Apps (Control Panel)" -ForegroundColor Green
 } catch {
     $null = $_
 }
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
-Write-Host " Snovalang Compiler (snovac) is ready to use!" -ForegroundColor Green
-Write-Host " Try running: snovac --version" -ForegroundColor Cyan
+Write-Host " Snovalang toolchain (snl) is ready to use!" -ForegroundColor Green
+Write-Host " Try running: snl --version" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Green

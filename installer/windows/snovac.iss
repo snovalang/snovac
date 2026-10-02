@@ -2,11 +2,11 @@
 ; Builds a native Windows setup installer (snovac-setup.exe)
 
 #define MyAppName "Snovalang Compiler"
-#define MyAppShortName "snovac"
+#define MyAppShortName "snl"
 #define MyAppVersion "0.0.1-p1"
 #define MyAppPublisher "Snovalang Project"
 #define MyAppURL "https://github.com/supernovalang/snovac"
-#define MyAppExeName "snovac.exe"
+#define MyAppExeName "snl.exe"
 
 [Setup]
 AppId={{D37E7498-84BE-4B69-9524-2C7E17C82C6A}
@@ -33,10 +33,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
 [Tasks]
-Name: "envPath"; Description: "Add snovac to Environment PATH"; GroupDescription: "System Integration:"; Flags: checkedonce
+Name: "envPath"; Description: "Add snl to Environment PATH"; GroupDescription: "System Integration:"; Flags: checkedonce
 
 [Files]
-Source: "..\..\build\snovac.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "..\..\build\snl.exe"; DestDir: "{app}\bin"; DestName: "snl.exe"; Flags: ignoreversion
 Source: "..\..\build\libsnovart.a"; DestDir: "{app}\lib"; Flags: ignoreversion
 Source: "..\..\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion

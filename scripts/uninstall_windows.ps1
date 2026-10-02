@@ -1,4 +1,4 @@
-# uninstall_windows.ps1 — Native Windows Uninstaller for Snovalang (snovac)
+# uninstall_windows.ps1 — Native Windows uninstaller for the snl command.
 
 param(
     [string]$Prefix = "",
@@ -24,13 +24,15 @@ if ([string]::IsNullOrEmpty($BinDir)) { $BinDir = Join-Path $Prefix "bin" }
 if ([string]::IsNullOrEmpty($LibDir)) { $LibDir = Join-Path $Prefix "lib" }
 if ([string]::IsNullOrEmpty($IncDir)) { $IncDir = Join-Path $Prefix "include" }
 
-Write-Host "Uninstalling Snovalang (snovac) from $Prefix..." -ForegroundColor Yellow
+Write-Host "Uninstalling Snovalang (snl) from $Prefix..." -ForegroundColor Yellow
 
+Remove-Item -Path (Join-Path $BinDir "snl.exe") -Force
+Remove-Item -Path (Join-Path $BinDir "sncli.exe") -Force
 Remove-Item -Path (Join-Path $BinDir "snovac.exe") -Force
 Remove-Item -Path (Join-Path $LibDir "libsnovart.a") -Force
 Remove-Item -Path (Join-Path $IncDir "*.h") -Force
 Remove-Item -Path $Prefix -Recurse -Force
 Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\snovac" -Force -Recurse
 
-Write-Host "[✓] Removed snovac from $BinDir/snovac.exe (and runtime lib/headers)" -ForegroundColor Green
+Write-Host "[✓] Removed snl from $BinDir/snl.exe (and runtime lib/headers)" -ForegroundColor Green
 Write-Host "Note: PATH entries in User environment and PowerShell profile are left untouched." -ForegroundColor Gray

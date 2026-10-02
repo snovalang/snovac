@@ -2,7 +2,7 @@
 <!-- snovac.wxs — WiX Source file for Native Windows MSI Installer -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
     <Product Id="*"
-             Name="Snovalang Compiler (snovac)"
+             Name="Snovalang toolchain (snl)"
              Language="1033"
              Version="0.0.1.1"
              Manufacturer="Snovalang Project"
@@ -36,7 +36,7 @@
     <Fragment>
         <ComponentGroup Id="ProductComponents">
             <Component Id="SnovacExe" Directory="BINDIR" Guid="7BF0030B-E20C-44FE-B398-75C73595B036">
-                <File Id="snovac.exe" Source="..\..\build\snovac.exe" KeyPath="yes" />
+                <File Id="snl.exe" Name="snl.exe" Source="..\..\build\snl.exe" KeyPath="yes" />
                 <Environment Id="PATH"
                              Name="PATH"
                              Value="[BINDIR]"
