@@ -465,6 +465,40 @@ static void test_subst(SnTypeTable *t, SnInternTable *it, SnArena *arena) {
               fn3_got->args[2] == sn_type_bool(t));
 }
 
+/* Same three-parameter substitution on a table that has not rehashed.
+ * The parameter array is sized with nargs * sizeof. If that product is
+ * truncated, the following SnTypeRep allocation overwrites the last
+ * parameter before it is copied. A crowded table hides that: the next
+ * allocation is a rehash, which lands in a new arena block. */
+static void test_func_subst_on_fresh_table(void) {
+    SnArena arena;
+    sn_arena_init(&arena, 0);
+    SnInternTable it;
+    sn_intern_init(&it, &arena);
+    SnTypeTable t;
+    sn_types_init(&t, &arena);
+    SnScope scope;
+    sn_scope_init(&scope, &arena, NULL);
+
+    SnSymbol *a = fake_decl(&scope, &it, "A");
+    SnSymbol *b = fake_decl(&scope, &it, "B");
+    SnSymbol *c = fake_decl(&scope, &it, "C");
+    SnTypeRep *params[3];
+    params[0] = sn_type_typevar(&t, a);
+    params[1] = sn_type_typevar(&t, b);
+    params[2] = sn_type_typevar(&t, c);
+    SnTypeRep *fn = sn_type_func(&t, params, 3, sn_type_unit(&t));
+
+    const char *names[] = {"A", "B", "C"};
+    SnTypeRep *args[] = {sn_type_int(&t), sn_type_string(&t), sn_type_bool(&t)};
+    SnTypeRep *got = sn_type_subst_names(&t, fn, names, args, 3);
+    CHECK("subst: fresh table keeps the third substituted parameter",
+          got == sn_type_func(&t, args, 3, sn_type_unit(&t)) && got->nargs == 3 &&
+              got->args[2] == sn_type_bool(&t));
+
+    sn_arena_free(&arena);
+}
+
 int main(void) {
     SnArena arena;
     sn_arena_init(&arena, 0);
@@ -485,6 +519,7 @@ int main(void) {
     test_queries(&t);
     test_ref(&t);
     test_subst(&t, &it, &arena);
+    test_func_subst_on_fresh_table();
     test_rehash_stress(&t, &scope, &it);
 
     SnArena load_arena;
