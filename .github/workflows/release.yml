@@ -40,10 +40,7 @@ jobs:
         include:
           - os: linux
             arch: x86_64
-            runner: ubuntu-latest
-          - os: darwin
-            arch: x86_64
-            runner: macos-13
+            runner: ubuntu-24.04
           - os: darwin
             arch: aarch64
             runner: macos-latest
