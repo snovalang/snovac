@@ -1,7 +1,7 @@
 /* builtins.h — intrinsic types and their members.
  *
- * specs/20260719/snovac-p2-resolver-typechecker/llm.md, P2.6 "Por que 8/26 e
- * não mais": the two largest remaining causes of fixture errors were `Array`
+ * specs/20260719/snovac-p2-resolver-typechecker/llm.md, P2.6 "Why 8/26 and
+ * no more": the two largest remaining causes of fixture errors were `Array`
  * (a generic type no .snova file declares) and the absence of any member table
  * for primitives (`n.toString()`, `arr.len()`). Both live here.
  *

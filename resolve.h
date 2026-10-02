@@ -56,8 +56,8 @@
  *    collector against the real corpus, treated as its own narrow rule.
  *
  * 5. Member-path (`a.b.c`) resolution only walks STATIC structure: local
- *    variable vs. type vs. package, per plan.md §4.3 ("tenta variável → tipo
- *    → prefixo de pacote"). Once the head resolves to a value (a local,
+ *    variable vs. type vs. package, per plan.md §4.3 ("try variable, then type,
+ *    then package prefix"). Once the head resolves to a value (a local,
  *    param or field — anything needing an inferred/declared type to go
  *    further), resolution stops there; walking further segments needs type
  *    information that doesn't exist until check.c (P2.5) runs. This matches

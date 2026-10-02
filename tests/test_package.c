@@ -1,7 +1,7 @@
 /* test_package.c — package.c: discovery, linking, cycle detection.
  *
  * specs/20260719/snovac-p2-resolver-typechecker/plan.md §8 step 4 verification
- * ("corpus inteiro mapeado sem erro; ciclo sintético detectado"). Two parts:
+ * ("whole corpus mapped with no errors; synthetic cycle detected"). Two parts:
  *
  *   1. Synthetic fixtures written to a scratch directory under the OS tmp
  *      dir, covering discovery, multi-file packages, missing imports, real
