@@ -69,8 +69,8 @@ jobs:
       - name: Package binary artifact
         run: |
           mkdir -p dist
-          cp build/snovac dist/snovac
-          tar -czf "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" -C dist snovac
+          cp build/snl dist/snl
+          tar -czf "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" -C dist snl
           shasum -a 256 "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" > "snovac-${{ matrix.os }}-${{ matrix.arch }}.sha256"
 
       - name: Upload Binary Artifact

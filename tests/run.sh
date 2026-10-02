@@ -6,7 +6,7 @@
 
 set -eu
 
-SNOVAC="${1:-build/snovac}"
+SNOVAC="${1:-build/snl}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 pass=0
 fail=0

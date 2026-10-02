@@ -1,5 +1,5 @@
 #!/bin/sh
-# battery.sh — P2.6 gate: run `snovac check` over every tests/compile-pass and
+# battery.sh — P2.6 gate: run `snl check` over every tests/compile-pass and
 # tests/compile-fail fixture and report what actually happens.
 #
 # `check` scans the fixture plus the whole builtin/ tree, so most runs also
@@ -9,10 +9,10 @@
 # (SnDiagFile / SnSymbol.origin) — before it, every diagnostic claimed to come
 # from the entry file.
 #
-# usage: sh tests/battery.sh [path/to/snovac] [path/to/tests]
+# usage: sh tests/battery.sh [path/to/snl] [path/to/tests]
 set -eu
 
-SNOVAC="${1:-build/snovac}"
+SNOVAC="${1:-build/snl}"
 ROOT="${2:-tests}"
 [ -d "$ROOT" ] || ROOT="$PWD/tests"
 case "$SNOVAC" in /*) ;; *) SNOVAC="$PWD/$SNOVAC" ;; esac

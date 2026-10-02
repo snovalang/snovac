@@ -2,7 +2,7 @@
 set -e
 
 # ==============================================================================
-# Snovalang Compiler (snovac) Universal One-Line Installer
+# Snovalang toolchain installer. Installs the `snl` command.
 # Usage: curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
 # ==============================================================================
 
@@ -24,7 +24,7 @@ cat << "BANNER"
  \___ \| '_ \ / _ \ \ / / _` | '_ \ / _ \ '__| 
   ___) | | | | (_) \ V / (_| | | | |  __/ |    
  |____/|_| |_|\___/ \_/ \__,_|_| |_|\___|_|    
-           Snovalang Compiler (snovac)
+           Snovalang toolchain (snl)
 BANNER
 echo "${RESET}"
 
@@ -79,27 +79,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 3. Download release binary
+compile_from_source() {
+    echo "${YELLOW}Release tarball not found yet on latest release. Attempting source compile fallback...${RESET}"
+    if ! command -v git >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then
+        return 1
+    fi
+    git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_DIR/snovac-src"
+    make -C "$TMP_DIR/snovac-src"
+    mkdir -p "$TMP_DIR/extracted"
+    if [ -f "$TMP_DIR/snovac-src/build/snl" ]; then
+        cp "$TMP_DIR/snovac-src/build/snl" "$TMP_DIR/extracted/snl"
+    else
+        cp "$TMP_DIR/snovac-src/build/snovac" "$TMP_DIR/extracted/snl"
+    fi
+}
+
+# 3. Download release binary. curl and wget both fall back to a source build.
 if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$TARBALL" || {
-        echo "${YELLOW}Release tarball not found yet on latest release. Attempting source compile fallback...${RESET}"
-        if command -v git >/dev/null 2>&1 && command -v make >/dev/null 2>&1 && command -v cc >/dev/null 2>&1; then
-            git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_DIR/snovac-src"
-            make -C "$TMP_DIR/snovac-src"
-            mkdir -p "$TMP_DIR/extracted"
-            cp "$TMP_DIR/snovac-src/build/snovac" "$TMP_DIR/extracted/snovac"
-        else
-            echo "${RED}Failed to download binary from $DOWNLOAD_URL${RESET}" >&2
-            exit 1
-        fi
+        rm -f "$TMP_DIR/$TARBALL"
+        compile_from_source
+    } || {
+        echo "${RED}Failed to download binary from $DOWNLOAD_URL${RESET}" >&2
+        exit 1
     }
 elif command -v wget >/dev/null 2>&1; then
     wget -qO "$TMP_DIR/$TARBALL" "$DOWNLOAD_URL" || {
+        rm -f "$TMP_DIR/$TARBALL"
+        compile_from_source
+    } || {
         echo "${RED}Failed to download binary using wget${RESET}" >&2
         exit 1
     }
 else
-    echo "${RED}Error: curl or wget is required to install snovac.${RESET}" >&2
+    echo "${RED}Error: curl or wget is required to install snl.${RESET}" >&2
     exit 1
 fi
 
@@ -108,12 +121,22 @@ if [ -f "$TMP_DIR/$TARBALL" ]; then
     tar -xzf "$TMP_DIR/$TARBALL" -C "$TMP_DIR/extracted"
 fi
 
+# Release archives named the binary `snovac` before the `snl` command rename.
+if [ -f "$TMP_DIR/extracted/snovac" ] && [ ! -f "$TMP_DIR/extracted/snl" ]; then
+    mv "$TMP_DIR/extracted/snovac" "$TMP_DIR/extracted/snl"
+fi
+
+if [ ! -f "$TMP_DIR/extracted/snl" ]; then
+    echo "${RED}Error: installer did not produce an snl binary.${RESET}" >&2
+    exit 1
+fi
+
 # 4. Install binary
 mkdir -p "$INSTALL_DIR"
-cp -f "$TMP_DIR/extracted/snovac" "$INSTALL_DIR/snovac"
-chmod +x "$INSTALL_DIR/snovac"
+cp -f "$TMP_DIR/extracted/snl" "$INSTALL_DIR/snl"
+chmod +x "$INSTALL_DIR/snl"
 
-echo "${GREEN}${BOLD}✓ Installed snovac binary into ${INSTALL_DIR}/snovac${RESET}"
+echo "${GREEN}${BOLD}✓ Installed snl binary into ${INSTALL_DIR}/snl${RESET}"
 
 # 5. Check and configure PATH
 SHELL_CONFIG=""
@@ -138,5 +161,5 @@ if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
 fi
 
 echo ""
-echo "${GREEN}${BOLD}Snovalang Compiler (snovac) was successfully installed!${RESET}"
-echo "Run '${CYAN}snovac --help${RESET}' to get started."
+echo "${GREEN}${BOLD}Snovalang toolchain (snl) was successfully installed!${RESET}"
+echo "Run '${CYAN}snl --help${RESET}' to get started."
