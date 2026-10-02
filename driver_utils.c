@@ -9,10 +9,15 @@
 #include "driver_utils.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -49,13 +54,16 @@ static int resolve_exe_path(char *out, size_t out_sz) {
   }
   return 0;
 #elif defined(__APPLE__)
-  char tmp[SNOVAC_PATH_MAX];
+  char tmp[PATH_MAX];
   uint32_t tmp_size = (uint32_t)sizeof(tmp);
   if (_NSGetExecutablePath(tmp, &tmp_size) != 0) {
     return 0;
   }
-  if (realpath(tmp, out) == NULL) {
+  char resolved[PATH_MAX];
+  if (realpath(tmp, resolved) == NULL) {
     snprintf(out, out_sz, "%s", tmp);
+  } else {
+    snprintf(out, out_sz, "%s", resolved);
   }
   return 1;
 #elif defined(__linux__)
@@ -392,8 +400,8 @@ void normalize_path_into(const char *path, char *out, size_t out_sz) {
     if (out && out_sz > 0) out[0] = '\0';
     return;
   }
-  char resolved[SNOVAC_PATH_MAX];
 #if defined(_WIN32)
+  char resolved[SNOVAC_PATH_MAX];
   const char *src = path;
   char msys_buf[SNOVAC_PATH_MAX];
   /* Handle MSYS/Git-Bash/Cygwin absolute paths like "/c/Users/..." -> "C:/Users/..." */
@@ -412,6 +420,8 @@ void normalize_path_into(const char *path, char *out, size_t out_sz) {
     snprintf(out, out_sz, "%s", src);
   }
 #else
+  /* glibc fortify requires the realpath buffer to be at least PATH_MAX. */
+  char resolved[PATH_MAX];
   if (realpath(path, resolved) != NULL) {
     snprintf(out, out_sz, "%s", resolved);
   } else if (out != path) {
