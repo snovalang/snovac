@@ -33,6 +33,7 @@ static const Keyword KEYWORDS[] = {
     {"this", SN_TOK_THIS},           {"new", SN_TOK_NEW},
     {"as", SN_TOK_AS},               {"is", SN_TOK_IS},
     {"true", SN_TOK_TRUE},           {"false", SN_TOK_FALSE},
+    {"null", SN_TOK_NULL},
 };
 
 #define KEYWORD_COUNT (sizeof(KEYWORDS) / sizeof(KEYWORDS[0]))
@@ -57,7 +58,7 @@ const char *keyword_spelling(SnTokKind k) {
 }
 
 int sn_tok_is_keyword(SnTokKind k) {
-    return k >= SN_TOK_PACKAGE && k <= SN_TOK_FALSE;
+    return k >= SN_TOK_PACKAGE && k <= SN_TOK_NULL;
 }
 
 const char *sn_tok_name(SnTokKind k) {

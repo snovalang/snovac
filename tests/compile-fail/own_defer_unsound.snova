@@ -1,0 +1,12 @@
+package tests.own_defer_unsound
+
+func hold(p: &Array<int>): int {
+    return 0
+}
+
+func main(): int {
+    var xs = [1, 2, 3]
+    defer hold(&xs)
+    let q = &xs
+    return 0
+}

@@ -1,0 +1,11 @@
+package tests.own_pointers
+
+func main(): int {
+    var n = 1
+    var p: &int? = null
+    if p != null {
+        return *p
+    }
+    let q = &n
+    return *q
+}

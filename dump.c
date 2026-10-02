@@ -8,6 +8,14 @@ void sn_dump_type(const SnType *t) {
         printf("?");
         return;
     }
+    if (t->kind == SN_TYPE_REF) {
+        printf("&");
+        sn_dump_type(t->pointee);
+        if (t->is_nullable) {
+            printf("?");
+        }
+        return;
+    }
     if (t->kind == SN_TYPE_FUNC || t->kind == SN_TYPE_TUPLE) {
         printf("(");
         for (size_t i = 0; i < t->params.len; i++) {

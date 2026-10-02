@@ -17,9 +17,12 @@ static Flow exec_block(Interp *in, Env *env, const SnStmt *s) {
 
 static Flow exec_while(Interp *in, Env *env, const SnStmt *s) {
     int guard = 0;
-    while (!in->failed && truthy(in, eval_expr(in, env, s->expr), s->span)) {
+    while (!in->failed && in->flow != FLOW_THROW &&
+           truthy(in, eval_expr(in, env, s->expr), s->span)) {
+        rt_frame_push(in);
         Flow f = exec_stmt(in, env, s->then_br);
-        if (f == FLOW_RETURN) {
+        rt_frame_pop(in, env, in->ret);
+        if (f == FLOW_RETURN || f == FLOW_THROW) {
             return f;
         }
         if (f == FLOW_BREAK) {
@@ -135,8 +138,10 @@ static Flow exec_for(Interp *in, Env *env, const SnStmt *s) {
         for (long long i = 0; i < limit && !in->failed; i++) {
             Env *loop_env = env_new(in, env);
             if (s->name) env_define(in, loop_env, s->name, v_int(i));
+            rt_frame_push(in);
             Flow f = exec_stmt(in, loop_env, s->then_br);
-            if (f == FLOW_RETURN) return f;
+            rt_frame_pop(in, env, in->ret);
+            if (f == FLOW_RETURN || f == FLOW_THROW) return f;
             if (f == FLOW_BREAK) break;
             if (++guard > SN_LOOP_GUARD) {
                 rt_error(in, SNOVA_UNSUPPORTED, s->span, "loop exceeded iteration guard");
@@ -149,8 +154,10 @@ static Flow exec_for(Interp *in, Env *env, const SnStmt *s) {
             Value *item = (Value *)iterable.as.arr->items.items[i];
             Env *loop_env = env_new(in, env);
             if (s->name) env_define(in, loop_env, s->name, *item);
+            rt_frame_push(in);
             Flow f = exec_stmt(in, loop_env, s->then_br);
-            if (f == FLOW_RETURN) return f;
+            rt_frame_pop(in, env, in->ret);
+            if (f == FLOW_RETURN || f == FLOW_THROW) return f;
             if (f == FLOW_BREAK) break;
             if (++guard > SN_LOOP_GUARD) {
                 rt_error(in, SNOVA_UNSUPPORTED, s->span, "loop exceeded iteration guard");
@@ -178,6 +185,9 @@ Flow exec_stmt(Interp *in, Env *env, const SnStmt *s) {
     }
     case SN_STMT_EXPR:
         eval_expr(in, env, s->expr);
+        if (in->flow == FLOW_THROW) {
+            return FLOW_THROW;
+        }
         return in->failed ? FLOW_RETURN : FLOW_NORMAL;
 
     case SN_STMT_RETURN:
@@ -206,7 +216,34 @@ Flow exec_stmt(Interp *in, Env *env, const SnStmt *s) {
         if (s->expr) {
             eval_expr(in, env, s->expr);
         }
-        return in->failed ? FLOW_RETURN : FLOW_NORMAL;
+        return in->flow == FLOW_THROW ? FLOW_THROW
+             : in->failed ? FLOW_RETURN : FLOW_NORMAL;
+
+    case SN_STMT_DEFER:
+        rt_defer_schedule(in, env, s->expr);
+        return in->flow == FLOW_THROW ? FLOW_THROW : FLOW_NORMAL;
+
+    case SN_STMT_THROW:
+        in->flow = FLOW_THROW;
+        return FLOW_THROW;
+
+    case SN_STMT_TRY: {
+        Flow f = s->then_br ? exec_stmt(in, env, s->then_br) : FLOW_NORMAL;
+        if (f == FLOW_THROW) {
+            in->flow = FLOW_NORMAL;
+            f = FLOW_NORMAL;
+            if (s->catches.len > 0) {
+                f = exec_stmt(in, env, (const SnStmt *)s->catches.items[0]);
+            }
+        }
+        if (s->finally_br) {
+            Flow ff = exec_stmt(in, env, s->finally_br);
+            if (ff == FLOW_RETURN || ff == FLOW_THROW) {
+                f = ff;
+            }
+        }
+        return f;
+    }
 
     default:
         rt_error(in, SNOVA_UNSUPPORTED, s->span,

@@ -541,6 +541,9 @@ static int try_variant_method(Interp *in, Env *env, Value recv,
 }
 
 static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
+    if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && rt_probe_name(e->lhs->text)) {
+        return v_int(rt_probe_value(e->lhs->text));
+    }
     Value out;
     if (try_intrinsic(in, env, e, &out)) {
         return out;
@@ -647,7 +650,7 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
 
 
 
-        Value recv = eval_expr(in, env, callee->lhs);
+        Value recv = rt_autoderef(in, eval_expr(in, env, callee->lhs), callee->span);
         if (recv.kind == V_STRING && callee->text &&
             try_string_method(in, env, recv, e, &out)) {
             return out;
@@ -684,6 +687,12 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
 }
 
 static Value eval_unary(Interp *in, Env *env, const SnExpr *e) {
+    if (e->op == SN_TOK_AMP) {
+        return rt_take_ref(in, env, e);
+    }
+    if (e->op == SN_TOK_STAR) {
+        return rt_deref(in, eval_expr(in, env, e->lhs), e->span);
+    }
     if (e->op == SN_TOK_BANG) {
         return v_bool(!truthy(in, eval_expr(in, env, e->lhs), e->span));
     }
@@ -731,12 +740,16 @@ static Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
             }
         }
     } else if (e->lhs->kind == SN_EXPR_INDEX) {
+        if (!rt_index_slot(in, env, e->lhs, &slot)) {
+            return v_unit();
+        }
+    } else if (e->lhs->kind == SN_EXPR_UNARY && e->lhs->op == SN_TOK_STAR) {
         Value recv = eval_expr(in, env, e->lhs->lhs);
-        if (recv.kind == V_ARRAY) {
-            long long idx = as_int(in, eval_expr(in, env, e->lhs->rhs), e->span);
-            if (idx >= 0 && (size_t)idx < recv.as.arr->items.len) {
-                slot = (Value *)recv.as.arr->items.items[idx];
-            }
+        if (recv.kind == V_REF && recv.as.ref && !recv.as.ref->is_null) {
+            slot = recv.as.ref->slot;
+        } else {
+            rt_error(in, SNOVA_TYPE_ERROR, e->span, "null pointer dereference");
+            return v_unit();
         }
     }
     if (!slot) {
@@ -932,34 +945,12 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
         }
         return v_unit();
     }
-    case SN_EXPR_INDEX: {
-        Value base = eval_expr(in, env, e->lhs);
-        if (base.kind != V_ARRAY) {
-            rt_error(in, SNOVA_TYPE_ERROR, e->span, "value is not indexable");
-            return v_unit();
-        }
-        long long idx = as_int(in, eval_expr(in, env, e->rhs), e->span);
-        if (idx < 0 || (size_t)idx >= base.as.arr->items.len) {
-            rt_error(in, SNOVA_TYPE_ERROR, e->span,
-                     "array index %lld out of bounds (len %zu)", idx,
-                     base.as.arr->items.len);
-            return v_unit();
-        }
-        return *(const Value *)base.as.arr->items.items[idx];
-    }
-    case SN_EXPR_ARRAY: {
-        ArrayVal *arr = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
-        for (size_t i = 0; i < e->args.len; i++) {
-            Value v = eval_expr(in, env, (const SnExpr *)e->args.items[i]);
-            Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
-            *slot = v;
-            sn_list_push(in->arena, &arr->items, slot);
-        }
-        Value v;
-        v.kind = V_ARRAY;
-        v.as.arr = arr;
-        return v;
-    }
+    case SN_EXPR_NULL:
+        return rt_null(in);
+    case SN_EXPR_INDEX:
+        return rt_eval_index(in, env, e);
+    case SN_EXPR_ARRAY:
+        return rt_new_array(in, env, e);
     default:
         rt_error(in, SNOVA_UNSUPPORTED, e->span,
                  "this expression form is not executable yet");

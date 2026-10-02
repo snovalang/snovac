@@ -1,0 +1,10 @@
+package tests.run_pass.own_ptr
+
+import builtin.console.Console
+
+func main(): int {
+    var n = 7
+    let p = &n
+    Console.printline(*p)
+    return 0
+}

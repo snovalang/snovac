@@ -208,6 +208,8 @@ SnExpr *parse_expr(P *p);
 
 /* parse_primary.c */
 SnExpr *parse_primary(P *p);
+/* parse_ptr.c — `&expr`, `*expr`, and `null`. */
+SnExpr *parse_ptr_atom(P *p, SnSpan span);
 void parse_match_arms(P *p, SnList *out);
 
 /* parse_stmt.c */

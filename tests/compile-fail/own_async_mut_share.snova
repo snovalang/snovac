@@ -1,0 +1,9 @@
+package tests.own_async_mut_share
+
+func main(): int {
+    var buf = [1, 2, 3]
+    pulsar {
+        let n = buf
+    }
+    return 0
+}

@@ -1,0 +1,13 @@
+package tests.run_pass.own_loop_live
+
+import builtin.console.Console
+
+func main(): int {
+    var i = 0
+    while i < 40 {
+        var box = [i, 1, 2, 3]
+        i = i + 1
+    }
+    Console.printline(heapLive())
+    return 0
+}

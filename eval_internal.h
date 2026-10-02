@@ -30,13 +30,15 @@
 #define SNOVA_UNSUPPORTED        305
 
 typedef enum {
-    V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_OBJECT, V_VARIANT, V_LAMBDA, V_ARRAY
+    V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_OBJECT, V_VARIANT, V_LAMBDA,
+    V_ARRAY, V_REF
 } ValKind;
 
 typedef struct Object Object;
 typedef struct VariantVal VariantVal;
 typedef struct LambdaVal LambdaVal;
 typedef struct ArrayVal ArrayVal;
+typedef struct RefVal RefVal;
 
 struct ArrayVal {
     SnList items; /* Value* */
@@ -53,8 +55,17 @@ typedef struct {
         VariantVal *vt;
         LambdaVal *lam;
         ArrayVal *arr;
+        RefVal *ref;
     } as;
 } Value;
+
+/* Fat when `fat` is set: `len` is the array length carried with the address. */
+struct RefVal {
+    Value *slot;
+    size_t len;
+    int is_null;
+    int fat;
+};
 
 struct Object {
     const SnDecl *cls;
@@ -70,13 +81,25 @@ struct VariantVal {
     SnList payload; /* Value* */
 };
 
-typedef enum { FLOW_NORMAL, FLOW_RETURN, FLOW_BREAK, FLOW_CONTINUE } Flow;
+typedef enum {
+    FLOW_NORMAL, FLOW_RETURN, FLOW_BREAK, FLOW_CONTINUE, FLOW_THROW
+} Flow;
+
+typedef struct MemFrame MemFrame;
 
 typedef struct Env {
     struct Env *parent;
     SnList names; /* const char* */
     SnList slots; /* Value* — boxed so assignment is visible to inner scopes */
 } Env;
+
+typedef struct DeferCall {
+    const SnExpr *call;
+    Env *env;
+    Value *args;
+    size_t nargs;
+    struct DeferCall *next;
+} DeferCall;
 
 /* A first-class `(x) -> ...` value: the lambda expression plus the environment
  * it closed over. */
@@ -93,6 +116,8 @@ typedef struct {
     Value ret;
     Flow flow;
     int failed;
+    MemFrame *mem;
+    DeferCall *defers;
 } Interp;
 
 /* ── value constructors ───────────────────────────────────────────────────── */
@@ -169,5 +194,33 @@ Flow exec_stmt(Interp *in, Env *env, const SnStmt *s);
  * evaluates `${...}` interpolation by parsing the inner expression source.
  * `$$` is a literal `$` and never starts interpolation. */
 const char *decode_string(Interp *in, Env *env, const SnExpr *e);
+
+/* ── ownership runtime (rt_mem.c / rt_ptr.c / rt_defer.c) ─────────────────── */
+
+void rt_mem_reset(Interp *in);
+void rt_frame_push(Interp *in);
+void rt_frame_pop(Interp *in, Env *keep_env, Value extra);
+void *rt_alloc(Interp *in, size_t nbytes, int heap);
+void rt_list_push(Interp *in, SnList *l, void *item, int heap);
+int rt_heap_allocs(void);
+int rt_heap_live(void);
+int rt_stack_allocs(void);
+int rt_bounds_checks(void);
+void rt_bounds_hit(void);
+int rt_probe_name(const char *name);
+long long rt_probe_value(const char *name);
+
+Value rt_eval_arg(Interp *in, Env *env, const SnExpr *e);
+Value rt_take_ref(Interp *in, Env *env, const SnExpr *e);
+Value rt_deref(Interp *in, Value v, SnSpan span);
+Value rt_autoderef(Interp *in, Value v, SnSpan span);
+Value rt_null(Interp *in);
+Value rt_new_array(Interp *in, Env *env, const SnExpr *e);
+Value rt_eval_index(Interp *in, Env *env, const SnExpr *e);
+int rt_index_slot(Interp *in, Env *env, const SnExpr *index, Value **slot_out);
+
+void rt_defer_schedule(Interp *in, Env *env, const SnExpr *call);
+void rt_run_defers(Interp *in);
+Value rt_finish_call(Interp *in, Env *local, Env *caller, const SnStmt *body);
 
 #endif /* SNOVAC_EVAL_INTERNAL_H */

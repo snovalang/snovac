@@ -175,6 +175,25 @@ SnTypeRep *sn_type_array(SnTypeTable *t, SnTypeRep *elem) {
     return intern_shape(t, SN_T_ARRAY, NULL, args, 1u, NULL);
 }
 
+SnTypeRep *sn_type_ref(SnTypeTable *t, SnTypeRep *pointee, int nullable) {
+    if (!nullable) {
+        return intern_shape(t, SN_T_REF, NULL, NULL, 0u, pointee);
+    }
+    /* nargs must be backed by a real args array: intern hashes each slot. */
+    SnTypeRep *flag = sn_type_unit(t);
+    return intern_shape(t, SN_T_REF, NULL, &flag, 1u, pointee);
+}
+
+int sn_type_is_ref(const SnTypeRep *t) { return t && t->tag == SN_T_REF; }
+
+SnTypeRep *sn_type_pointee(const SnTypeRep *t) {
+    return sn_type_is_ref(t) ? t->ret : NULL;
+}
+
+int sn_type_ref_nullable(const SnTypeRep *t) {
+    return sn_type_is_ref(t) && t->nargs == 1u;
+}
+
 int sn_type_equals(const SnTypeRep *a, const SnTypeRep *b) { return a == b; }
 
 SnTypeRep *sn_type_subst_names(SnTypeTable *t, SnTypeRep *ty,
@@ -216,6 +235,14 @@ SnTypeRep *sn_type_subst_names(SnTypeTable *t, SnTypeRep *ty,
             return ty;
         }
         return sn_type_array(t, new_elem);
+    }
+    if (ty->tag == SN_T_REF) {
+        SnTypeRep *inner = sn_type_subst_names(t, ty->ret, param_names,
+                                              arg_types, count);
+        if (inner == ty->ret) {
+            return ty;
+        }
+        return sn_type_ref(t, inner, ty->nargs ? 1 : 0);
     }
     if (ty->tag == SN_T_FUNC) {
         SnTypeRep **new_params = NULL;

@@ -253,6 +253,10 @@ SnExpr *parse_primary(P *p) {
     case SN_TOK_FUNC:
         return parse_anon_fn(p, span);
 
+    case SN_TOK_AMP:
+    case SN_TOK_STAR:
+    case SN_TOK_NULL:
+        return parse_ptr_atom(p, span);
     case SN_TOK_BANG:
     case SN_TOK_MINUS:
     case SN_TOK_PLUS:

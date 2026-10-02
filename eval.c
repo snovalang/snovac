@@ -121,6 +121,8 @@ const char *to_string(Interp *in, Value v, SnSpan span) {
         }
         return str_concat(in, out, "]");
     }
+    case V_REF:
+        return v.as.ref && v.as.ref->is_null ? "null" : "&";
     }
     return "?";
 }
@@ -254,7 +256,7 @@ Value default_for(const SnType *t) {
 
 Object *instantiate(Interp *in, const SnDecl *cls, SnList *args, Env *env,
                     SnSpan span) {
-    Object *o = (Object *)sn_arena_calloc(in->arena, sizeof(Object));
+    Object *o = (Object *)rt_alloc(in, sizeof(Object), 1);
     o->cls = cls;
 
     /* Fields are declared in order; positional constructor arguments fill them
@@ -326,7 +328,7 @@ Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
         const SnParam *p = (const SnParam *)fn->params.items[i];
         Value v;
         if (args && i < args->len) {
-            v = eval_expr(in, caller, (const SnExpr *)args->items[i]);
+            v = rt_eval_arg(in, caller, (const SnExpr *)args->items[i]);
         } else if (p->def) {
             v = eval_expr(in, caller, p->def);
         } else {
@@ -335,13 +337,7 @@ Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
         env_define(in, local, p->name, v);
     }
 
-    Value saved = in->ret;
-    in->ret = v_unit();
-    Flow f = exec_stmt(in, local, fn->body);
-    Value r = (f == FLOW_RETURN) ? in->ret : v_unit();
-    in->ret = saved;
-    in->flow = FLOW_NORMAL;
-    return r;
+    return rt_finish_call(in, local, caller, fn->body);
 }
 
 Value call_method(Interp *in, Object *self, const SnDecl *m, SnList *args,
@@ -357,7 +353,7 @@ Value call_lambda(Interp *in, const LambdaVal *lam, SnList *args, Env *caller,
         const SnParam *p = (const SnParam *)lam->expr->params.items[i];
         Value v;
         if (args && i < args->len) {
-            v = eval_expr(in, caller, (const SnExpr *)args->items[i]);
+            v = rt_eval_arg(in, caller, (const SnExpr *)args->items[i]);
         } else if (p->def) {
             v = eval_expr(in, caller, p->def);
         } else {
@@ -369,13 +365,7 @@ Value call_lambda(Interp *in, const LambdaVal *lam, SnList *args, Env *caller,
         return eval_expr(in, local, lam->expr->value);
     }
     if (lam->expr->body) {
-        Value saved = in->ret;
-        in->ret = v_unit();
-        Flow f = exec_stmt(in, local, lam->expr->body);
-        Value r = (f == FLOW_RETURN) ? in->ret : v_unit();
-        in->ret = saved;
-        in->flow = FLOW_NORMAL;
-        return r;
+        return rt_finish_call(in, local, caller, lam->expr->body);
     }
     return v_unit();
 }
@@ -391,6 +381,10 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     in.ret = v_unit();
     in.flow = FLOW_NORMAL;
     in.failed = 0;
+    in.mem = NULL;
+    in.defers = NULL;
+    rt_mem_reset(&in);
+    rt_frame_push(&in);
 
     const SnDecl *main_fn = find_top(&in, "main", SN_DECL_FUNC);
     if (!main_fn) {
@@ -403,6 +397,7 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     Env *global = env_new(&in, NULL);
     SnList no_args = {0};
     Value r = call_function(&in, main_fn, &no_args, global, NULL, main_fn->span);
+    rt_frame_pop(&in, NULL, r);
 
     if (in.failed) {
         return -1;

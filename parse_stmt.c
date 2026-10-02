@@ -231,7 +231,8 @@ SnStmt *parse_stmt(P *p) {
     case SN_TOK_DEFER: {
         advance_p(p);
         SnStmt *s = new_stmt(p, SN_STMT_DEFER, span);
-        s->then_br = parse_body(p);
+        s->expr = parse_expr(p); /* `defer call(...)` — args run now, call at exit */
+        accept(p, SN_TOK_SEMI);
         return s;
     }
     case SN_TOK_PULSAR: {
