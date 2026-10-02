@@ -6,37 +6,64 @@ The official, reference compiler for **Snovalang** written in pure, zero-depende
 
 ## Quick Install
 
-The installers put the `snl` command on `PATH`. The subcommands (`run`, `build`, `check`, `get`, `tidy`, and the `--emit` / `--check-*` flags) stay the same.
+The installers put the `snl` command on `PATH`. With no extra arguments, `install.sh` and `install.ps1` install `snl` when it is missing and update it when it is already installed. Pass `update` / `--update` (sh) or `-Update` (PowerShell) to update explicitly. That downloads the latest release, or clones this repository and builds it with `make`, so you do not pull and rebuild by hand.
+
+The subcommands (`run`, `build`, `check`, `get`, `tidy`, and the `--emit` / `--check-*` flags) stay the same.
 
 ### Windows (PowerShell)
 
 `install.ps1` installs `snl.exe` into `%USERPROFILE%\.snova\bin`. Set `SNOVA_INSTALL_DIR` to choose another prefix; the executable is still copied into the `bin` directory under that prefix.
 
+Install, or update if `snl` is already installed:
+
 ```powershell
-irm https://raw.githubusercontent.com/supernovalang/snovac/master/install.ps1 | iex
+irm https://raw.githubusercontent.com/snovalang/snovac/master/install.ps1 | iex
+```
+
+Update explicitly:
+
+```powershell
+$env:SNOVA_UPDATE = '1'; irm https://raw.githubusercontent.com/snovalang/snovac/master/install.ps1 | iex
 ```
 
 From a clone of this repository:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1 -Update
 ```
 
-### macOS & Linux (Bash)
+### macOS and Linux
 
-`install.sh` installs `snl` into `$HOME/.snova/bin`. Set `SNOVA_INSTALL_DIR` to choose another directory. On Unix that variable is the directory that receives the `snl` binary, not a prefix above `bin`.
+`install.sh` is a POSIX `sh` script. It installs `snl` into `$HOME/.snova/bin`. Set `SNOVA_INSTALL_DIR` to choose another directory. On Unix that variable is the directory that receives the `snl` binary, not a prefix above `bin`.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
+Install, or update if `snl` is already installed:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | sh
+```
+
+Update explicitly:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | sh -s -- --update
 ```
 
 Or using `wget`:
 
-```bash
-wget -qO- https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
+```sh
+wget -qO- https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | sh
+wget -qO- https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | sh -s -- --update
 ```
 
-Both commands run `install.sh`. If the latest GitHub release has no prebuilt archive, the script clones this repository and builds it with `make`.
+From a clone of this repository:
+
+```sh
+sh install.sh
+sh install.sh --update
+```
+
+If the latest GitHub release has no prebuilt archive, the script clones this repository and builds it with `make`.
 
 ## Features
 
@@ -54,7 +81,7 @@ Both commands run `install.sh`. If the latest GitHub release has no prebuilt arc
 
 ### Build Command
 ```bash
-git clone https://github.com/supernovalang/snovac.git
+git clone https://github.com/snovalang/snovac.git
 cd snovac
 make
 ```

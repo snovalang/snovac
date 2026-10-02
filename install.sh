@@ -1,13 +1,52 @@
-#!/usr/bin/env bash
+#!/bin/sh
+# POSIX sh. Linux and macOS.
 set -e
 
 # ==============================================================================
-# Snovalang toolchain installer. Installs the `snl` command.
-# Usage: curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
+# Snovalang toolchain installer. Installs or updates the `snl` command.
+#
+# With no arguments, installs snl when it is absent and updates it when the
+# command is already installed. Both paths download the latest release, or
+# clone this repository and build it, so an update does not need a manual
+# git pull and rebuild.
+#
+#   curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | sh -s -- --update
+#   sh install.sh
+#   sh install.sh --update
+#   sh install.sh update
 # ==============================================================================
 
-REPO="supernovalang/snovac"
+REPO="snovalang/snovac"
 INSTALL_DIR="${SNOVA_INSTALL_DIR:-$HOME/.snova/bin}"
+EXPLICIT=0
+
+usage() {
+    cat <<'EOF'
+Usage: install.sh [update|--update]
+
+With no arguments, installs snl when it is not already installed and updates
+it when it is. Pass update or --update to fetch the latest snl and replace
+the installed command.
+EOF
+}
+
+for arg in "$@"; do
+    case "$arg" in
+        update|--update)
+            EXPLICIT=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
 
 # Text formatting
 BOLD="$(tput bold 2>/dev/null || echo '')"
@@ -28,6 +67,17 @@ cat << "BANNER"
 BANNER
 echo "${RESET}"
 
+ALREADY=0
+if [ -x "${INSTALL_DIR}/snl" ] || command -v snl >/dev/null 2>&1; then
+    ALREADY=1
+fi
+
+if [ "$ALREADY" -eq 1 ]; then
+    echo "${BOLD}==>${RESET} ${GREEN}snl${RESET} is already installed; updating it."
+else
+    echo "${BOLD}==>${RESET} Installing ${GREEN}snl${RESET}."
+fi
+
 # 1. Detect Operating System
 OS="$(uname -s)"
 case "$OS" in
@@ -37,15 +87,23 @@ case "$OS" in
         PLATFORM="windows"
         if command -v powershell.exe >/dev/null 2>&1; then
             echo "${CYAN}==> Windows environment detected. Invoking native Windows installer...${RESET}"
-            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
-            if [ -f "$SCRIPT_DIR/scripts/install_windows.ps1" ]; then
+            SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || SCRIPT_DIR="."
+            if [ -f "$SCRIPT_DIR/install.ps1" ]; then
+                if [ "$EXPLICIT" -eq 1 ]; then
+                    powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1" -Update
+                else
+                    powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1"
+                fi
+                exit 0
+            elif [ -f "$SCRIPT_DIR/scripts/install_windows.ps1" ]; then
                 powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/scripts/install_windows.ps1"
                 exit 0
-            elif [ -f "$SCRIPT_DIR/install.ps1" ]; then
-                powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1"
-                exit 0
             else
-                powershell.exe -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex"
+                if [ "$EXPLICIT" -eq 1 ]; then
+                    powershell.exe -ExecutionPolicy Bypass -Command "\$env:SNOVA_UPDATE='1'; irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex"
+                else
+                    powershell.exe -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex"
+                fi
                 exit 0
             fi
         fi
@@ -136,7 +194,11 @@ mkdir -p "$INSTALL_DIR"
 cp -f "$TMP_DIR/extracted/snl" "$INSTALL_DIR/snl"
 chmod +x "$INSTALL_DIR/snl"
 
-echo "${GREEN}${BOLD}✓ Installed snl binary into ${INSTALL_DIR}/snl${RESET}"
+if [ "$ALREADY" -eq 1 ]; then
+    echo "${GREEN}${BOLD}Updated snl binary at ${INSTALL_DIR}/snl${RESET}"
+else
+    echo "${GREEN}${BOLD}Installed snl binary into ${INSTALL_DIR}/snl${RESET}"
+fi
 
 # 5. Check and configure PATH
 SHELL_CONFIG=""
@@ -149,17 +211,25 @@ esac
 
 PATH_STR="export PATH=\"\$PATH:${INSTALL_DIR}\""
 
-if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
-    if [ -f "$SHELL_CONFIG" ]; then
-        if ! grep -q "${INSTALL_DIR}" "$SHELL_CONFIG"; then
-            echo "" >> "$SHELL_CONFIG"
-            echo "# Snovalang Compiler" >> "$SHELL_CONFIG"
-            echo "$PATH_STR" >> "$SHELL_CONFIG"
-            echo "${YELLOW}Added ${INSTALL_DIR} to PATH in ${SHELL_CONFIG}${RESET}"
+case ":${PATH}:" in
+    *":${INSTALL_DIR}:"*)
+        ;;
+    *)
+        if [ -f "$SHELL_CONFIG" ]; then
+            if ! grep -q "${INSTALL_DIR}" "$SHELL_CONFIG"; then
+                echo "" >> "$SHELL_CONFIG"
+                echo "# Snovalang Compiler" >> "$SHELL_CONFIG"
+                echo "$PATH_STR" >> "$SHELL_CONFIG"
+                echo "${YELLOW}Added ${INSTALL_DIR} to PATH in ${SHELL_CONFIG}${RESET}"
+            fi
         fi
-    fi
-fi
+        ;;
+esac
 
 echo ""
-echo "${GREEN}${BOLD}Snovalang toolchain (snl) was successfully installed!${RESET}"
+if [ "$ALREADY" -eq 1 ]; then
+    echo "${GREEN}${BOLD}Snovalang toolchain (snl) was successfully updated!${RESET}"
+else
+    echo "${GREEN}${BOLD}Snovalang toolchain (snl) was successfully installed!${RESET}"
+fi
 echo "Run '${CYAN}snl --help${RESET}' to get started."
