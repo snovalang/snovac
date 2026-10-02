@@ -1,11 +1,11 @@
-/* test_symbol.c — nested-scope lookup assertions for intern.c / symbol.c.
+/* test_symbol.c — arena, intern-table, and nested-scope assertions.
  *
  * specs/20260719/snovac-p2-resolver-typechecker/plan.md §8 step 3 asks for
  * "unit tests de escopo aninhado". intern.c and symbol.c have no CLI surface
  * of their own yet (that arrives with resolve.c, several steps later), so —
  * unlike tests/run.sh, which drives the lexer/parser through the snovac
- * binary — this is a standalone C program that links the two modules
- * directly and asserts on their behavior.
+ * binary — this is a standalone C program that links arena.c, intern.c, and
+ * symbol.c directly and asserts on their behavior.
  */
 #include <stdio.h>
 #include <string.h>
@@ -45,18 +45,214 @@ static void test_intern(SnInternTable *it) {
     CHECK("intern: prefix of an interned string is a distinct entry",
           he != a1 && hell != a1 && he != hell);
 
-    /* force several rehashes and confirm early entries are still found */
+    const char *empty_n = sn_intern(it, "unused", 0);
+    const char *empty_z = sn_intern_cstr(it, "");
+    CHECK("intern: empty strings share one pointer",
+          empty_n == empty_z && empty_n[0] == '\0');
+
+    /* The length is the key. A NUL inside the slice must not end it. */
+    char raw[3];
+    raw[0] = 'a';
+    raw[1] = '\0';
+    raw[2] = 'b';
+    const char *bin = sn_intern(it, raw, 3);
+    CHECK("intern: embedded NUL is part of the key",
+          bin != sn_intern_cstr(it, "a") && memcmp(bin, raw, 3) == 0 &&
+              bin[3] == '\0');
+
+    /* force several rehashes and confirm every entry is still found */
     char buf[32];
-    const char *first = NULL;
+    const char *many[500];
     for (int i = 0; i < 500; i++) {
         snprintf(buf, sizeof(buf), "sym_%d", i);
-        const char *p = sn_intern_cstr(it, buf);
-        if (i == 0) {
-            first = p;
+        many[i] = sn_intern_cstr(it, buf);
+    }
+    int all = 1;
+    for (int i = 0; i < 500; i++) {
+        snprintf(buf, sizeof(buf), "sym_%d", i);
+        if (sn_intern_cstr(it, buf) != many[i]) {
+            all = 0;
         }
     }
-    const char *refound = sn_intern_cstr(it, "sym_0");
-    CHECK("intern: survives rehash", refound == first);
+    CHECK("intern: every entry survives rehash", all);
+}
+
+/* Identity checks still pass if the allocator opens a new block too early
+ * or drops the byte reserved for a NUL. These assertions watch capacity. */
+static void test_arena(void) {
+    SnArena small;
+    sn_arena_init(&small, 64);
+    unsigned char *p = sn_arena_alloc(&small, 16);
+    unsigned char *q = sn_arena_alloc(&small, 16);
+    memset(p, 0x11, 16);
+    memset(q, 0x22, 16);
+    CHECK("arena: a small request keeps the configured block",
+          small.total_bytes == 64 && q == p + 16 && p[0] == 0x11);
+
+    SnArena fit;
+    sn_arena_init(&fit, 32);
+    unsigned char *f1 = sn_arena_alloc(&fit, 16);
+    unsigned char *f2 = sn_arena_alloc(&fit, 16);
+    CHECK("arena: an exact fit stays in the block",
+          fit.total_bytes == 32 && f2 == f1 + 16);
+
+    SnArena grown;
+    sn_arena_init(&grown, 32);
+    unsigned char *big = sn_arena_alloc(&grown, 40);
+    memset(big, 0x33, 40);
+    CHECK("arena: a request past the block size rounds the block up",
+          grown.total_bytes == 48 && big[39] == 0x33);
+
+    SnArena z;
+    sn_arena_init(&z, 64);
+    void *z1 = sn_arena_alloc(&z, 0);
+    void *z2 = sn_arena_alloc(&z, 0);
+    CHECK("arena: zero-size allocs are distinct", z1 != NULL && z2 != NULL && z1 != z2);
+
+    char raw[16];
+    memset(raw, 'A', sizeof(raw));
+    SnArena texts;
+    sn_arena_init(&texts, 256);
+    char *dup = sn_arena_strndup(&texts, raw, 16);
+    char *after = sn_arena_alloc(&texts, 16);
+    memset(after, 'B', 16);
+    char *empty = sn_arena_strndup(&texts, raw, 0);
+    CHECK("arena: strndup keeps n bytes and a terminator",
+          memcmp(dup, raw, 16) == 0 && dup[16] == '\0' && strlen(dup) == 16);
+    CHECK("arena: strndup of zero bytes is an empty string", empty[0] == '\0');
+
+    sn_arena_free(&texts);
+    CHECK("arena: free drops the blocks and keeps the block size",
+          texts.head == NULL && texts.total_bytes == 0 && texts.block_size == 256);
+    sn_arena_alloc(&texts, 8);
+    CHECK("arena: the block size still applies after free", texts.total_bytes == 256);
+
+    SnArena def;
+    sn_arena_init(&def, 0);
+    sn_arena_alloc(&def, 1);
+    CHECK("arena: a zero block size selects 64KiB",
+          def.block_size == (size_t)64 * 1024 && def.total_bytes == (size_t)64 * 1024);
+
+    sn_arena_free(&small);
+    sn_arena_free(&fit);
+    sn_arena_free(&grown);
+    sn_arena_free(&z);
+    sn_arena_free(&texts);
+    sn_arena_free(&def);
+}
+
+static void test_intern_capacity(void) {
+    SnArena arena;
+    sn_arena_init(&arena, 4096);
+    SnInternTable it;
+    sn_intern_init(&it, &arena);
+
+    /* 8 bytes puts the terminator on the far side of the 16-byte alignment
+     * padding. The following allocation is then filled with non-zero bytes:
+     * if the entry was sized one short, that fill overwrites the NUL. */
+    const char *bounded = sn_intern(&it, "01234567", 8);
+    unsigned char *tail = sn_arena_alloc(&arena, 16);
+    memset(tail, 0x5A, 16);
+    CHECK("intern: stored text keeps its terminator",
+          memcmp(bounded, "01234567", 8) == 0 && bounded[8] == '\0');
+
+    /* Fresh table: 64 buckets, rehash when the 49th distinct string is
+     * inserted (load above 3/4). 48 must not have doubled yet. */
+    SnArena fresh_arena;
+    sn_arena_init(&fresh_arena, 0);
+    SnInternTable fresh;
+    sn_intern_init(&fresh, &fresh_arena);
+    CHECK("intern: table starts at 64 buckets", fresh.nbuckets == 64 && fresh.count == 0);
+
+    const char *seen[64];
+    char buf[32];
+    for (int i = 0; i < 48; i++) {
+        snprintf(buf, sizeof(buf), "cap_%d", i);
+        seen[i] = sn_intern_cstr(&fresh, buf);
+    }
+    CHECK("intern: 48 strings stay in the initial buckets",
+          fresh.nbuckets == 64 && fresh.count == 48);
+
+    size_t count_at_48 = fresh.count;
+    const char *again = sn_intern_cstr(&fresh, "cap_0");
+    CHECK("intern: a duplicate does not grow the table",
+          again == seen[0] && fresh.count == count_at_48 && fresh.nbuckets == 64);
+
+    snprintf(buf, sizeof(buf), "cap_%d", 48);
+    seen[48] = sn_intern_cstr(&fresh, buf);
+    CHECK("intern: the 49th string doubles the buckets",
+          fresh.nbuckets == 128 && fresh.count == 49 && seen[48] != NULL);
+
+    int all = 1;
+    for (int i = 0; i < 49; i++) {
+        snprintf(buf, sizeof(buf), "cap_%d", i);
+        if (sn_intern_cstr(&fresh, buf) != seen[i]) {
+            all = 0;
+        }
+    }
+    CHECK("intern: keys inserted across the rehash still match", all);
+
+    sn_arena_free(&arena);
+    sn_arena_free(&fresh_arena);
+}
+
+static void test_scope_load(void) {
+    SnArena arena;
+    sn_arena_init(&arena, 0);
+    SnInternTable it;
+    sn_intern_init(&it, &arena);
+
+    SnSpan span;
+    memset(&span, 0, sizeof(span));
+    span.offset = 11;
+    span.len = 3;
+    span.line = 4;
+    span.col = 7;
+
+    SnScope scope;
+    sn_scope_init(&scope, &arena, NULL);
+    CHECK("scope: a new scope starts at 8 buckets", scope.nbuckets == 8 && scope.count == 0);
+
+    SnSymbol *syms[8];
+    char buf[32];
+    for (int i = 0; i < 6; i++) {
+        snprintf(buf, sizeof(buf), "slot_%d", i);
+        const char *name = sn_intern_cstr(&it, buf);
+        syms[i] = sn_scope_define(&scope, name, SN_SYM_LOCAL, NULL, span);
+    }
+    CHECK("scope: six definitions stay under the 3/4 ceiling",
+          scope.nbuckets == 8 && scope.count == 6 && syms[0] != NULL);
+    CHECK("scope: define records the span and leaves checker fields clear",
+          syms[0]->span.offset == 11 && syms[0]->span.len == 3 &&
+              syms[0]->span.line == 4 && syms[0]->span.col == 7 &&
+              syms[0]->decl == NULL && syms[0]->value_type == NULL &&
+              syms[0]->is_mutable == 0 && syms[0]->origin == NULL);
+
+    snprintf(buf, sizeof(buf), "slot_%d", 6);
+    const char *last_name = sn_intern_cstr(&it, buf);
+    SnSymbol *extra = sn_scope_define(&scope, last_name, SN_SYM_FUNC, NULL, span);
+    CHECK("scope: the seventh definition doubles the buckets",
+          extra != NULL && extra->kind == SN_SYM_FUNC && scope.nbuckets == 16 &&
+              scope.count == 7);
+
+    int all = 1;
+    for (int i = 0; i < 6; i++) {
+        snprintf(buf, sizeof(buf), "slot_%d", i);
+        const char *name = sn_intern_cstr(&it, buf);
+        if (sn_scope_lookup_local(&scope, name) != syms[i]) {
+            all = 0;
+        }
+    }
+    CHECK("scope: earlier definitions survive the rehash", all);
+    CHECK("scope: lookup walks to the definition that triggered rehash",
+          sn_scope_lookup(&scope, last_name) == extra);
+
+    SnSymbol *dup = sn_scope_define(&scope, last_name, SN_SYM_FIELD, NULL, span);
+    CHECK("scope: a second kind for the same name is still a duplicate",
+          dup == NULL && scope.count == 7 &&
+              sn_scope_lookup_local(&scope, last_name) == extra);
+
+    sn_arena_free(&arena);
 }
 
 static void test_scope_single(SnInternTable *it, SnArena *a) {
@@ -148,6 +344,10 @@ static void test_scope_rehash(SnInternTable *it, SnArena *a) {
 }
 
 int main(void) {
+    test_arena();
+    test_intern_capacity();
+    test_scope_load();
+
     SnArena arena;
     sn_arena_init(&arena, 0);
 
