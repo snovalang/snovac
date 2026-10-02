@@ -579,8 +579,8 @@ size_t sn_pkggraph_scan_root_fallback(SnPackageGraph *g, const char *root) {
 
 /* ── linking + cycle detection ────────────────────────────────────────────
  *
- * A cycle among files of the SAME package is legal (plan.md §4.1: "é um
- * pacote só"), so same-package imports never become edges at all — the loop
+ * A cycle among files of the SAME package is legal (plan.md §4.1: "it is a
+ * single package"), so same-package imports never become edges at all — the loop
  * below skips them before they reach the graph. */
 
 /* Resolves one import target to the package that provides it.

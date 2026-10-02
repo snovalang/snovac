@@ -251,7 +251,7 @@ assert "project: registered native package is not judged" 0 \
 # `builtin.http.Http` is NOT in native-packages.list (no such package is
 # registered anywhere yet) and has no `.snova` file either — this used to be
 # silently accepted by a blanket `builtin.*`/`stdlib.*` prefix rule (the exact
-# gap `tests/conformance/` flagged as "missing_import não é rejeitado por
+# gap `tests/conformance/` flagged as "missing_import is not rejected by
 # snovac check"). Fixed by sn_pkggraph_load_native_manifest(): only names
 # actually present in the manifest are treated as toolchain-provided now.
 cat > "$PROJ/src/app/Models.snova" <<'EOF'
