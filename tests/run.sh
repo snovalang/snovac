@@ -98,6 +98,20 @@ java_out="$("$SNOVAC" run "$EXTDIR/main.java" 2>&1 || true)"
 java_rc="$(rc_of "$SNOVAC" run "$EXTDIR/main.java")"
 assert "ext: main.java is rejected" 1 "$(printf '%s' "$java_rc" | grep -c '[^0]')"
 assert "ext: main.java does not print Oi!" 0 "$(printf '%s' "$java_out" | grep -c '^Oi!$')"
+cp "$EXTDIR/main.java" "$EXTDIR/main.sno"
+sno_out="$("$SNOVAC" run "$EXTDIR/main.sno" 2>&1 || true)"
+sno_rc="$(rc_of "$SNOVAC" run "$EXTDIR/main.sno")"
+assert "ext: main.sno is rejected" 1 "$(printf '%s' "$sno_rc" | grep -c '[^0]')"
+assert "ext: main.sno does not print Oi!" 0 "$(printf '%s' "$sno_out" | grep -c '^Oi!$')"
+cat > "$EXTDIR/mod.sns" <<'EOF'
+func main(): unit {
+    Console.println("Oi!")
+}
+EOF
+mod_out="$("$SNOVAC" run "$EXTDIR/mod.sns" 2>&1 || true)"
+mod_rc="$(rc_of "$SNOVAC" run "$EXTDIR/mod.sns")"
+assert "ext: mod.sns manifest is not a script" 1 "$(printf '%s' "$mod_rc" | grep -c '[^0]')"
+assert "ext: mod.sns does not print Oi!" 0 "$(printf '%s' "$mod_out" | grep -c '^Oi!$')"
 cat > "$EXTDIR/main.snl" <<'EOF'
 package tests.ext.ok
 
@@ -343,7 +357,7 @@ mkdir -p "$GET_TEST_DIR"
 
 # Fixture: depC
 mkdir -p "$GET_TEST_DIR/depC/src"
-cat > "$GET_TEST_DIR/depC/mod.sno" <<'EOF'
+cat > "$GET_TEST_DIR/depC/mod.sns" <<'EOF'
 module depC
 snova "1.0.0"
 EOF
@@ -356,7 +370,7 @@ EOF
 
 # Fixture: depB (depends on depC)
 mkdir -p "$GET_TEST_DIR/depB/src"
-cat > "$GET_TEST_DIR/depB/mod.sno" <<EOF
+cat > "$GET_TEST_DIR/depB/mod.sns" <<EOF
 module depB
 snova "1.0.0"
 dependencies(
@@ -375,7 +389,7 @@ EOF
 
 # Fixture: depA (depends on depB and depC)
 mkdir -p "$GET_TEST_DIR/depA/src"
-cat > "$GET_TEST_DIR/depA/mod.sno" <<EOF
+cat > "$GET_TEST_DIR/depA/mod.sns" <<EOF
 module depA
 snova "1.0.0"
 dependencies(
@@ -396,7 +410,7 @@ EOF
 # Project under test
 GET_PROJ="$GET_TEST_DIR/my_app"
 mkdir -p "$GET_PROJ/src/app"
-cat > "$GET_PROJ/mod.sno" <<'EOF'
+cat > "$GET_PROJ/mod.sns" <<'EOF'
 module my_app
 snova "1.0.0"
 EOF
@@ -413,14 +427,14 @@ EOF
 assert "get: fetch direct and transitive deps" 0 \
   "$(rc_of "$SNOVAC" get --project "$GET_PROJ" "$GET_TEST_DIR/depA")"
 
-assert "get: direct dependency listed in mod.sno" 1 \
-  "$(grep -c "depA@1.0.0" "$GET_PROJ/mod.sno" || true)"
+assert "get: direct dependency listed in mod.sns" 1 \
+  "$(grep -c "depA@1.0.0" "$GET_PROJ/mod.sns" || true)"
 
 assert "get: indirect edge depA -> depB listed" 1 \
-  "$(grep -c "depA -> depB" "$GET_PROJ/mod.sno" || true)"
+  "$(grep -c "depA -> depB" "$GET_PROJ/mod.sns" || true)"
 
 assert "get: indirect edge depB -> depC listed" 1 \
-  "$(grep -c "depB -> depC" "$GET_PROJ/mod.sno" || true)"
+  "$(grep -c "depB -> depC" "$GET_PROJ/mod.sns" || true)"
 
 assert "get: project check passes with fetched deps" 0 \
   "$(rc_of "$SNOVAC" check --project "$GET_PROJ/src/app/Main.snl")"
@@ -430,7 +444,7 @@ assert "get: re-running get is idempotent" 0 \
   "$(rc_of "$SNOVAC" get --project "$GET_PROJ" "$GET_TEST_DIR/depA")"
 
 assert "get: direct count remains 1 after rerun" 1 \
-  "$(grep -c "depA@1.0.0" "$GET_PROJ/mod.sno" || true)"
+  "$(grep -c "depA@1.0.0" "$GET_PROJ/mod.sns" || true)"
 
 # Test: project run and build with fetched dependencies
 assert "get: project run with fetched deps" 0 \
@@ -443,7 +457,7 @@ rm -f "$BUILD_PROJ_OUT"
 
 # Test: diamond sharing (depD -> depF, depE -> depF)
 mkdir -p "$GET_TEST_DIR/depF/src" "$GET_TEST_DIR/depD/src" "$GET_TEST_DIR/depE/src" "$GET_TEST_DIR/diamond_app/src/app"
-cat > "$GET_TEST_DIR/depF/mod.sno" <<'EOF'
+cat > "$GET_TEST_DIR/depF/mod.sns" <<'EOF'
 module depF
 snova "1.0.0"
 EOF
@@ -452,7 +466,7 @@ package depF
 public struct ItemF { public let x: int }
 EOF
 
-cat > "$GET_TEST_DIR/depD/mod.sno" <<EOF
+cat > "$GET_TEST_DIR/depD/mod.sns" <<EOF
 module depD
 snova "1.0.0"
 dependencies(
@@ -465,7 +479,7 @@ import depF.ItemF
 public struct ItemD { public let f: ItemF }
 EOF
 
-cat > "$GET_TEST_DIR/depE/mod.sno" <<EOF
+cat > "$GET_TEST_DIR/depE/mod.sns" <<EOF
 module depE
 snova "1.0.0"
 dependencies(
@@ -478,7 +492,7 @@ import depF.ItemF
 public struct ItemE { public let f: ItemF }
 EOF
 
-cat > "$GET_TEST_DIR/diamond_app/mod.sno" <<'EOF'
+cat > "$GET_TEST_DIR/diamond_app/mod.sns" <<'EOF'
 module diamond_app
 snova "1.0.0"
 EOF
@@ -495,13 +509,13 @@ assert "get: diamond direct depE" 0 \
   "$(rc_of "$SNOVAC" get --project "$GET_TEST_DIR/diamond_app" "$GET_TEST_DIR/depE")"
 
 assert "get: diamond has depD direct" 1 \
-  "$(grep -c "depD@1.0.0" "$GET_TEST_DIR/diamond_app/mod.sno" || true)"
+  "$(grep -c "depD@1.0.0" "$GET_TEST_DIR/diamond_app/mod.sns" || true)"
 assert "get: diamond has depE direct" 1 \
-  "$(grep -c "depE@1.0.0" "$GET_TEST_DIR/diamond_app/mod.sno" || true)"
+  "$(grep -c "depE@1.0.0" "$GET_TEST_DIR/diamond_app/mod.sns" || true)"
 assert "get: diamond indirect depD -> depF" 1 \
-  "$(grep -c "depD -> depF" "$GET_TEST_DIR/diamond_app/mod.sno" || true)"
+  "$(grep -c "depD -> depF" "$GET_TEST_DIR/diamond_app/mod.sns" || true)"
 assert "get: diamond indirect depE -> depF" 1 \
-  "$(grep -c "depE -> depF" "$GET_TEST_DIR/diamond_app/mod.sno" || true)"
+  "$(grep -c "depE -> depF" "$GET_TEST_DIR/diamond_app/mod.sns" || true)"
 assert "get: diamond project check passes" 0 \
   "$(rc_of "$SNOVAC" check --project "$GET_TEST_DIR/diamond_app/src/app/Main.snl")"
 
@@ -514,7 +528,7 @@ rm -rf "$EMPTY_DIR"
 
 # Test: cycle detection (cycleA -> cycleB -> cycleA)
 mkdir -p "$GET_TEST_DIR/cycleA" "$GET_TEST_DIR/cycleB" "$GET_TEST_DIR/cycle_proj"
-cat > "$GET_TEST_DIR/cycleA/mod.sno" <<EOF
+cat > "$GET_TEST_DIR/cycleA/mod.sns" <<EOF
 module cycleA
 snova "1.0.0"
 dependencies(
@@ -523,7 +537,7 @@ dependencies(
     ]
 )
 EOF
-cat > "$GET_TEST_DIR/cycleB/mod.sno" <<EOF
+cat > "$GET_TEST_DIR/cycleB/mod.sns" <<EOF
 module cycleB
 snova "1.0.0"
 dependencies(
@@ -532,7 +546,7 @@ dependencies(
     ]
 )
 EOF
-cat > "$GET_TEST_DIR/cycle_proj/mod.sno" <<'EOF'
+cat > "$GET_TEST_DIR/cycle_proj/mod.sns" <<'EOF'
 module cycle_proj
 snova "1.0.0"
 EOF

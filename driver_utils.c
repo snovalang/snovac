@@ -200,9 +200,9 @@ void usage(FILE *out) {
       "dependencies and package management:\n"
       "  snl get           [<repo-url>] [--version=<ver>] [--project=<path>]\n"
       "                                       fetch and resolve transitive dependencies\n"
-      "                                       into .snovalang/deps, update mod.sno\n"
+      "                                       into .snovalang/deps, update mod.sns\n"
       "  snl tidy          [--project] [<path>]\n"
-      "                                       prune unused dependencies and sync mod.sno\n"
+      "                                       prune unused dependencies and sync mod.sns\n"
       "\n"
       "project-wide (every file the program is built from, not just the\n"
       "entry file - the source root is the nearest manifest's src/, its\n"
@@ -370,15 +370,19 @@ int sn_path_is_source(const char *path) {
   return path && ends_with_exact(path_basename(path), ".snl");
 }
 
-int sn_path_is_script(const char *path) {
+int sn_path_is_manifest(const char *path) {
   if (!path) {
     return 0;
   }
   const char *base = path_basename(path);
-  if (strcmp(base, "mod.sno") == 0 || strcmp(base, "snova.sno") == 0) {
+  return strcmp(base, "mod.sns") == 0 || strcmp(base, "snova.sns") == 0;
+}
+
+int sn_path_is_script(const char *path) {
+  if (!path || sn_path_is_manifest(path)) {
     return 0;
   }
-  return ends_with_exact(base, ".sns");
+  return ends_with_exact(path_basename(path), ".sns");
 }
 
 /* Recursively creates `dir` and any missing parent directories (mkdir -p). */

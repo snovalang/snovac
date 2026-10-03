@@ -334,7 +334,7 @@ static void parse_dep_string(const char *str, SnManifestDep *dep) {
 }
 
 static int find_dir_manifest(const char *dir, char *out_path, size_t out_sz) {
-    const char *names[] = {"mod.sno", "snova.mod", "snova.sno", "snova.toml"};
+    const char *names[] = {"mod.sns", "snova.sns", "snova.mod", "snova.toml"};
     for (size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
         char cand[SNOVAC_PATH_MAX + 32];
         snprintf(cand, sizeof(cand), "%s/%s", dir, names[i]);
@@ -646,9 +646,11 @@ static void normalize_module_info(const char *input, const char *version_overrid
         const char *local_path = (strncmp(raw, "file://", 7) == 0) ? raw + 7 : raw;
         snprintf(out_url, out_url_sz, "%s", local_path);
 
-        /* Inspect mod.sno inside local dir for canonical module name/url if available */
+        /* Inspect mod.sns inside local dir for canonical module name/url if available */
         char mod_path[SNOVAC_PATH_MAX + 32];
-        snprintf(mod_path, sizeof(mod_path), "%s/mod.sno", local_path);
+        if (!find_dir_manifest(local_path, mod_path, sizeof(mod_path))) {
+            snprintf(mod_path, sizeof(mod_path), "%s/mod.sns", local_path);
+        }
         SnManifest local_m;
         if (path_is_file(mod_path) && manifest_read(mod_path, &local_m)) {
             if (local_m.module_url[0]) {
@@ -1007,7 +1009,7 @@ int cmd_get_project(const char *proj_path, const char *url, const char *version)
     }
 
     if (!find_dir_manifest(proj_root, manifest_path, sizeof(manifest_path))) {
-        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj_root);
+        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sns", proj_root);
     }
 
     snprintf(deps_root, sizeof(deps_root), "%s/.snovalang/deps", proj_root);
@@ -1035,7 +1037,7 @@ int cmd_get_project(const char *proj_path, const char *url, const char *version)
     }
 
     if (!url && root_manifest.direct_count == 0) {
-        fprintf(stderr, "error: get requires a repository url or declared dependencies in mod.sno\n");
+        fprintf(stderr, "error: get requires a repository url or declared dependencies in mod.sns\n");
         manifest_free(&root_manifest);
         return 2;
     }
