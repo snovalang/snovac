@@ -36,15 +36,17 @@ void check_all_bodies(SnChecker *c, SnResolver *resolver, SnPackageGraph *graph,
         SnList imports = node ? aggregate_imports(arena, node) : (SnList){0};
         for (size_t i = 0; i < pe->scope->nbuckets; i++) {
             for (SnSymbol *sym = pe->scope->buckets[i]; sym; sym = sym->next) {
-                if ((sym->kind == SN_SYM_FUNC || sym->kind == SN_SYM_METHOD) &&
-                    sym->decl->body &&
-                    path_is_own(scope, sym->origin ? sym->origin->path : NULL)) {
-                    c->current_package = pe->package_name;
-                    c->current_imports = &imports;
-                    c->enclosing_type = NULL;
-                    SnDiagFile outer = begin_symbol_file(c->diag, sym);
-                    sn_check_decl_body(c, sym->decl);
-                    sn_diag_set_file(c->diag, outer);
+                for (SnSymbol *ov = sym; ov; ov = ov->overloads) {
+                    if ((ov->kind == SN_SYM_FUNC || ov->kind == SN_SYM_METHOD) &&
+                        ov->decl && ov->decl->body &&
+                        path_is_own(scope, ov->origin ? ov->origin->path : NULL)) {
+                        c->current_package = pe->package_name;
+                        c->current_imports = &imports;
+                        c->enclosing_type = NULL;
+                        SnDiagFile outer = begin_symbol_file(c->diag, ov);
+                        sn_check_decl_body(c, ov->decl);
+                        sn_diag_set_file(c->diag, outer);
+                    }
                 }
             }
         }
@@ -65,14 +67,27 @@ void check_all_bodies(SnChecker *c, SnResolver *resolver, SnPackageGraph *graph,
         SnList imports = node ? aggregate_imports(arena, node) : (SnList){0};
         for (size_t bi = 0; bi < te->member_scope->nbuckets; bi++) {
             for (SnSymbol *sym = te->member_scope->buckets[bi]; sym; sym = sym->next) {
-                if (sym->kind == SN_SYM_METHOD && sym->decl->body &&
-                    path_is_own(scope, sym->origin ? sym->origin->path : NULL)) {
-                    c->current_package = owner_pkg;
-                    c->current_imports = &imports;
-                    c->enclosing_type = te->type_decl;
-                    SnDiagFile outer = begin_symbol_file(c->diag, sym);
-                    sn_check_decl_body(c, sym->decl);
-                    sn_diag_set_file(c->diag, outer);
+                for (SnSymbol *ov = sym; ov; ov = ov->overloads) {
+                    if (ov->kind == SN_SYM_FIELD && ov->decl && ov->decl->init &&
+                        path_is_own(scope, ov->origin ? ov->origin->path : NULL)) {
+                        c->current_package = owner_pkg;
+                        c->current_imports = &imports;
+                        c->enclosing_type = te->type_decl;
+                        SnDiagFile outer = begin_symbol_file(c->diag, ov);
+                        SnScope field_scope;
+                        sn_scope_init(&field_scope, arena, NULL);
+                        sn_check_field_initializer(c, &field_scope, ov->decl);
+                        sn_diag_set_file(c->diag, outer);
+                    }
+                    if (ov->kind == SN_SYM_METHOD && ov->decl && ov->decl->body &&
+                        path_is_own(scope, ov->origin ? ov->origin->path : NULL)) {
+                        c->current_package = owner_pkg;
+                        c->current_imports = &imports;
+                        c->enclosing_type = te->type_decl;
+                        SnDiagFile outer = begin_symbol_file(c->diag, ov);
+                        sn_check_decl_body(c, ov->decl);
+                        sn_diag_set_file(c->diag, outer);
+                    }
                 }
             }
         }
@@ -113,11 +128,14 @@ void report_import_cycle(SnDiagSink *diag, SnPackageGraph *graph,
     sn_diag_set_file(diag, outer);
 }
 
-int cmd_check(const char *path, int dump) {
-    (void)dump;
-
+static int check_file_to(const char *path, FILE *diag_out, int report) {
     char dir[1024];
     dirname_into(path, dir, sizeof(dir));
+    /* Origin paths are realpath'd during the package scan. The argv path
+     * must be the same form, or a relative `snl check file.snl` skips every
+     * body and a type error still runs. */
+    char own_path[SNOVAC_PATH_MAX];
+    normalize_path_into(path, own_path, sizeof(own_path));
 
     SnArena arena;
     sn_arena_init(&arena, 1024 * 1024);
@@ -125,6 +143,9 @@ int cmd_check(const char *path, int dump) {
     sn_intern_init(&intern, &arena);
     SnDiagSink diag;
     sn_diag_init(&diag, path, "", 0);
+    if (diag_out) {
+        diag.out = diag_out;
+    }
 
     SnPackageGraph graph;
     sn_pkggraph_init(&graph, &arena, &intern, &diag);
@@ -146,12 +167,35 @@ int cmd_check(const char *path, int dump) {
 
     SnChecker checker;
     sn_checker_init(&checker, &arena, &intern, &diag, &resolver, &types);
-    SnBodyCheckScope scope = { .own_prefix = path };
+    SnBodyCheckScope scope = { .own_prefix = own_path };
     check_all_bodies(&checker, &resolver, &graph, &arena, &scope);
 
-    report_errors(&diag, path);
+    if (report) {
+        report_errors(&diag, path);
+    }
     int rc = diag.error_count > 0;
     sn_arena_free(&arena);
+    return rc;
+}
+
+int cmd_check(const char *path, int dump) {
+    (void)dump;
+    return check_file_to(path, stderr, 1);
+}
+
+int cmd_check_for_exec(const char *path) {
+    char *buf = NULL;
+    size_t n = 0;
+    FILE *mem = open_memstream(&buf, &n);
+    if (!mem) {
+        return cmd_check(path, 0);
+    }
+    int rc = check_file_to(path, mem, 1);
+    fclose(mem);
+    if (rc && buf && n) {
+        fwrite(buf, 1, n, stderr);
+    }
+    free(buf);
     return rc;
 }
 

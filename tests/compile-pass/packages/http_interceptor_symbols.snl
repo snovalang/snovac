@@ -4,10 +4,10 @@ package tests.packages.httpinterceptor
 import builtin.http.Http
 
 
-// `HttpInterceptor` gives handlers a typed `HttpContext` (Context.snova's
+// `HttpInterceptor` gives handlers a typed `HttpContext` (Context.snl's
 // cancellation/deadline/value bag, plus the incoming request) instead of a
 // bare `IncomingRequest`, and short-circuits the chain simply by returning a
-// response instead of calling `next.proceed(ctx)` — see HttpInterceptor.snova.
+// response instead of calling `next.proceed(ctx)` — see HttpInterceptor.snl.
 
 struct ApiError {
     let code: string

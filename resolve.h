@@ -9,7 +9,7 @@
  *
  * 1. Multi-section files are skipped. parse.c documents that a file may
  *    contain more than one `package` section (tests/compile-fail/
- *    visibility_internal_cross_package.snova), and package.c (P2.2) already
+ *    visibility_internal_cross_package.snl), and package.c (P2.2) already
  *    splits those into separate SnPackageFile entries per section. But
  *    sn_parse()/SnUnit do NOT track section boundaries — every decl in the
  *    file lands in one flat `SnUnit.decls`, with no marker for which
@@ -24,7 +24,7 @@
  *
  * 2. Primitive types (`int`, `string`, `bool`, `unit`, `long`, `double`,
  *    `decimal`) are NOT registered as symbols. Contrary to plan.md's fact 2
- *    ("primitives are declared in builtin.types"), no `.snova` file anywhere
+ *    ("primitives are declared in builtin.types"), no `.snl` file anywhere
  *    in this repository actually declares them (measured 2026-07-25 — zero
  *    `class`/`struct`/`typealias` declarations for any of the seven names).
  *    types.c already models them as compiler-intrinsic tags with no `decl`.
@@ -40,13 +40,13 @@
  *    it does not search the whole graph for a package that happens to
  *    declare Option/Result. Their VARIANTS (`Some`/`None`/`Ok`/`Err`) are
  *    also added to the prelude scope directly, not just the two type names
- *    — builtin/Types.snova's own doc comment says construction is "usable
+ *    — builtin/Types.snl's own doc comment says construction is "usable
  *    in every Snovalang program with no import"; found this the hard way
  *    when `Some(1)` failed to resolve during check.c testing.
  *
  * 4. A FIELD and a METHOD with the same name in one type do NOT collide
  *    (SNOVA_DUPLICATE_DECL is not raised) — `private let path: Path` plus
- *    `method path(): Path` both exist for real in builtin/FileSystem.snova's
+ *    `method path(): Path` both exist for real in builtin/FileSystem.snl's
  *    `File`, an idiomatic backing-field/accessor pair. Whichever is
  *    collected first wins the name; disambiguating "the field" from "a call
  *    to the method" at a use site needs call syntax, which belongs to
@@ -95,7 +95,7 @@
  * here, during collection, precisely so the closed P1 gate's parser is not
  * reopened — the parser keeps recording `func`/`method` faithfully and this
  * pass judges the placement. `func` inside an `extension` body is legal
- * (tests/compile-pass/extension.snova) and is not reported. */
+ * (tests/compile-pass/extension.snl) and is not reported. */
 #define SNOVA_FUNC_IN_TYPE_BODY 30
 #define SNOVA_METHOD_AT_TOP_LEVEL 31
 

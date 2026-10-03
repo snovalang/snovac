@@ -28,6 +28,16 @@
 
 int cmd_build(const char *path, const char *out_path,
               const char *target_override) {
+  if (!sn_path_is_source(path) && !sn_path_is_script(path)) {
+    fprintf(stderr,
+            "error: '%s' is not a Snovalang source (.snl) or script (.sns)\n",
+            path);
+    return 2;
+  }
+  int check_rc = cmd_check_for_exec(path);
+  if (check_rc != 0) {
+    return check_rc;
+  }
   size_t len = 0;
   char *src = read_file(path, &len);
   if (!src) {
@@ -76,7 +86,7 @@ int cmd_build(const char *path, const char *out_path,
   if (!out_path || !out_path[0]) {
     snprintf(default_out, sizeof(default_out), "%s", path);
     char *dot = strrchr(default_out, '.');
-    if (dot && strcmp(dot, ".snova") == 0) {
+    if (dot && (strcmp(dot, ".snl") == 0 || strcmp(dot, ".sns") == 0)) {
       *dot = '\0';
     } else {
       strncat(default_out, ".out",

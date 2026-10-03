@@ -34,6 +34,21 @@ static int cmd_run_adapter(const char *path, int dump) {
     return cmd_run(path);
 }
 
+/* Explicit file commands reject anything that is not .snl or .sns before the
+ * file is read. Project commands still accept a directory. */
+static int reject_unless_source(const char *path, int allow_directory) {
+    if (allow_directory && path_is_dir(path)) {
+        return 0;
+    }
+    if (sn_path_is_source(path) || sn_path_is_script(path)) {
+        return 0;
+    }
+    fprintf(stderr,
+            "error: '%s' is not a Snovalang source (.snl) or script (.sns)\n",
+            path);
+    return 2;
+}
+
 static const FileCommand FILE_COMMANDS[] = {
     {"--emit=tokens",          cmd_lex,                 1},
     {"--check-lex",            cmd_lex,                 0},
@@ -90,7 +105,7 @@ int main(int argc, char **argv) {
     /* `build [--project] <path> [-o <out>] [--target=<triple>] [--offline-cache[=<dir>]] [--runtime]`: compiles to standalone native binary */
     if (strcmp(argv[1], "build") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "error: build needs a file.snova or --project <path>\n");
+            fprintf(stderr, "error: build needs a file.snl or --project <path>\n");
             return 2;
         }
         int is_project = 0;
@@ -123,11 +138,21 @@ int main(int argc, char **argv) {
         }
 
         if (!file_path) {
-            fprintf(stderr, "error: build needs a file.snova or project path\n");
+            fprintf(stderr, "error: build needs a file.snl or project path\n");
             return 2;
         }
         if (is_project) {
+            int bad = reject_unless_source(file_path, 1);
+            if (bad) {
+                return bad;
+            }
             return cmd_build_project(file_path, out_path, target_triple, offline_cache, include_runtime);
+        }
+        {
+            int bad = reject_unless_source(file_path, 0);
+            if (bad) {
+                return bad;
+            }
         }
         return cmd_build(file_path, out_path, target_triple);
     }
@@ -181,7 +206,17 @@ int main(int argc, char **argv) {
         }
 
         if (is_project) {
+            int bad = reject_unless_source(path, 1);
+            if (bad) {
+                return bad;
+            }
             return cmd_run_project_with_cache(path, offline_cache);
+        }
+        {
+            int bad = reject_unless_source(path, 0);
+            if (bad) {
+                return bad;
+            }
         }
         return cmd_run(path);
     }
@@ -198,6 +233,12 @@ int main(int argc, char **argv) {
             fprintf(stderr, "error: check --project needs a path\n");
             return 2;
         }
+        {
+            int bad = reject_unless_source(argv[argi], 1);
+            if (bad) {
+                return bad;
+            }
+        }
         return cmd_check_project(argv[argi], typecheck_bodies);
     }
 
@@ -209,6 +250,17 @@ int main(int argc, char **argv) {
         if (argc < 3) {
             fprintf(stderr, "error: %s needs a file\n", c->flag);
             return 2;
+        }
+        if (strcmp(c->flag, "--check-parse-project") != 0) {
+            int bad = reject_unless_source(argv[2], 0);
+            if (bad) {
+                return bad;
+            }
+        } else {
+            int bad = reject_unless_source(argv[2], 1);
+            if (bad) {
+                return bad;
+            }
         }
         return c->run(argv[2], c->dump);
     }

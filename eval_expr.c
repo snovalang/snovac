@@ -45,8 +45,10 @@ static Value eval_binary(Interp *in, Env *env, const SnExpr *e) {
         return v_bool(!value_equals(a, b));
     }
 
-    /* `+` concatenates when either side is a string. */
-    if (e->op == SN_TOK_PLUS && (a.kind == V_STRING || b.kind == V_STRING)) {
+    /* `+` concatenates string and char only. Other types are not coerced. */
+    if (e->op == SN_TOK_PLUS &&
+        (a.kind == V_STRING || a.kind == V_CHAR) &&
+        (b.kind == V_STRING || b.kind == V_CHAR)) {
         return v_str(str_concat(in, to_string(in, a, e->span),
                                 to_string(in, b, e->span)));
     }
@@ -128,7 +130,8 @@ static int try_intrinsic(Interp *in, Env *env, const SnExpr *call, Value *out) {
     }
 
     int newline;
-    if (strcmp(callee->text, "printline") == 0)  newline = 1;
+    if (strcmp(callee->text, "printline") == 0 || strcmp(callee->text, "println") == 0)
+        newline = 1;
     else if (strcmp(callee->text, "print") == 0) newline = 0;
     else if (strcmp(callee->text, "err") == 0)   newline = 2;
     else if (strcmp(callee->text, "warn") == 0)  newline = 2;
@@ -589,7 +592,8 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
         if (cls) {
             Value v;
             v.kind = V_OBJECT;
-            v.as.o = instantiate(in, cls, (SnList *)&e->args, env, e->span);
+            v.as.o = instantiate(in, cls, (SnList *)&e->args, (SnList *)&e->field_names,
+                                env, e->span);
             return v;
         }
         if (is_variant_constructor(in, callee->text)) {
@@ -618,11 +622,11 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
             }
             const SnDecl *cls = find_type(in, callee->lhs->text);
             if (cls) {
-                const SnDecl *m = find_member_inherited(in, cls, callee->text);
+                const SnDecl *m = find_overload(in, env, cls, callee->text, &e->args);
                 if (m) {
                     if (strcmp(m->name, "new") == 0) {
                         /* Canonical constructor: public static method new(...) { this.x = x } */
-                        Object *obj = instantiate(in, cls, NULL, env, e->span);
+                        Object *obj = instantiate(in, cls, NULL, NULL, env, e->span);
                         Value res = call_method(in, obj, m, (SnList *)&e->args, env, e->span);
                         if (res.kind == V_OBJECT) {
                             return res;
@@ -638,7 +642,8 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
                 if (strcmp(callee->text, "new") == 0) {
                     Value v;
                     v.kind = V_OBJECT;
-                    v.as.o = instantiate(in, cls, (SnList *)&e->args, env, e->span);
+                    v.as.o = instantiate(in, cls, (SnList *)&e->args, (SnList *)&e->field_names,
+                                env, e->span);
                     return v;
                 }
                 rt_error(in, SNOVA_UNDEFINED_NAME, e->span,
@@ -664,7 +669,7 @@ static Value eval_call(Interp *in, Env *env, const SnExpr *e) {
             return out;
         }
         if (recv.kind == V_OBJECT) {
-            const SnDecl *m = find_member_inherited(in, recv.as.o->cls, callee->text);
+            const SnDecl *m = find_overload(in, env, recv.as.o->cls, callee->text, &e->args);
             if (m) {
                 return call_method(in, recv.as.o, m, (SnList *)&e->args, env,
                                    e->span);
@@ -780,8 +785,12 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
 
     switch (e->kind) {
     case SN_EXPR_INT:
-    case SN_EXPR_LONG:
         return v_int(strtoll(e->text, NULL, 0));
+    case SN_EXPR_LONG: {
+        Value lv = v_int(strtoll(e->text, NULL, 0));
+        lv.iwidth = 64;
+        return lv;
+    }
     case SN_EXPR_DOUBLE:
     case SN_EXPR_DECIMAL:
         return v_double(strtod(e->text, NULL));
@@ -789,8 +798,16 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
         return v_bool(strcmp(e->text, "true") == 0);
     case SN_EXPR_STRING:
         return v_str(decode_string(in, env, e));
-    case SN_EXPR_CHAR:
-        return v_str(e->text);
+    case SN_EXPR_CHAR: {
+        const char *t = e->text ? e->text : "";
+        if (t[0] == '\'' && t[1] && t[2] == '\'') {
+            return v_char((unsigned char)t[1]);
+        }
+        if (t[0] == '\'') {
+            return v_char((unsigned char)t[1]);
+        }
+        return v_char(t[0] ? (unsigned char)t[0] : 0);
+    }
     case SN_EXPR_THIS: {
         Value *v = env_lookup(env, "this");
         return v ? *v : v_unit();

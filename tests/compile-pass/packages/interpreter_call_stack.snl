@@ -2,7 +2,7 @@ package tests.packages.interpreter_call_stack
 
 
 // Self-contained demonstration of the call-stack engine whose canonical form
-// lives in package compiler.eval (compiler/src/eval/interpreter.snova).
+// lives in package compiler.eval (compiler/src/eval/interpreter.snl).
 //
 // Compiler-internal packages are not importable from user fixtures, so this
 // re-expresses the same line-by-line stepping in the Stage-0 frontend subset to

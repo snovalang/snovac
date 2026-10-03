@@ -23,7 +23,7 @@
 
 /* Parser band: 0100-0199. 100 and 101 are deliberately skipped here: they are
  * already the project-wide codes for "untyped variable" and "declared/inferred
- * type mismatch" (compiler/src/typeck, builtin/Errors.snova, the Rust Stage 0,
+ * type mismatch" (compiler/src/typeck, builtin/Errors.snl, the Rust Stage 0,
  * and several specs all agree on this), owned by the P2 type checker, not the
  * parser. Found 2026-07-25 while reserving P2's diagnostic range — nothing
  * pinned these two parser codes to 100/101 by value, so moving them here is

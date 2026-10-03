@@ -138,6 +138,11 @@ void sn_types_init(SnTypeTable *t, SnArena *a) {
     t->float_ty = intern_shape(t, SN_T_FLOAT, NULL, NULL, 0, NULL);
     t->byte_ty = intern_shape(t, SN_T_BYTE, NULL, NULL, 0, NULL);
     t->any_ty = intern_shape(t, SN_T_ANY, NULL, NULL, 0, NULL);
+    t->int8_ty = intern_shape(t, SN_T_INT8, NULL, NULL, 0, NULL);
+    t->int16_ty = intern_shape(t, SN_T_INT16, NULL, NULL, 0, NULL);
+    t->int32_ty = intern_shape(t, SN_T_INT32, NULL, NULL, 0, NULL);
+    t->int64_ty = intern_shape(t, SN_T_INT64, NULL, NULL, 0, NULL);
+    t->int128_ty = intern_shape(t, SN_T_INT128, NULL, NULL, 0, NULL);
 }
 
 SnTypeRep *sn_type_error(SnTypeTable *t) { return t->error_ty; }
@@ -152,8 +157,71 @@ SnTypeRep *sn_type_char(SnTypeTable *t) { return t->char_ty; }
 SnTypeRep *sn_type_float(SnTypeTable *t) { return t->float_ty; }
 SnTypeRep *sn_type_byte(SnTypeTable *t) { return t->byte_ty; }
 SnTypeRep *sn_type_any(SnTypeTable *t) { return t->any_ty; }
+SnTypeRep *sn_type_int8(SnTypeTable *t) { return t->int8_ty; }
+SnTypeRep *sn_type_int16(SnTypeTable *t) { return t->int16_ty; }
+SnTypeRep *sn_type_int32(SnTypeTable *t) { return t->int32_ty; }
+SnTypeRep *sn_type_int64(SnTypeTable *t) { return t->int64_ty; }
+SnTypeRep *sn_type_int128(SnTypeTable *t) { return t->int128_ty; }
 
 int sn_type_is_any(const SnTypeRep *t) { return t && t->tag == SN_T_ANY; }
+
+int sn_type_integer_width(const SnTypeRep *t) {
+    if (!t) {
+        return 0;
+    }
+    switch (t->tag) {
+    case SN_T_INT8:
+    case SN_T_BYTE:
+        return 8;
+    case SN_T_INT16:
+        return 16;
+    case SN_T_INT32:
+        return 32;
+    case SN_T_INT:
+    case SN_T_INT64:
+    case SN_T_LONG:
+        return 64;
+    case SN_T_INT128:
+        return 128;
+    default:
+        return 0;
+    }
+}
+
+int sn_type_integer_signed(const SnTypeRep *t) {
+    return sn_type_integer_width(t) > 0 && (!t || t->tag != SN_T_BYTE);
+}
+
+const char *sn_type_name(const SnTypeRep *t) {
+    if (!t) {
+        return "type";
+    }
+    switch (t->tag) {
+    case SN_T_ERROR: return "error";
+    case SN_T_UNIT: return "unit";
+    case SN_T_BOOL: return "bool";
+    case SN_T_INT: return "int";
+    case SN_T_LONG: return "long";
+    case SN_T_DOUBLE: return "double";
+    case SN_T_DECIMAL: return "decimal";
+    case SN_T_STRING: return "string";
+    case SN_T_CHAR: return "char";
+    case SN_T_FLOAT: return "float";
+    case SN_T_BYTE: return "byte";
+    case SN_T_INT8: return "int8";
+    case SN_T_INT16: return "int16";
+    case SN_T_INT32: return "int32";
+    case SN_T_INT64: return "int64";
+    case SN_T_INT128: return "int128";
+    case SN_T_ANY: return "any";
+    case SN_T_NAMED: return t->decl && t->decl->name ? t->decl->name : "named";
+    case SN_T_TYPEVAR: return "typevar";
+    case SN_T_FUNC: return "func";
+    case SN_T_ARRAY: return "array";
+    case SN_T_REF: return "ref";
+    default: return "type";
+    }
+}
 
 SnTypeRep *sn_type_named(SnTypeTable *t, SnSymbol *decl, SnTypeRep **args,
                           uint32_t nargs) {

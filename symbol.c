@@ -86,3 +86,16 @@ SnSymbol *sn_scope_define(SnScope *s, const char *name, SnSymbolKind kind,
     s->count++;
     return sym;
 }
+
+void sn_symbol_chain_overload(SnSymbol *primary, SnSymbol *extra) {
+    if (!primary || !extra) {
+        return;
+    }
+    extra->next = NULL;
+    extra->overloads = NULL;
+    SnSymbol *tail = primary;
+    while (tail->overloads) {
+        tail = tail->overloads;
+    }
+    tail->overloads = extra;
+}

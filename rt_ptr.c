@@ -127,6 +127,17 @@ Value rt_eval_index(Interp *in, Env *env, const SnExpr *e) {
     if (base.kind == V_REF) {
         base = rt_deref(in, base, e->span);
     }
+    if (base.kind == V_STRING) {
+        const char *s = base.as.s ? base.as.s : "";
+        long long idx = as_int(in, eval_expr(in, env, e->rhs), e->span);
+        size_t len = strlen(s);
+        if (idx < 0 || (size_t)idx >= len) {
+            rt_error(in, SNOVA_TYPE_ERROR, e->span,
+                     "string index %lld out of bounds (len %zu)", idx, len);
+            return v_unit();
+        }
+        return v_char((unsigned char)s[(size_t)idx]);
+    }
     if (base.kind != V_ARRAY) {
         rt_error(in, SNOVA_TYPE_ERROR, e->span, "value is not indexable");
         return v_unit();

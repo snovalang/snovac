@@ -1,7 +1,7 @@
 /* token.h — Snovalang token kinds.
  *
  * The keyword set and the operator set below are derived from the real corpus
- * (245 .snova files across libs/, stdlib/, tests/, examples/), not from
+ * (245 .snl files across libs/, stdlib/, tests/, examples/), not from
  * intuition. Findings that shaped this file, each verified by measurement:
  *
  *   - There is no `>>` or `<<` token. Every `>>` in the corpus (214 of them) is
@@ -64,7 +64,7 @@ typedef enum {
     /* `::` is NOT Snovalang syntax. It is lexed as its own token purely so the
      * parser can say "found `::`" instead of reporting two stray colons. The
      * only occurrence in the repository is
-     * examples/snovalang/lambda_functions.snova:59 (`Int::toString`), which is
+     * examples/snovalang/lambda_functions.snl:59 (`Int::toString`), which is
      * invalid code in an unvalidated example — not a language feature. */
     SN_TOK_COLONCOLON,
     SN_TOK_UNDERSCORE,  /* wildcard pattern */

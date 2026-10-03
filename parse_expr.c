@@ -69,13 +69,15 @@ static void parse_call_args(P *p, SnExpr *call) {
             /* Named argument: `description: "..."`. Only the value is kept as
              * the argument expression; names matter to decorators, which parse
              * their own arguments. */
+            const char *arg_name = NULL;
             if (at_name(p) && peek_at(p, 1)->kind == SN_TOK_COLON) {
-                advance_p(p);
+                arg_name = advance_p(p)->text;
                 advance_p(p);
             }
             SnExpr *a = parse_expr(p);
             if (a) {
                 sn_list_push(p->arena, &call->args, a);
+                sn_list_push(p->arena, &call->field_names, (void *)arg_name);
             }
             if (accept(p, SN_TOK_COMMA)) {
                 if (at(p, SN_TOK_RPAREN)) { /* trailing comma */

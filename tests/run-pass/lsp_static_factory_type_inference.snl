@@ -4,7 +4,7 @@ package tests.run_pass.lsp_static_factory_type_inference
 import builtin.console.Console
 
 
-// Smoke test: `inferExpressionType` (compiler/src/lsp/source_facts.snova) must infer
+// Smoke test: `inferExpressionType` (compiler/src/lsp/source_facts.snl) must infer
 // the receiver type of a `let` binding assigned from a static factory call, so member
 // completion works on the result — not just for the bare `Type(...)` constructor form
 // it already handled.

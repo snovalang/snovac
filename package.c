@@ -50,7 +50,8 @@ void sn_pkggraph_load_native_manifest(SnPackageGraph *g, const char *builtin_dir
     // Embedded default native packages in pure C
     static const char *const DEFAULT_NATIVES[] = {
         "builtin.metadata.Documented",
-        "builtin.syntax.Syntax"
+        "builtin.syntax.Syntax",
+        "builtin.console.Console"
     };
     for (size_t i = 0; i < sizeof(DEFAULT_NATIVES) / sizeof(DEFAULT_NATIVES[0]); i++) {
         const char *name = sn_intern_cstr(g->intern, DEFAULT_NATIVES[i]);
@@ -132,7 +133,7 @@ static const char *scan_qualified(SnArena *arena, const SnTokenVec *toks,
 }
 
 /* `builtin.metadata` is the one bootstrap package whose declared name does
- * NOT repeat its file stem (`builtin/metadata/Documented.snova` declares
+ * NOT repeat its file stem (`builtin/metadata/Documented.snl` declares
  * `package builtin.metadata`, where every other builtin declares
  * `builtin.<lower(Stem)>.<Stem>`). Its importers still spell it
  * `import builtin.metadata.Documented` — Types/DateTime/Collections all do,
@@ -316,7 +317,7 @@ static int scan_section(SnPackageGraph *g, const SnDiagFile *file,
 }
 
 /* A file may contain more than one `package` section — parse.c documents
- * this precedent (tests/compile-fail/visibility_internal_cross_package.snova
+ * this precedent (tests/compile-fail/visibility_internal_cross_package.snl
  * puts a provider and a consumer package in one file to test cross-package
  * visibility without an import). Each section is scanned and grouped
  * independently; only the tokens between sections (declaration bodies) are
@@ -360,13 +361,12 @@ static void scan_header(SnPackageGraph *g, const char *path, const char *src,
     }
 
     if (!any_section) {
-        size_t path_len = strlen(path);
-        int is_sno = (path_len >= 4u && strcmp(path + path_len - 4u, ".sno") == 0);
-        if (is_sno) {
-            /* .sno files are Snovalang script files; an explicit package header is optional.
+        int is_script = sn_path_is_script(path);
+        if (is_script) {
+            /* .sns files are Snovalang scripts; an explicit package header is optional.
              * They default to the implicit "main" script package. */
             SnPackageFile *pf = (SnPackageFile *)sn_arena_calloc(a, sizeof(SnPackageFile));
-            pf->path = sn_arena_strndup(a, path, strlen(path));
+            pf->path = sn_arena_strndup(a, norm_path, strlen(norm_path));
             pf->src = src;
             pf->src_len = len;
             pf->package = sn_intern_cstr(g->intern, "main");
@@ -438,23 +438,11 @@ static char *read_source_file(SnArena *a, const char *path, size_t *out_len) {
 }
 
 static int has_snova_suffix(const char *path) {
-    size_t n = strlen(path);
-    if (n >= 6u && strcmp(path + n - 6u, ".snova") == 0) {
-        return 1;
-    }
-    if (n >= 4u && strcmp(path + n - 4u, ".sno") == 0) {
-        const char *slash = strrchr(path, '/');
-        const char *filename = slash ? slash + 1 : path;
-        if (strcmp(filename, "mod.sno") == 0 || strcmp(filename, "snova.sno") == 0) {
-            return 0;
-        }
-        return 1;
-    }
-    return 0;
+    return sn_path_is_source(path) || sn_path_is_script(path);
 }
 
 /* Scans exactly one file, unlike sn_pkggraph_scan_root() which recursively
- * pulls in every `*.snova` under a directory — needed by callers (the CLI's
+ * pulls in every `*.snl` under a directory — needed by callers (the CLI's
  * `check` command) that want ONE file's own declarations without silently
  * absorbing every sibling fixture in the same directory. Returns 1 if the
  * file was read and header-scanned, 0 if it couldn't be opened. */
@@ -587,7 +575,7 @@ size_t sn_pkggraph_scan_root_fallback(SnPackageGraph *g, const char *root) {
  *
  * An import names either a package outright or a SYMBOL inside one, and the
  * corpus uses both spellings against the same graph: `builtin.console.Console`
- * is a whole package (builtin/Console.snova declares exactly that), while
+ * is a whole package (builtin/Console.snl declares exactly that), while
  * `builtin.auth.Auth.OAuth2` and `stdlib.sonar.serialization.Json` name a
  * symbol inside packages `builtin.auth.Auth` and `stdlib.sonar.serialization`.
  * Nothing in the syntax distinguishes the two, so resolution is longest-match:
@@ -623,7 +611,7 @@ static SnPackageNode *resolve_import_target(SnPackageGraph *g, const char *targe
     }
 }
 
-/* Namespaces whose packages may legitimately have no `.snova` file anywhere
+/* Namespaces whose packages may legitimately have no `.snl` file anywhere
  * snovac can see, used only as a fallback when no native-package manifest
  * was loaded (sn_pkggraph_load_native_manifest was never called, or found no
  * `native-packages.list` — e.g. snovac invoked completely standalone,
@@ -636,10 +624,10 @@ static int package_is_toolchain_provided(const char *name) {
 }
 
 /* Whether `target` is a real, registered native package (one the toolchain
- * ships with no `.snova` source under any scanned root — e.g. metadata/
+ * ships with no `.snl` source under any scanned root — e.g. metadata/
  * syntax packages backed directly by the Rust frontend). Prefers the exact
  * manifest generated by `scripts/gen-packages.sh` from the single source of
- * truth, `compiler/src/lsp/NativePackages.snova`; falls back to the old
+ * truth, `compiler/src/lsp/NativePackages.snl`; falls back to the old
  * blanket prefix rule only when that manifest could not be found at all, so
  * environments without a monorepo checkout keep their previous behavior. */
 static int native_package_known(const SnPackageGraph *g, const char *target) {
@@ -654,6 +642,13 @@ static int native_package_known(const SnPackageGraph *g, const char *target) {
     return 0;
 }
 
+static int import_last_segment_is_extension(const char *target) {
+    const char *dot = strrchr(target, '.');
+    const char *seg = dot ? dot + 1 : target;
+    return strcmp(seg, "snl") == 0 || strcmp(seg, "sns") == 0 ||
+           strcmp(seg, "snova") == 0 || strcmp(seg, "sno") == 0;
+}
+
 void sn_pkggraph_link(SnPackageGraph *g) {
     for (SnPackageNode *node = g->nodes; node; node = node->next) {
         for (SnPackageFile *pf = node->files; pf; pf = pf->next) {
@@ -664,6 +659,15 @@ void sn_pkggraph_link(SnPackageGraph *g) {
             for (size_t i = 0; i < pf->imports.len; i++) {
                 const char *target = SN_LIST_AT(pf->imports, const char, i);
                 if (target == node->name) {
+                    continue;
+                }
+                if (import_last_segment_is_extension(target)) {
+                    SnSpan *sp = SN_LIST_AT(pf->import_spans, SnSpan, i);
+                    sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_IMPORT_FILE_EXTENSION,
+                                 *sp,
+                                 "import `%s` must name a package or symbol, not a file "
+                                 "extension — drop the trailing `.snl`/`.sns` segment",
+                                 target);
                     continue;
                 }
 

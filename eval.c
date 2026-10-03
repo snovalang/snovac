@@ -76,9 +76,15 @@ const char *to_string(Interp *in, Value v, SnSpan span) {
     case V_DOUBLE: return arena_sprintf(in, "%g", v.as.d);
     case V_BOOL:   return v.as.b ? "true" : "false";
     case V_STRING: return v.as.s;
+    case V_CHAR: {
+        char *s = (char *)sn_arena_alloc(in->arena, 2);
+        s[0] = (char)v.as.i;
+        s[1] = '\0';
+        return s;
+    }
     case V_OBJECT: {
         /* Printing an object uses its `asString()`, matching the convention the
-         * corpus relies on (tests/run-pass/counter.snova). */
+         * corpus relies on (tests/run-pass/counter.snl). */
         const SnDecl *m = find_member(v.as.o->cls, "asString");
         if (m && m->body) {
             SnList none = {0};
@@ -152,6 +158,9 @@ int value_equals(Value a, Value b) {
     if (a.kind == V_STRING && b.kind == V_STRING) {
         return strcmp(a.as.s, b.as.s) == 0;
     }
+    if (a.kind == V_CHAR && b.kind == V_CHAR) {
+        return a.as.i == b.as.i;
+    }
     if (a.kind == V_UNIT && b.kind == V_UNIT) return 1;
     if (a.kind == V_VARIANT && b.kind == V_VARIANT) {
         if (strcmp(a.as.vt->name, b.as.vt->name) != 0 ||
@@ -201,6 +210,102 @@ const SnDecl *find_member_inherited(const Interp *in, const SnDecl *cls, const c
     return NULL;
 }
 
+static int param_matches_expr(Interp *in, Env *env, const SnType *ty, const SnExpr *arg) {
+    if (!ty || ty->kind != SN_TYPE_NAME || !ty->name || !arg) {
+        return 1;
+    }
+    int known = 0;
+    ValKind kind = V_UNIT;
+    if (arg->kind == SN_EXPR_STRING) {
+        kind = V_STRING;
+        known = 1;
+    } else if (arg->kind == SN_EXPR_CHAR) {
+        kind = V_CHAR;
+        known = 1;
+    } else if (arg->kind == SN_EXPR_INT || arg->kind == SN_EXPR_LONG) {
+        kind = V_INT;
+        known = 1;
+    } else if (arg->kind == SN_EXPR_BOOL) {
+        kind = V_BOOL;
+        known = 1;
+    } else if (arg->kind == SN_EXPR_IDENT && arg->text) {
+        Value *slot = env_lookup(env, arg->text);
+        if (slot) {
+            kind = slot->kind;
+            known = 1;
+        }
+    }
+    if (!known) {
+        return 1;
+    }
+    if (strcmp(ty->name, "string") == 0) {
+        return kind == V_STRING;
+    }
+    if (strcmp(ty->name, "char") == 0) {
+        return kind == V_CHAR;
+    }
+    if (strcmp(ty->name, "bool") == 0) {
+        return kind == V_BOOL;
+    }
+    if (strcmp(ty->name, "int") == 0 || strcmp(ty->name, "long") == 0 ||
+        strcmp(ty->name, "int8") == 0 || strcmp(ty->name, "int16") == 0 ||
+        strcmp(ty->name, "int32") == 0 || strcmp(ty->name, "int64") == 0 ||
+        strcmp(ty->name, "int128") == 0 || strcmp(ty->name, "byte") == 0) {
+        return kind == V_INT;
+    }
+    (void)in;
+    return 1;
+}
+
+static int method_accepts(Interp *in, Env *env, const SnDecl *m, const SnList *args) {
+    size_t nargs = args ? args->len : 0;
+    if (!m || m->params.len != nargs) {
+        return 0;
+    }
+    for (size_t i = 0; i < nargs; i++) {
+        const SnParam *p = (const SnParam *)m->params.items[i];
+        const SnExpr *arg = (const SnExpr *)args->items[i];
+        if (!param_matches_expr(in, env, p->type, arg)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+const SnDecl *find_overload(Interp *in, Env *env, const SnDecl *cls, const char *name,
+                            const SnList *args) {
+    const SnDecl *first = NULL;
+    const SnDecl *winner = NULL;
+    int wins = 0;
+    for (const SnDecl *cur = cls; cur; ) {
+        for (size_t i = 0; i < cur->members.len; i++) {
+            const SnDecl *m = (const SnDecl *)cur->members.items[i];
+            if (!m->name || strcmp(m->name, name) != 0 || m->kind != SN_DECL_METHOD) {
+                continue;
+            }
+            if (!first) {
+                first = m;
+            }
+            if (method_accepts(in, env, m, args)) {
+                winner = m;
+                wins++;
+            }
+        }
+        const SnDecl *parent = NULL;
+        if (in && cur->supertypes.len > 0) {
+            const SnType *st = (const SnType *)cur->supertypes.items[0];
+            if (st && st->name) {
+                parent = find_type(in, st->name);
+            }
+        }
+        cur = parent;
+    }
+    if (wins == 1) {
+        return winner;
+    }
+    return first ? first : find_member_inherited(in, cls, name);
+}
+
 const SnDecl *find_top(const Interp *in, const char *name, SnDeclKind k) {
     for (size_t i = 0; i < in->unit->decls.len; i++) {
         const SnDecl *d = (const SnDecl *)in->unit->decls.items[i];
@@ -246,7 +351,11 @@ void sn_eval_merge_extensions(SnArena *arena, SnUnit *unit) {
 
 Value default_for(const SnType *t) {
     if (t && t->name) {
-        if (strcmp(t->name, "int") == 0 || strcmp(t->name, "long") == 0) return v_int(0);
+        if (strcmp(t->name, "int") == 0 || strcmp(t->name, "long") == 0 ||
+            strcmp(t->name, "int8") == 0 || strcmp(t->name, "int16") == 0 ||
+            strcmp(t->name, "int32") == 0 || strcmp(t->name, "int64") == 0 ||
+            strcmp(t->name, "int128") == 0 || strcmp(t->name, "byte") == 0) return v_int(0);
+        if (strcmp(t->name, "char") == 0) return v_char(0);
         if (strcmp(t->name, "double") == 0 || strcmp(t->name, "decimal") == 0) return v_double(0);
         if (strcmp(t->name, "bool") == 0) return v_bool(0);
         if (strcmp(t->name, "string") == 0) return v_str("");
@@ -254,27 +363,48 @@ Value default_for(const SnType *t) {
     return v_unit();
 }
 
-Object *instantiate(Interp *in, const SnDecl *cls, SnList *args, Env *env,
-                    SnSpan span) {
+Object *instantiate(Interp *in, const SnDecl *cls, SnList *args, SnList *names,
+                    Env *env, SnSpan span) {
     Object *o = (Object *)rt_alloc(in, sizeof(Object), 1);
     o->cls = cls;
 
+    int named = 0;
+    if (names && args && names->len == args->len) {
+        for (size_t i = 0; i < names->len; i++) {
+            if (names->items[i]) {
+                named = 1;
+                break;
+            }
+        }
+    }
+
     /* Fields are declared in order; positional constructor arguments fill them
-     * in that same order (`LiveWorkbook(path, frame, false)`). */
+     * in that same order (`LiveWorkbook(path, frame, false)`). Named arguments
+     * (`Snovalang(field: 1)`) select the field by name. */
     size_t argi = 0;
     for (size_t i = 0; i < cls->members.len; i++) {
         const SnDecl *m = (const SnDecl *)cls->members.items[i];
         if (m->kind != SN_DECL_FIELD) {
             continue;
         }
-        Value v;
-        if (args && argi < args->len) {
+        Value v = default_for(m->type);
+        int filled = 0;
+        if (named && args) {
+            for (size_t ai = 0; ai < args->len; ai++) {
+                const char *fname = (const char *)names->items[ai];
+                if (fname && m->name && strcmp(fname, m->name) == 0) {
+                    v = eval_expr(in, env, (const SnExpr *)args->items[ai]);
+                    filled = 1;
+                    break;
+                }
+            }
+        } else if (args && argi < args->len) {
             v = eval_expr(in, env, (const SnExpr *)args->items[argi]);
             argi++;
-        } else if (m->init) {
+            filled = 1;
+        }
+        if (!filled && m->init) {
             v = eval_expr(in, env, m->init);
-        } else {
-            v = default_for(m->type);
         }
         Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
         *slot = v;

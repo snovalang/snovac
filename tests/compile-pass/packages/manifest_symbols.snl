@@ -3,7 +3,7 @@ package tests.packages.manifest_symbols
 import builtin.manifest.Manifest
 
 func checkParser(): unit {
-    let text: string = "name = \"demo\"\nversion = \"1.0.0\"\nmain = \"src/app.snova\"\n[runtime]\nbackend = \"snova\"\nprofile = \"api\"\n[features]\nenable = [\"Http\", \"Async\"]\n[runtime.extensions]\nenable = [\"http\", \"json\"]\n"
+    let text: string = "name = \"demo\"\nversion = \"1.0.0\"\nmain = \"src/app.snl\"\n[runtime]\nbackend = \"snova\"\nprofile = \"api\"\n[features]\nenable = [\"Http\", \"Async\"]\n[runtime.extensions]\nenable = [\"http\", \"json\"]\n"
     let doc: TomlDocument = parse(text)
     match docName(doc) {
         Option.Some(n) -> {

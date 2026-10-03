@@ -94,6 +94,9 @@
 #define SNOVA_MISSING_RETURN 142
 #define SNOVA_PRIVATE_ACCESS 143
 #define SNOVA_GENERIC_ARITY_MISMATCH 144
+#define SNOVA_NARROWING_CONVERSION 145
+#define SNOVA_AMBIGUOUS_OVERLOAD 146
+#define SNOVA_NO_MATCHING_OVERLOAD 147
 
 /* Canonical codes, not new: already documented in docs/snovalang-diagnostics.md
  * and implemented in crates/snovalang/src/native/selfcheck/pulsar.rs
@@ -195,5 +198,8 @@ void sn_check_block(SnChecker *c, SnScope *parent, SnStmt *block);
  * explicit non-objective. `current_package`/`current_imports`/
  * `enclosing_type` must already be set on `c`. */
 void sn_check_decl_body(SnChecker *c, const SnDecl *decl);
+
+/* Checks one field initializer against the field's declared type. */
+void sn_check_field_initializer(SnChecker *c, SnScope *local, const SnDecl *field);
 
 #endif /* SNOVAC_CHECK_H */
