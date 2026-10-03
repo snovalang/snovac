@@ -44,33 +44,84 @@ jobs:
           - os: darwin
             arch: aarch64
             runner: macos-latest
+          - os: windows
+            arch: x86_64
+            runner: windows-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install MinGW (Windows)
+        if: matrix.os == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            make
+            grep
+            gawk
+            mingw-w64-ucrt-x86_64-gcc
+
       - name: Compile snovac binary
+        if: matrix.os != 'windows'
         run: |
           make clean
           make
 
+      - name: Compile snovac binary (Windows)
+        if: matrix.os == 'windows'
+        shell: msys2 {0}
+        run: |
+          make clean OS=Windows_NT
+          make OS=Windows_NT EXTRA_LIBS="-lws2_32 -static"
+
       - name: Run Test Gates
+        if: matrix.os != 'windows'
         run: make test
 
+      - name: Run Test Gates (Windows)
+        if: matrix.os == 'windows'
+        shell: msys2 {0}
+        run: make test OS=Windows_NT EXTRA_LIBS="-lws2_32 -static"
+
       - name: Package release artifact
+        if: matrix.os != 'windows'
         run: |
           mkdir -p dist
           cp build/snl dist/snl
           tar -czf "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" -C dist snl
           shasum -a 256 "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" > "snovac-${{ matrix.os }}-${{ matrix.arch }}.sha256"
 
+      - name: Package Windows release archive
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build/snl.exe dist/snl.exe
+          Compress-Archive -Path dist/snl.exe -DestinationPath snovac-windows-x86_64.zip
+          $hash = (Get-FileHash -Algorithm SHA256 snovac-windows-x86_64.zip).Hash.ToLowerInvariant()
+          "{0}  snovac-windows-x86_64.zip" -f $hash | Set-Content -Encoding ascii snovac-windows-x86_64.sha256
+
       - name: Upload Build Artifacts
+        if: matrix.os != 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: snovac-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
             snovac-${{ matrix.os }}-${{ matrix.arch }}.sha256
+          retention-days: 30
+
+      - name: Upload Windows archive
+        if: matrix.os == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snovac-windows-x86_64
+          path: |
+            snovac-windows-x86_64.zip
+            snovac-windows-x86_64.sha256
           retention-days: 30
 
   release:
