@@ -24,7 +24,8 @@ int path_is_dir(const char *path);
 int path_is_file(const char *path);
 /* Case-sensitive. The suffix is read from the basename after '/' or '\\'. */
 int sn_path_is_source(const char *path); /* .snl */
-int sn_path_is_script(const char *path); /* .sns; mod.sno and snova.sno are not scripts */
+int sn_path_is_script(const char *path); /* .sns, except the manifests mod.sns and snova.sns */
+int sn_path_is_manifest(const char *path); /* mod.sns or snova.sns */
 void ensure_parent_dir_exists(const char *path);
 int find_builtin_root(const char *start_dir, char *out, size_t out_sz);
 

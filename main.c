@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* `tidy [--project] [<path>]`: cleans unused dependencies and generates/updates mod.sno */
+    /* `tidy [--project] [<path>]`: cleans unused dependencies and generates/updates mod.sns */
     if (strcmp(argv[1], "tidy") == 0) {
         const char *proj_path = ".";
         for (int i = 2; i < argc; i++) {
@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
         return cmd_build(file_path, out_path, target_triple);
     }
 
-    /* `get [<repo-url>] [--version=<ver>] [--project=<path>]`: fetches dependencies and updates mod.sno */
+    /* `get [<repo-url>] [--version=<ver>] [--project=<path>]`: fetches dependencies and updates mod.sns */
     if (strcmp(argv[1], "get") == 0) {
         const char *url = NULL;
         const char *version = NULL;

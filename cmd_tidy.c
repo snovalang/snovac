@@ -1,4 +1,4 @@
-/* cmd_tidy.c — automated dependency pruning and mod.sno manifest generator. */
+/* cmd_tidy.c — automated dependency pruning and mod.sns manifest generator. */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -184,9 +184,11 @@ static void discover_deps_recursive(const char *deps_root, const char *current_d
     if (!d) return;
 
     char manifest[SNOVAC_PATH_MAX];
-    snprintf(manifest, sizeof(manifest), "%s/mod.sno", current_dir);
-
     struct stat mst;
+    snprintf(manifest, sizeof(manifest), "%s/mod.sns", current_dir);
+    if (stat(manifest, &mst) != 0) {
+        snprintf(manifest, sizeof(manifest), "%s/snova.sns", current_dir);
+    }
     int has_manifest = (stat(manifest, &mst) == 0);
 
     if (has_manifest && strcmp(current_dir, deps_root) != 0) {
@@ -196,7 +198,7 @@ static void discover_deps_recursive(const char *deps_root, const char *current_d
             snprintf(m->module_dir, sizeof(m->module_dir), "%s", current_dir);
             snprintf(m->version, sizeof(m->version), "1.0.0");
 
-            /* Default module_id from relative path if not overridden by mod.sno */
+            /* Default module_id from relative path if not overridden by mod.sns */
             if (strlen(current_dir) > strlen(deps_root) + 1) {
                 snprintf(m->module_id, sizeof(m->module_id), "%s", current_dir + strlen(deps_root) + 1);
             }
@@ -296,10 +298,17 @@ int cmd_tidy_project(const char *path) {
     char proj_root[SNOVAC_PATH_MAX];
     if (proj.has_manifest) {
         dirname_into(proj.source_root, proj_root, sizeof(proj_root));
-        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj_root);
+        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sns", proj_root);
+        if (!path_is_file(manifest_path)) {
+            char alt[SNOVAC_PATH_MAX + 64];
+            snprintf(alt, sizeof(alt), "%s/snova.sns", proj_root);
+            if (path_is_file(alt)) {
+                snprintf(manifest_path, sizeof(manifest_path), "%s", alt);
+            }
+        }
     } else {
         snprintf(proj_root, sizeof(proj_root), "%s", path);
-        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", path);
+        snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sns", path);
     }
 
     char mod_name[256];
@@ -414,7 +423,7 @@ int cmd_tidy_project(const char *path) {
         }
     }
 
-    /* 4. Write updated declarative mod.sno */
+    /* 4. Write updated declarative mod.sns */
     FILE *out = fopen(manifest_path, "w");
     if (!out) {
         fprintf(stderr, "error: cannot write manifest to %s\n", manifest_path);

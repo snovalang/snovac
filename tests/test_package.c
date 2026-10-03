@@ -253,7 +253,9 @@ static void test_sno_script_file(SnInternTable *it, SnArena *a, const char *tmp)
     snprintf(dir, sizeof(dir), "%s/sno_script", tmp);
     mkdir(dir, 0755);
     write_file(dir, "script.sns", "func runScript(): int { return 42; }\n");
-    write_file(dir, "mod.sno", "module test.mod\n");
+    write_file(dir, "mod.sns", "module test.mod\n");
+    write_file(dir, "snova.sns", "module test.other\n");
+    write_file(dir, "old.sno", "func main(): int { return 1; }\n");
 
     SnDiagSink diag;
     sn_diag_init(&diag, "<test>", "", 0);
@@ -261,7 +263,7 @@ static void test_sno_script_file(SnInternTable *it, SnArena *a, const char *tmp)
     sn_pkggraph_init(&g, a, it, &diag);
     size_t found = sn_pkggraph_scan_root(&g, dir);
 
-    CHECK("sns-script: scans .sns and ignores mod.sno as source file", found == 1);
+    CHECK("sns-script: scans .sns and skips manifests and .sno", found == 1);
     CHECK("sno-script: reports no missing package diagnostic", diag.error_count == 0);
     CHECK("sno-script: assigned to main package", g.node_count == 1);
     CHECK("sno-script: main package node exists", sn_pkggraph_find(&g, sn_intern_cstr(it, "main")) != NULL);

@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const MANIFEST_NAMES[] = {"mod.sno", "snova.mod", "snova.sno",
+static const char *const MANIFEST_NAMES[] = {"mod.sns", "snova.sns", "snova.mod",
                                              "snova.toml"};
 
 static int find_manifest_dir(const char *start_dir, char *out, size_t out_sz) {
@@ -135,7 +135,10 @@ static void scan_manifest_deps(SnPackageGraph *graph, const SnProject *proj, con
                     char sub_dir[SNOVAC_PATH_MAX];
                     snprintf(sub_dir, sizeof(sub_dir), "%s/%s", proj->manifest_dir, q1);
                     char sub_mod[SNOVAC_PATH_MAX];
-                    snprintf(sub_mod, sizeof(sub_mod), "%s/mod.sno", sub_dir);
+                    snprintf(sub_mod, sizeof(sub_mod), "%s/mod.sns", sub_dir);
+                    if (!path_is_file(sub_mod)) {
+                        snprintf(sub_mod, sizeof(sub_mod), "%s/snova.sns", sub_dir);
+                    }
                     if (!path_is_dir(sub_dir)) {
                         fprintf(stderr, "error[SNOVA0052]: referenced submodule '%s' directory does not exist: %s\n", q1, sub_dir);
                         if (graph->diag) {
@@ -204,7 +207,10 @@ size_t scan_project_roots(SnPackageGraph *graph, const SnProject *proj) {
   size_t own = sn_pkggraph_scan_root(graph, proj->source_root);
   if (proj->has_manifest) {
     char manifest_path[SNOVAC_PATH_MAX + 64];
-    snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sno", proj->manifest_dir);
+    snprintf(manifest_path, sizeof(manifest_path), "%s/mod.sns", proj->manifest_dir);
+    if (!path_is_file(manifest_path)) {
+      snprintf(manifest_path, sizeof(manifest_path), "%s/snova.sns", proj->manifest_dir);
+    }
     scan_manifest_deps(graph, proj, manifest_path);
   } else if (proj->deps_root[0]) {
     sn_pkggraph_scan_root(graph, proj->deps_root);

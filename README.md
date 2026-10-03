@@ -71,7 +71,7 @@ If the latest GitHub release has no prebuilt archive, the script clones this rep
 
 - **Pure C11 Implementation**: Zero dependencies, extremely fast compilation speed.
 - **Diagnostics & Error Reporting**: Colorized source snippets with precise diagnostic codes (`SNOVA0001` - `SNOVA0040`).
-- **Module Management**: Discovers root packages with `mod.sno`.
+- **Module Management**: Discovers root packages with `mod.sns`.
 - **Bytecode VM & Native Compilation**: Ahead-of-time bytecode compilation and interpretation.
 - **Pulsar Concurrency**: Actor model and streaming concurrency support.
 
@@ -147,7 +147,7 @@ make uninstall
 ### Package & Dependency Management
 
 - **`snl get [<repo-url>] [--version=<ver>] [--project=<path>]`**:
-  Fetches dependencies into `.snovalang/deps/` and manages the `mod.sno` manifest.
+  Fetches dependencies into `.snovalang/deps/` and manages the `mod.sns` manifest.
   - **Adding a direct dependency**:
     ```bash
     # Add dependency with automatic or default version
@@ -159,7 +159,7 @@ make uninstall
     ```
   - **Sychronizing existing dependencies**:
     ```bash
-    # Resolves and downloads all dependencies declared in mod.sno
+    # Resolves and downloads all dependencies declared in mod.sns
     snl get
     snl get --project ./my-project
     ```
@@ -167,12 +167,12 @@ make uninstall
     - **Transitive Resolution**: Recursively fetches dependencies declared in dependencies' manifests.
     - **Deduplication & Diamond Graphs**: Shared dependencies ($A \to C$, $B \to C$) are cloned once and reused across all modules.
     - **Cycle Detection**: Identifies circular dependency loops ($A \to B \to A$) and reports the diagnostic path.
-    - **Direct vs Indirect Classification**: Classifies root dependencies under `direct = [...]` and transitive edges under `indirect = ["from -> to"]` in `mod.sno`.
+    - **Direct vs Indirect Classification**: Classifies root dependencies under `direct = [...]` and transitive edges under `indirect = ["from -> to"]` in `mod.sns`.
     - **Safe Execution**: Uses direct process invocation without shell string interpolation.
     - **Idempotency**: Running `get` multiple times preserves modifications, does not re-clone existing folders, and outputs deterministic manifests.
 
 - **`snl tidy [--project] [<path>]`**:
-  Scans project imports across all source files, removes unused dependencies, and synchronizes `mod.sno`.
+  Scans project imports across all source files, removes unused dependencies, and synchronizes `mod.sns`.
   ```bash
   snl tidy
   snl tidy --project ./my-project
@@ -180,7 +180,7 @@ make uninstall
 
 ### Project-Wide Operations
 
-A project is discovered by locating the nearest `mod.sno`, `snova.sno`, or `snova.toml` manifest. Source roots include `src/` (or project root) and vendored `.snovalang/deps/`. Source files are `.snl`. Script files are `.sns` and may omit `package` (they belong to package `main`). `mod.sno` and `snova.sno` are manifests, not sources. `run`, `build`, and `check` reject any other extension, including extensionless paths, without reading the file as source. Project discovery skips those files.
+A project is discovered by locating the nearest `mod.sns`, `snova.sns`, or `snova.toml` manifest. Source roots include `src/` (or project root) and vendored `.snovalang/deps/`. `snl` reads only `.snl` and `.sns`. Source files are `.snl`. Script files are `.sns` and may omit `package` (they belong to package `main`). `mod.sns` and `snova.sns` are manifests, not scripts, and are not compiled. `.sno` is rejected the same way as any other extension, including extensionless paths, without reading the file. Project discovery skips those files.
 
 - **`snl --check-parse-project <path>`**:
   Recursively discovers and parses all `.snl` and `.sns` files across the project and dependencies.

@@ -179,11 +179,17 @@ static int find_nearest_manifest_rel_pkg(const char *file_path, char *out, size_
 
     for (int depth = 0; depth < 32; depth++) {
         char mod_cand[SN_PKG_PATH_MAX];
-        snprintf(mod_cand, sizeof(mod_cand), "%s/mod.sno", check_dir);
-        struct stat st;
-        if (stat(mod_cand, &st) == 0 && S_ISREG(st.st_mode)) {
-            snprintf(manifest_dir, sizeof(manifest_dir), "%s", check_dir);
-            found_manifest = 1;
+        static const char *const manifest_names[] = {"mod.sns", "snova.sns"};
+        for (size_t mi = 0; mi < sizeof(manifest_names) / sizeof(manifest_names[0]); mi++) {
+            snprintf(mod_cand, sizeof(mod_cand), "%s/%s", check_dir, manifest_names[mi]);
+            struct stat st;
+            if (stat(mod_cand, &st) == 0 && S_ISREG(st.st_mode)) {
+                snprintf(manifest_dir, sizeof(manifest_dir), "%s", check_dir);
+                found_manifest = 1;
+                break;
+            }
+        }
+        if (found_manifest) {
             break;
         }
         char *p_slash = strrchr(check_dir, '/');
@@ -261,7 +267,7 @@ static int scan_section(SnPackageGraph *g, const SnDiagFile *file,
         return 0;
     }
 
-    /* Enforce physical directory path matching package declaration relative to nearest mod.sno checkpoint */
+    /* Enforce physical directory path matching package declaration relative to nearest mod.sns checkpoint */
     char checkpoint_expected[SN_PKG_PATH_MAX] = {0};
     if (find_nearest_manifest_rel_pkg(file->path, checkpoint_expected, sizeof(checkpoint_expected))) {
         /* Check if declared package matches checkpoint_expected.
@@ -290,7 +296,7 @@ static int scan_section(SnPackageGraph *g, const SnDiagFile *file,
 
         if (!matched) {
             sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_PKG_PATH_MISMATCH, pf->package_span,
-                         "package declaration '%s' does not match physical directory path relative to nearest 'mod.sno' checkpoint (expected '%s')",
+                         "package declaration '%s' does not match physical directory path relative to nearest 'mod.sns' or 'snova.sns' manifest (expected '%s')",
                          pf->package, checkpoint_expected);
         }
     }
