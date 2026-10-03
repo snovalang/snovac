@@ -185,16 +185,16 @@ void usage(FILE *out) {
       "  snl --version\n"
       "  snl --target-info                print detected OS/arch target and "
       "environment overrides\n"
-      "  snl --emit=tokens <file.snova>   dump the token stream\n"
-      "  snl --check-lex   <file.snova>   lex only; exit non-zero on error\n"
-      "  snl --emit=ast    <file.snova>   dump the parse tree\n"
-      "  snl --check-parse <file.snova>   lex+parse; exit non-zero on "
+      "  snl --emit=tokens <file.snl>   dump the token stream\n"
+      "  snl --check-lex   <file.snl>   lex only; exit non-zero on error\n"
+      "  snl --emit=ast    <file.snl>   dump the parse tree\n"
+      "  snl --check-parse <file.snl>   lex+parse; exit non-zero on "
       "error\n"
-      "  snl run           <file.snova>   parse and execute\n"
-      "  snl build         <file.snova> [-o output] [--target=triple]\n"
+      "  snl run           <file.snl>   parse and execute\n"
+      "  snl build         <file.snl> [-o output] [--target=triple]\n"
       "                                       compile to standalone native "
       "executable\n"
-      "  snl check         <file.snova>   resolve + type-check (see llm.md: "
+      "  snl check         <file.snl>   resolve + type-check (see llm.md: "
       "coverage is partial - no generics substitution yet)\n"
       "\n"
       "dependencies and package management:\n"
@@ -345,6 +345,40 @@ int path_is_file(const char *path) {
   normalize_path_into(path, norm, sizeof(norm));
   struct stat st;
   return stat(norm, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+static const char *path_basename(const char *path) {
+  const char *base = path ? path : "";
+  for (const char *p = base; *p; p++) {
+    if (*p == '/' || *p == '\\') {
+      base = p + 1;
+    }
+  }
+  return base;
+}
+
+static int ends_with_exact(const char *s, const char *suf) {
+  size_t n = strlen(s);
+  size_t m = strlen(suf);
+  if (n < m) {
+    return 0;
+  }
+  return memcmp(s + (n - m), suf, m) == 0;
+}
+
+int sn_path_is_source(const char *path) {
+  return path && ends_with_exact(path_basename(path), ".snl");
+}
+
+int sn_path_is_script(const char *path) {
+  if (!path) {
+    return 0;
+  }
+  const char *base = path_basename(path);
+  if (strcmp(base, "mod.sno") == 0 || strcmp(base, "snova.sno") == 0) {
+    return 0;
+  }
+  return ends_with_exact(base, ".sns");
 }
 
 /* Recursively creates `dir` and any missing parent directories (mkdir -p). */

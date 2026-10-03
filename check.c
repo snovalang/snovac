@@ -1,5 +1,7 @@
 #include "check.h"
 
+#include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "borrow.h"
@@ -25,16 +27,84 @@ void sn_checker_init(SnChecker *c, SnArena *a, SnInternTable *it, SnDiagSink *di
 }
 
 static int is_numeric(const SnTypeRep *t) {
-    return t->tag == SN_T_INT || t->tag == SN_T_LONG || t->tag == SN_T_DOUBLE ||
-           t->tag == SN_T_DECIMAL || t->tag == SN_T_FLOAT || t->tag == SN_T_BYTE;
+    return sn_type_integer_width(t) > 0 || t->tag == SN_T_DOUBLE ||
+           t->tag == SN_T_DECIMAL || t->tag == SN_T_FLOAT;
+}
+
+static int is_text_type(const SnTypeRep *t) {
+    return t && (t->tag == SN_T_STRING || t->tag == SN_T_CHAR);
+}
+
+/* Magnitude of an unsuffixed integer literal. Underscores are ignored.
+ * `*negative` is set when the expression is a unary minus around that literal. */
+static int integer_literal_magnitude(const SnExpr *e, long long *mag, int *negative) {
+    const SnExpr *lit = e;
+    *negative = 0;
+    if (e && e->kind == SN_EXPR_UNARY &&
+        (e->op == SN_TOK_MINUS || e->op == SN_TOK_PLUS) && e->lhs &&
+        e->lhs->kind == SN_EXPR_INT) {
+        *negative = e->op == SN_TOK_MINUS;
+        lit = e->lhs;
+    }
+    if (!lit || lit->kind != SN_EXPR_INT || !lit->text) {
+        return 0;
+    }
+    char buf[128];
+    size_t n = 0;
+    for (const char *p = lit->text; *p && n + 1 < sizeof(buf); p++) {
+        if (*p == '_') {
+            continue;
+        }
+        buf[n++] = *p;
+    }
+    buf[n] = '\0';
+    if (n == 0) {
+        return 0;
+    }
+    errno = 0;
+    char *end = NULL;
+    long long v = strtoll(buf, &end, 0);
+    if (errno != 0 || end == buf) {
+        return 0;
+    }
+    if (v < 0) {
+        v = -v;
+    }
+    *mag = v;
+    return 1;
+}
+
+static int integer_magnitude_fits(long long mag, int negative, int width, int is_signed) {
+    if (width <= 0 || mag < 0) {
+        return 0;
+    }
+    if (!is_signed) {
+        if (negative) {
+            return 0;
+        }
+        if (width >= 64) {
+            return 1;
+        }
+        unsigned long long max = (1ULL << (unsigned)width) - 1ULL;
+        return (unsigned long long)mag <= max;
+    }
+    if (width >= 64) {
+        return 1;
+    }
+    if (negative) {
+        unsigned long long limit = 1ULL << (unsigned)(width - 1);
+        return (unsigned long long)mag <= limit;
+    }
+    long long max = (1LL << (width - 1)) - 1LL;
+    return mag <= max;
 }
 
 static int is_error(const SnTypeRep *t) { return t->tag == SN_T_ERROR; }
 
 /* An UNSUFFIXED numeric literal carries no committed type until context gives
- * it one: `3.0` is an equally valid `decimal` (tests/compile-pass/structs.snova
+ * it one: `3.0` is an equally valid `decimal` (tests/compile-pass/structs.snl
  * writes `Point(3.0, 4.0)` for two `decimal` fields), `float`
- * (tests/compile-pass/data_class.snova) or `double`.
+ * (tests/compile-pass/data_class.snl) or `double`.
  *
  * This is NOT the implicit numeric promotion ratified as forbidden (plan.md §7
  * item 1, measured 2026-07-25): that rule is about converting an
@@ -52,8 +122,10 @@ static SnTypeRep *adopt_literal_type(SnChecker *c, SnExpr *e, SnTypeRep *actual,
         return actual;
     }
     if (e->kind == SN_EXPR_UNARY && (e->op == SN_TOK_MINUS || e->op == SN_TOK_PLUS) &&
-        e->lhs) {
-        /* `-1` is still a literal; the sign doesn't commit it to a type. */
+        e->lhs && sn_type_integer_width(expected) == 0) {
+        /* `-1` is still a literal; the sign doesn't commit it to a type.
+         * Integer targets are handled below so the sign participates in the
+         * range check (a negative value does not fit `byte`). */
         SnTypeRep *inner = adopt_literal_type(c, e->lhs, actual, expected);
         if (inner != actual) {
             e->resolved_type = inner;
@@ -61,9 +133,18 @@ static SnTypeRep *adopt_literal_type(SnChecker *c, SnExpr *e, SnTypeRep *actual,
         return inner;
     }
     int fits = 0;
-    if (e->kind == SN_EXPR_INT) {
-        fits = expected->tag == SN_T_INT || expected->tag == SN_T_LONG ||
-               expected->tag == SN_T_BYTE;
+    int lit_negative = 0;
+    long long lit_mag = 0;
+    if (sn_type_integer_width(expected) > 0 &&
+        integer_literal_magnitude(e, &lit_mag, &lit_negative)) {
+        fits = integer_magnitude_fits(lit_mag, lit_negative,
+                                      sn_type_integer_width(expected),
+                                      sn_type_integer_signed(expected));
+        if (fits && e->kind == SN_EXPR_UNARY && e->lhs) {
+            e->lhs->resolved_type = expected;
+            e->resolved_type = expected;
+            return expected;
+        }
     } else if (e->kind == SN_EXPR_DOUBLE) {
         fits = expected->tag == SN_T_DOUBLE || expected->tag == SN_T_FLOAT ||
                expected->tag == SN_T_DECIMAL;
@@ -158,7 +239,7 @@ static int decl_derives_from(SnChecker *c, const SnDecl *sub, const SnDecl *supe
  *
  * The order is (value, expected) at every call site and matters: assignability
  * is directional. A `Dog` may initialize an `Animal` binding
- * (tests/compile-pass/inheritance_polymorphism.snova) — the reverse may not.
+ * (tests/compile-pass/inheritance_polymorphism.snl) — the reverse may not.
  *
  * SN_T_ERROR means a failure was already reported upstream, and SN_T_ANY is
  * the corpus's escape hatch (`func printline(value: any)`); neither should
@@ -206,7 +287,7 @@ static SnTypeRep *sn_check_resolve_type_base(SnChecker *c, const SnType *t) {
             }
         }
         /* Intrinsic generic constructors — `Array<T>`, `Partial<T>`. No
-         * .snova file declares them, so they short-circuit before any scope
+         * .snl file declares them, so they short-circuit before any scope
          * lookup, exactly as the primitives do inside sn_resolve_type_name.
          * Their arguments are resolved first because the constructed type
          * needs them; a non-intrinsic name still resolves its own name first,
@@ -332,7 +413,7 @@ static void check_match_exhaustiveness(SnChecker *c, const SnTypeRep *target_ty,
 /* True when `sym` was declared in a file other than the one being checked.
  * Resolving such a symbol's declared types re-runs name resolution in the
  * CURRENT context, where the other file's imports and type parameters do not
- * exist — `T` in builtin/Errors.snova's `func try<T, E>` is not in scope at a
+ * exist — `T` in builtin/Errors.snl's `func try<T, E>` is not in scope at a
  * call site in a fixture. Whatever it reports there would be both wrong and
  * attributed to the wrong file, and the real problem (if any) is reported
  * where that declaration's own body is checked. */
@@ -398,7 +479,7 @@ static int is_mutable_symbol(const SnChecker *c, const SnSymbol *sym) {
     case SN_SYM_FIELD:
         /* A `let` field is immutable everywhere EXCEPT the constructor, which
          * is where it gets its one value — `this.description = description` in
-         * tests/compile-pass/p1_syntax_additions.snova. Assigning it twice is
+         * tests/compile-pass/p1_syntax_additions.snl. Assigning it twice is
          * a definite-assignment question, and flow analysis is P4. */
         return (sym->decl && sym->decl->is_mutable) || c->in_constructor;
     default:
@@ -532,6 +613,16 @@ static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
         return sym;
     }
     if (e->kind == SN_EXPR_MEMBER) {
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && e->lhs->text && e->text &&
+            strcmp(e->lhs->text, "Console") == 0 &&
+            (strcmp(e->text, "print") == 0 || strcmp(e->text, "printline") == 0 ||
+             strcmp(e->text, "println") == 0 || strcmp(e->text, "err") == 0 ||
+             strcmp(e->text, "warn") == 0)) {
+            SnTypeRep *any_ty = sn_type_any(c->types);
+            e->lhs->resolved_type = sn_type_unit(c->types);
+            e->resolved_type = sn_type_func(c->types, &any_ty, 1, sn_type_unit(c->types));
+            return NULL;
+        }
         /* `Array<Post>.new()` — receiver is an intrinsic type, not a value.
          * Checked before the package-prefix walk so the receiver is never
          * evaluated as an expression (which would report SNOVA0023 for it). */
@@ -579,7 +670,7 @@ static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
         SnTypeRep *target_ty = (is_qdot && is_opt_base) ? base_ty->args[0] : base_ty;
 
         if (target_ty->tag != SN_T_NAMED || !target_ty->decl) {
-            /* Arrays, strings and scalars carry members that no .snova file
+            /* Arrays, strings and scalars carry members that no .snl file
              * declares (`arr.len()`, `n.toString()`) — builtins.c owns them. */
             SnTypeRep *bm = sn_builtin_member(c->types, c->intern, target_ty, mname);
             if (bm) {
@@ -653,7 +744,7 @@ static SnTypeRep *check_binary(SnChecker *c, SnExpr *e, SnTypeRep *lt, SnTypeRep
     }
     switch (e->op) {
     case SN_TOK_PLUS:
-        if (lt->tag == SN_T_STRING && rt->tag == SN_T_STRING) {
+        if (is_text_type(lt) && is_text_type(rt)) {
             return sn_type_string(c->types);
         }
         /* fallthrough */
@@ -754,7 +845,7 @@ static SnTypeRep *check_unary(SnChecker *c, SnExpr *e, SnTypeRep *operand) {
         }
         break;
     case SN_TOK_TILDE:
-        if (operand->tag == SN_T_INT || operand->tag == SN_T_LONG) {
+        if (sn_type_integer_width(operand) > 0) {
             return operand;
         }
         break;
@@ -913,6 +1004,58 @@ static void check_constructor_call(SnChecker *c, SnExpr *call_expr, SnSymbol *ty
             required++;
         }
     }
+    /* `Counter()` with a field that has no initializer is how the run-pass
+     * fixtures construct objects; the runtime fills the field from
+     * `default_for`. A call that passes some arguments still has to cover
+     * every field that lacks an initializer. */
+    if (nargs == 0) {
+        return;
+    }
+    int any_named = 0;
+    for (size_t ni = 0; ni < call_expr->field_names.len && ni < nargs; ni++) {
+        if (SN_LIST_AT(call_expr->field_names, const char, ni)) {
+            any_named = 1;
+            break;
+        }
+    }
+    if (any_named) {
+        if (nargs > total) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARITY_MISMATCH, call_expr->span,
+                        "expected %zu argument(s), found %zu", required, nargs);
+            return;
+        }
+        for (size_t ai = 0; ai < nargs; ai++) {
+            const char *fname = (ai < call_expr->field_names.len)
+                                    ? SN_LIST_AT(call_expr->field_names, const char, ai)
+                                    : NULL;
+            SnExpr *arg = SN_LIST_AT(call_expr->args, SnExpr, ai);
+            if (!fname) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, call_expr->span,
+                            "argument %zu must name a field", ai + 1);
+                continue;
+            }
+            const SnDecl *field = NULL;
+            for (size_t i = 0; i < d->members.len; i++) {
+                const SnDecl *m = SN_LIST_AT(d->members, SnDecl, i);
+                if (m->kind == SN_DECL_FIELD && m->name && strcmp(m->name, fname) == 0) {
+                    field = m;
+                    break;
+                }
+            }
+            if (!field) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNKNOWN_MEMBER, arg->span,
+                            "type `%s` has no field named `%s`", d->name, fname);
+                continue;
+            }
+            SnTypeRep *expected = resolve_declared_type(c, type_sym, field->type);
+            arg_tys[ai] = adopt_literal_type(c, arg, arg_tys[ai], expected);
+            if (types_clash(c, arg_tys[ai], expected)) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, arg->span,
+                            "argument `%s` has the wrong type", fname);
+            }
+        }
+        return;
+    }
     if (nargs < required || nargs > total) {
         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARITY_MISMATCH, call_expr->span,
                     "expected %zu argument(s), found %zu", required, nargs);
@@ -957,6 +1100,90 @@ static void check_constructor_call(SnChecker *c, SnExpr *call_expr, SnSymbol *ty
 }
 
 /* ── the big expression switch ───────────────────────────────────────────── */
+
+static SnTypeRep *preview_adopted_type(const SnExpr *e, SnTypeRep *actual,
+                                       SnTypeRep *expected) {
+    if (!e || !expected || !actual || expected->tag == SN_T_ERROR || expected == actual) {
+        return actual;
+    }
+    int negative = 0;
+    long long mag = 0;
+    if (sn_type_integer_width(expected) > 0 &&
+        integer_literal_magnitude(e, &mag, &negative)) {
+        if (integer_magnitude_fits(mag, negative, sn_type_integer_width(expected),
+                                   sn_type_integer_signed(expected))) {
+            return (SnTypeRep *)expected;
+        }
+        return actual;
+    }
+    if (e->kind == SN_EXPR_DOUBLE &&
+        (expected->tag == SN_T_DOUBLE || expected->tag == SN_T_FLOAT ||
+         expected->tag == SN_T_DECIMAL)) {
+        return (SnTypeRep *)expected;
+    }
+    return actual;
+}
+
+/* Picks one method when `primary` has an overload chain. Returns the winner,
+ * or NULL after emitting ambiguous / no-match. A symbol with no overloads is
+ * not passed here — a single candidate keeps the existing mismatch codes. */
+static SnSymbol *select_overload(SnChecker *c, SnExpr *call, SnTypeRep **arg_tys,
+                                SnSymbol *primary) {
+    SnSymbol *best = NULL;
+    int best_score = -1;
+    int ties = 0;
+    for (SnSymbol *cand = primary; cand; cand = cand->overloads) {
+        if (!cand->decl || cand->decl->params.len != call->args.len) {
+            continue;
+        }
+        int score = 0;
+        int ok = 1;
+        for (size_t i = 0; i < call->args.len; i++) {
+            SnParam *p = SN_LIST_AT(cand->decl->params, SnParam, i);
+            SnTypeRep *expected = resolve_declared_type(c, cand, p->type);
+            SnExpr *arg = SN_LIST_AT(call->args, SnExpr, i);
+            SnTypeRep *eff = preview_adopted_type(arg, arg_tys[i], expected);
+            if (!eff || !expected || eff->tag == SN_T_ERROR || expected->tag == SN_T_ERROR ||
+                sn_type_is_any(eff) || sn_type_is_any(expected)) {
+                score += 1;
+                continue;
+            }
+            if (eff == expected) {
+                score += 2;
+                continue;
+            }
+            if (!types_clash(c, eff, expected)) {
+                score += 1;
+                continue;
+            }
+            ok = 0;
+            break;
+        }
+        if (!ok) {
+            continue;
+        }
+        if (score > best_score) {
+            best = cand;
+            best_score = score;
+            ties = 1;
+        } else if (score == best_score) {
+            ties++;
+        }
+    }
+    if (!best) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_NO_MATCHING_OVERLOAD, call->span,
+                    "no overload of `%s` matches these arguments",
+                    primary->name ? primary->name : "<method>");
+        return NULL;
+    }
+    if (ties > 1) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_AMBIGUOUS_OVERLOAD, call->span,
+                    "call to `%s` is ambiguous",
+                    primary->name ? primary->name : "<method>");
+        return NULL;
+    }
+    return best;
+}
 
 SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     SnTypeRep *result;
@@ -1074,6 +1301,16 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
             break;
         }
         if (callee_sym->kind == SN_SYM_FUNC || callee_sym->kind == SN_SYM_METHOD) {
+            int used_overload = 0;
+            if (callee_sym->overloads) {
+                SnSymbol *chosen = select_overload(c, e, arg_tys, callee_sym);
+                if (!chosen) {
+                    result = sn_type_error(c->types);
+                    break;
+                }
+                callee_sym = chosen;
+                used_overload = 1;
+            }
             if (callee_sym->decl->is_pulsar && c->in_async_body) {
                 sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_IN_ASYNC, e->span,
                              "cannot call pulsar function `%s` inside an async function",
@@ -1083,7 +1320,7 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
                             "pulsar function `%s` cannot be called directly -- use `pulsar %s(...)`",
                             callee_sym->name, callee_sym->name);
             }
-            if (e->lhs->resolved_type && e->lhs->resolved_type->tag == SN_T_FUNC) {
+            if (!used_overload && e->lhs->resolved_type && e->lhs->resolved_type->tag == SN_T_FUNC) {
                 check_call_against_functype(c, e, e->lhs->resolved_type, arg_tys, e->args.len);
                 result = e->lhs->resolved_type->ret;
             } else {
@@ -1139,7 +1376,13 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     case SN_EXPR_INDEX: {
         SnTypeRep *base_ty = sn_ptr_peel(e->lhs, sn_check_expr(c, local, e->lhs));
         SnTypeRep *idx_ty = sn_check_expr(c, local, e->rhs);
-        (void)idx_ty; /* not enforced to be `int` in this pass — documented gap */
+        if (!is_error(idx_ty) && !sn_type_is_any(idx_ty) &&
+            sn_type_integer_width(idx_ty) == 0) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNARY_TYPE_MISMATCH, e->span,
+                        "index must be an integer type");
+            result = sn_type_error(c->types);
+            break;
+        }
         if (is_error(base_ty)) {
             result = sn_type_error(c->types);
             break;
@@ -1232,10 +1475,39 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
         break;
     }
 
-    case SN_EXPR_CAST:
-        sn_check_expr(c, local, e->lhs);
-        result = sn_check_resolve_type(c, e->type); /* trusts the annotation */
+    case SN_EXPR_CAST: {
+        SnTypeRep *src = sn_check_expr(c, local, e->lhs);
+        SnTypeRep *dst = sn_check_resolve_type(c, e->type);
+        result = dst;
+        if (!src || !dst || is_error(src) || is_error(dst) || sn_type_is_any(src) ||
+            sn_type_is_any(dst) || src == dst) {
+            break;
+        }
+        int src_w = sn_type_integer_width(src);
+        int dst_w = sn_type_integer_width(dst);
+        int numeric_src = src_w > 0 || src->tag == SN_T_FLOAT || src->tag == SN_T_DOUBLE ||
+                          src->tag == SN_T_DECIMAL;
+        int narrowing = 0;
+        if (src_w > 0 && dst_w > 0 && dst_w < src_w) {
+            narrowing = 1;
+        } else if (dst_w > 0 &&
+                   (src->tag == SN_T_FLOAT || src->tag == SN_T_DOUBLE ||
+                    src->tag == SN_T_DECIMAL || src->tag == SN_T_STRING ||
+                    src->tag == SN_T_CHAR)) {
+            narrowing = 1;
+        } else if (dst->tag == SN_T_STRING && src->tag == SN_T_CHAR) {
+            narrowing = 0; /* one-character widening */
+        } else if (numeric_src && dst_w == 0 && dst->tag != SN_T_STRING) {
+            /* float as string and similar stay as written; integer targets
+             * are the narrowing cases above. */
+        }
+        if (narrowing) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_NARROWING_CONVERSION, e->span,
+                        "cannot narrow `%s` to `%s`", sn_type_name(src), sn_type_name(dst));
+            result = sn_type_error(c->types);
+        }
         break;
+    }
 
     case SN_EXPR_IS:
         sn_check_expr(c, local, e->lhs);
@@ -1383,7 +1655,8 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
                                      "type `%s` has no field named `%s`", td->name, fname);
                     } else {
                         SnTypeRep *decl_ty = symbol_type(c, fsym);
-                        if (decl_ty && types_clash(c, decl_ty, arg_ty)) {
+                        arg_ty = adopt_literal_type(c, arg, arg_ty, decl_ty);
+                        if (decl_ty && types_clash(c, arg_ty, decl_ty)) {
                             sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, arg->span,
                                          "cannot assign incompatible value to field `%s`", fname);
                         }
@@ -1529,9 +1802,9 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
         /* `var ids: Array<string> = []` — the annotation IS the element-type
          * source SNOVA100 asks for, so an empty literal under an annotated
          * array binding is not the untyped case the code reports
-         * (tests/compile-pass/ArrayLiteralDeclaredType.snova; the genuinely
+         * (tests/compile-pass/ArrayLiteralDeclaredType.snl; the genuinely
          * untyped form still fails in
-         * tests/compile-fail/array_literal_untyped.snova). Handled here rather
+         * tests/compile-fail/array_literal_untyped.snl). Handled here rather
          * than inside SN_EXPR_ARRAY because only the binding knows the
          * annotation — sn_check_expr has no expected-type channel. */
         if (declared && declared->tag == SN_T_ARRAY && s->expr &&
@@ -1970,4 +2243,18 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
     c->in_async_body = 0;
     c->current_return_type = NULL;
     c->type_params = NULL;
+}
+
+void sn_check_field_initializer(SnChecker *c, SnScope *local, const SnDecl *field) {
+    if (!c || !field || !field->init || !field->type) {
+        return;
+    }
+    SnTypeRep *expected = sn_check_resolve_type(c, field->type);
+    SnTypeRep *got = sn_check_expr(c, local, field->init);
+    got = adopt_literal_type(c, field->init, got, expected);
+    if (types_clash(c, got, expected)) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_LET_TYPE_MISMATCH, field->span,
+                    "field `%s` initializer has the wrong type",
+                    field->name ? field->name : "<field>");
+    }
 }

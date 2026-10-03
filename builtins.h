@@ -2,7 +2,7 @@
  *
  * specs/20260719/snovac-p2-resolver-typechecker/llm.md, P2.6 "Why 8/26 and
  * no more": the two largest remaining causes of fixture errors were `Array`
- * (a generic type no .snova file declares) and the absence of any member table
+ * (a generic type no .snl file declares) and the absence of any member table
  * for primitives (`n.toString()`, `arr.len()`). Both live here.
  *
  * The authoritative list is crates/snovalang/src/native/selfcheck/
@@ -33,17 +33,17 @@
 #include "intern.h"
 #include "types.h"
 
-/* Generic type constructors that no .snova file declares.
+/* Generic type constructors that no .snl file declares.
  *
  *   Array<T>   -> SN_T_ARRAY with element T (bare `Array` -> Array<any>)
  *   Partial<T> -> T
  *
  * `Partial<T>` is Stage 0's compiler-synthesized "every field seen as
- * Option<FieldType>" view (tests/compile-pass/partial_type.snova). Modeling it
+ * Option<FieldType>" view (tests/compile-pass/partial_type.snl). Modeling it
  * as T is deliberate and is what both fixtures actually require: the accepted
  * fixture writes `user.age.toString()` — the field used at its own type, not
  * wrapped — and the rejected one
- * (tests/compile-fail/partial_type_unknown_field.snova) only needs an unknown
+ * (tests/compile-fail/partial_type_unknown_field.snl) only needs an unknown
  * field to stay unknown, which member lookup on T already gives. The
  * Option-wrapping itself is not modeled.
  *

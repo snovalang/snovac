@@ -88,7 +88,7 @@ cd snovac
 make
 ```
 
-`make` writes the toolchain binary to `build/snl`. The same file is also copied to `build/sncli` and `build/snovac` so those local paths keep working.
+`make` writes the toolchain binary to `build/snl`. The same file is also copied to `build/snovac` so that local path keeps working. The command users run is `snl`.
 
 Install that binary with the Makefile:
 
@@ -123,25 +123,25 @@ make uninstall
 
 ### Single-File Inspection & Compilation
 
-- **`snl --emit=tokens <file.snova>`**:
+- **`snl --emit=tokens <file.snl>`**:
   Runs lexical analysis and dumps the token stream with source spans (line:col).
 
-- **`snl --check-lex <file.snova>`**:
+- **`snl --check-lex <file.snl>`**:
   Validates lexical tokens without generating an AST; exits with non-zero code on syntax/lexer errors.
 
-- **`snl --emit=ast <file.snova>`**:
+- **`snl --emit=ast <file.snl>`**:
   Parses the source file and dumps the formatted AST (Abstract Syntax Tree).
 
-- **`snl --check-parse <file.snova>`**:
+- **`snl --check-parse <file.snl>`**:
   Performs lexical analysis and syntax parsing; reports syntax errors with diagnostics.
 
-- **`snl check <file.snova>`**:
+- **`snl check <file.snl>`**:
   Performs symbol resolution, scope analysis, and static type-checking on a single file.
 
-- **`snl run <file.snova>`**:
+- **`snl run <file.snl>`**:
   Compiles and directly executes a single Snovalang source file in the bytecode VM runtime.
 
-- **`snl build <file.snova> [-o output] [--target=triple]`**:
+- **`snl build <file.snl> [-o output] [--target=triple]`**:
   Compiles a single file to a standalone native binary or bytecode unit. Supports cross-compilation target triples (e.g. `aarch64-apple-darwin`, `x86_64-linux-gnu`).
 
 ### Package & Dependency Management
@@ -180,10 +180,10 @@ make uninstall
 
 ### Project-Wide Operations
 
-A project is discovered by locating the nearest `mod.sno`, `snova.sno`, or `snova.toml` manifest. Source roots include `src/` (or project root) and vendored `.snovalang/deps/`.
+A project is discovered by locating the nearest `mod.sno`, `snova.sno`, or `snova.toml` manifest. Source roots include `src/` (or project root) and vendored `.snovalang/deps/`. Source files are `.snl`. Script files are `.sns` and may omit `package` (they belong to package `main`). `mod.sno` and `snova.sno` are manifests, not sources. `run`, `build`, and `check` reject any other extension, including extensionless paths, without reading the file as source. Project discovery skips those files.
 
 - **`snl --check-parse-project <path>`**:
-  Recursively discovers and parses all `.snova` source files across the project and dependencies.
+  Recursively discovers and parses all `.snl` and `.sns` files across the project and dependencies.
 
 - **`snl check --project <path> [--no-typecheck]`**:
   Builds the project package graph, links imports, resolves types and symbols across packages, and type-checks declaration bodies. Adding `--no-typecheck` skips body checks while verifying interface signatures and imports.
@@ -193,6 +193,16 @@ A project is discovered by locating the nearest `mod.sno`, `snova.sno`, or `snov
 
 - **`snl build --project <path> [-o output] [--target=triple] [--runtime] [--offline-cache[=<dir>]]`**:
   Compiles an entire project and its dependencies into a bundled executable. `--runtime` links the native runtime library into the final binary.
+
+## Types
+
+`int` is a 64-bit signed integer. It is the same width as `int64` and `long`, and it is a distinct type: there is no implicit conversion between them. The other integer types are `int8`, `int16`, `int32`, `int64`, and `int128` (all signed) and `byte` (unsigned 8-bit). `char` is not an integer.
+
+An unsuffixed integer literal may adopt an expected integer type when the value fits. A suffixed literal such as `42L` stays `long`. Narrowing — a wider integer, a `float`/`double`/`decimal`, or a `string` into a smaller integer — is a compile error even when written with `as`. Same-width and widening conversions are explicit `as` casts (`int as long`, `int8 as int16`, `char as string`).
+
+`string` is a concatenation of `char` values. `string + string`, `string + char`, `char + string`, and `char + char` produce `string`. Indexing a string, and `charAt`, yields `char`. A string is not an integer, and `+` does not coerce other types to string.
+
+Two fields of the same name in one class or struct are a compile error. Methods may share a name when their parameter types differ; the checker picks one candidate, and an ambiguous call is a compile error. The same signature twice is still a duplicate declaration.
 
 ## Environment Variables
 

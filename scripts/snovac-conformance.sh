@@ -1,5 +1,5 @@
 #!/bin/sh
-# snovac-conformance.sh — runs snovac over the whole .snova corpus.
+# snovac-conformance.sh — runs snovac over the whole .snl corpus.
 #
 # The oracle is the corpus itself, never the Rust Stage 0: that component
 # matches source text with substring scans and is not a reliable reference for
@@ -43,7 +43,7 @@ parseable="$work/parseable"
 # (specs/20260719/builtin-module-vendoring, pendência 2).
 for dir in "$ROOT/tests" "$ROOT/compiler/src" "$ROOT/builtin"; do
   [ -d "$dir" ] || continue
-  find "$dir" -name '*.snova' -type f >> "$all"
+  find "$dir" \( -name '*.snl' -o -name '*.sns' \) -type f >> "$all"
 done
 sort -o "$all" "$all"
 

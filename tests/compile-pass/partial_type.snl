@@ -10,7 +10,7 @@ import builtin.console.Console
 // This fixture exercises the accepted shape: constructing a `Partial<User>`
 // and accessing real fields of the underlying `User` struct. The rejected
 // shape (accessing a field `User` doesn't declare) lives in
-// tests/compile-fail/partial_type_unknown_field.snova.
+// tests/compile-fail/partial_type_unknown_field.snl.
 
 struct User {
     name: string

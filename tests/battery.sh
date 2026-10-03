@@ -51,7 +51,7 @@ own_errors() { # file -> count
 # (the recorded text uses the Rust frontend's SNOVA050 spelling, snovac prints
 # SNOVA0050). Empty when the fixture has no .stderr.
 expected_code() { # file -> code or ""
-  expected="${1%.snova}.stderr"
+  expected="${1%.snl}.stderr"
   [ -f "$expected" ] || return 0
   sed -n 's/.*SNOVA0*\([0-9][0-9]*\).*/\1/p' "$expected" | head -1
 }
@@ -73,7 +73,7 @@ pass_total=0; pass_ok=0
 # are counted apart rather than mixed into a single misleading percentage.
 #
 # The same gap also reaches one fixture outside that directory
-# (missing_import_type_usage_ok.snova imports `builtin.http.Http`), so the test
+# (missing_import_type_usage_ok.snl imports `builtin.http.Http`), so the test
 # is "does this fixture report SNOVA050, package-not-found, against itself" —
 # that diagnostic IS the dependency-materialization gap, by definition. It is
 # only consulted for compile-pass fixtures; compile-fail keeps its own tally.
@@ -84,7 +84,7 @@ needs_materialized_deps() { # file
 
 deps_total=0; deps_clean=0
 printf '\n== compile-pass (expect: no error attributed to the fixture) ==\n'
-for f in $(find "$ROOT/compile-pass" -name '*.snova' | sort); do
+for f in $(find "$ROOT/compile-pass" -name '*.snl' | sort); do
   n=$(own_errors "$f")
   if needs_materialized_deps "$f"; then
     deps_total=$((deps_total + 1))
@@ -101,7 +101,7 @@ done
 
 fail_total=0; fail_ok=0; fail_code_ok=0
 printf '\n== compile-fail (expect: at least one error on the fixture) ==\n'
-for f in $(find "$ROOT/compile-fail" -name '*.snova' | sort); do
+for f in $(find "$ROOT/compile-fail" -name '*.snl' | sort); do
   fail_total=$((fail_total + 1))
   n=$(own_errors "$f")
   if [ "$n" -eq 0 ]; then

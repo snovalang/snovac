@@ -102,10 +102,9 @@ all: $(BIN) $(LIB_RT)
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(EXTRA_LIBS)
 ifeq ($(OS),Windows_NT)
-	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item '$@' '$(BUILD)/snovac$(EXE)' -Force; Copy-Item '$@' '$(BUILD)/sncli$(EXE)' -Force"
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item '$@' '$(BUILD)/snovac$(EXE)' -Force"
 else
 	@cp $@ $(BUILD)/snovac$(EXE)
-	@cp $@ $(BUILD)/sncli$(EXE)
 endif
 
 $(LIB_RT): $(RT_OBJS)
@@ -200,7 +199,7 @@ else
 	@./$(TEST_CHECK_BIN)
 endif
 
-# Lexes every .snova in the repository and reports coverage.
+# Lexes every .snl in the repository and reports coverage.
 conformance: $(BIN)
 	@sh scripts/snovac-conformance.sh $(BIN)
 

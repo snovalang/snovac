@@ -30,8 +30,8 @@
 #define SNOVA_UNSUPPORTED        305
 
 typedef enum {
-    V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_OBJECT, V_VARIANT, V_LAMBDA,
-    V_ARRAY, V_REF
+    V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_CHAR, V_OBJECT, V_VARIANT,
+    V_LAMBDA, V_ARRAY, V_REF
 } ValKind;
 
 typedef struct Object Object;
@@ -46,6 +46,9 @@ struct ArrayVal {
 
 typedef struct {
     ValKind kind;
+    /* Bit width of a V_INT. 64 for an unspecialized `v_int`. 0 on every
+     * other kind. Annotated `let`/`var` bindings stamp the declared width. */
+    unsigned char iwidth;
     union {
         long long i;
         double d;
@@ -122,11 +125,17 @@ typedef struct {
 
 /* ── value constructors ───────────────────────────────────────────────────── */
 
-static inline Value v_unit(void)         { Value v; v.kind = V_UNIT; v.as.i = 0; return v; }
-static inline Value v_int(long long i)   { Value v; v.kind = V_INT; v.as.i = i; return v; }
-static inline Value v_double(double d)   { Value v; v.kind = V_DOUBLE; v.as.d = d; return v; }
-static inline Value v_bool(int b)        { Value v; v.kind = V_BOOL; v.as.b = b != 0; return v; }
-static inline Value v_str(const char *s) { Value v; v.kind = V_STRING; v.as.s = s; return v; }
+static inline Value v_unit(void)         { Value v; v.kind = V_UNIT; v.iwidth = 0; v.as.i = 0; return v; }
+static inline Value v_int(long long i)   { Value v; v.kind = V_INT; v.iwidth = 64; v.as.i = i; return v; }
+static inline Value v_int_w(long long i, unsigned char w) {
+    Value v = v_int(i);
+    v.iwidth = w ? w : 64;
+    return v;
+}
+static inline Value v_char(long long code) { Value v; v.kind = V_CHAR; v.iwidth = 0; v.as.i = code; return v; }
+static inline Value v_double(double d)   { Value v; v.kind = V_DOUBLE; v.iwidth = 0; v.as.d = d; return v; }
+static inline Value v_bool(int b)        { Value v; v.kind = V_BOOL; v.iwidth = 0; v.as.b = b != 0; return v; }
+static inline Value v_str(const char *s) { Value v; v.kind = V_STRING; v.iwidth = 0; v.as.s = s; return v; }
 
 /* ── eval.c ───────────────────────────────────────────────────────────────── */
 
@@ -142,12 +151,16 @@ const char *to_string(Interp *in, Value v, SnSpan span);
 
 const SnDecl *find_member(const SnDecl *cls, const char *name);
 const SnDecl *find_member_inherited(const Interp *in, const SnDecl *cls, const char *name);
+/* Same name, distinct parameter types. Falls back to the first member when
+ * the arguments do not distinguish a candidate. */
+const SnDecl *find_overload(Interp *in, Env *env, const SnDecl *cls, const char *name,
+                            const SnList *args);
 const SnDecl *find_top(const Interp *in, const char *name, SnDeclKind k);
 const SnDecl *find_type(const Interp *in, const char *name);
 
 Value default_for(const SnType *t);
-Object *instantiate(Interp *in, const SnDecl *cls, SnList *args, Env *env,
-                    SnSpan span);
+Object *instantiate(Interp *in, const SnDecl *cls, SnList *args, SnList *names,
+                    Env *env, SnSpan span);
 Value *object_field(Object *o, const char *name);
 
 Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,

@@ -7,12 +7,12 @@
  * by content. Passing a non-interned string silently breaks lookups (it will
  * define/find nothing, not crash), so callers own that contract.
  *
- * One entry per name per scope. specs/20260719/snovac-p2-resolver-
- * typechecker/llm.md, ambiguity 2 (ratified 2026-07-25): method overloading
- * does not occur anywhere in the measured corpus, so sn_scope_define()
- * rejects a second definition of the same name in the same scope outright
- * instead of keeping a list. If overloading needs to be supported later,
- * that decision reopens this file's shape, not just resolve.c.
+ * One bucket entry per name per scope. Extra methods that share the name and
+ * differ in parameter types hang off `overloads` — the same symbol table, not
+ * a second one. `next` is only the hash bucket chain. sn_scope_define() still
+ * returns NULL when the name is already present; the collector chains an
+ * overload instead of inserting a second bucket entry. The same signature
+ * twice stays a duplicate.
  */
 #ifndef SNOVAC_SYMBOL_H
 #define SNOVAC_SYMBOL_H
@@ -58,6 +58,9 @@ typedef struct SnSymbol {
      * here first. NULL for symbols not created from a file scan — locals,
      * params, and package-path segments. */
     const SnDiagFile *origin;
+    /* Further methods of this same name with distinct parameter types.
+     * Not walked by lookup or rehash — those follow `next` only. */
+    struct SnSymbol *overloads;
     struct SnSymbol *next; /* scope bucket chain — not declaration order */
 } SnSymbol;
 
@@ -87,5 +90,9 @@ SnSymbol *sn_scope_lookup_local(const SnScope *s, const char *name);
 /* Looks up `name` in `s`, then walks the `parent` chain outward until found.
  * Returns NULL if no scope in the chain defines it. */
 SnSymbol *sn_scope_lookup(const SnScope *s, const char *name);
+
+/* Appends `extra` to `primary`'s overload chain. `extra` must not already
+ * sit in a scope bucket (`next` is cleared). */
+void sn_symbol_chain_overload(SnSymbol *primary, SnSymbol *extra);
 
 #endif /* SNOVAC_SYMBOL_H */

@@ -36,8 +36,13 @@ typedef enum {
     SN_T_UNIT, SN_T_BOOL, SN_T_INT, SN_T_LONG,
     SN_T_DOUBLE, SN_T_DECIMAL, SN_T_STRING, SN_T_CHAR,
     SN_T_FLOAT, SN_T_BYTE,
+    /* Signed integer ladder. SN_T_INT is 64-bit signed — the same width as
+     * SN_T_INT64 and SN_T_LONG, and a distinct type from both. SN_T_BYTE is
+     * unsigned 8-bit. SN_T_STRING is a sequence of SN_T_CHAR, not an untyped
+     * blob. SN_T_CHAR is not an integer. */
+    SN_T_INT8, SN_T_INT16, SN_T_INT32, SN_T_INT64, SN_T_INT128,
     SN_T_ANY,     /* the corpus's escape hatch — `func printline(value: any)`
-                    * in builtin/Console.snova. A real, resolvable type, but
+                    * in builtin/Console.snl. A real, resolvable type, but
                     * one that never takes part in a mismatch (sn_type_is_any) */
     SN_T_NAMED,   /* class/struct/enum/interface, with generic args */
     SN_T_TYPEVAR, /* type parameter T within a generic scope */
@@ -68,7 +73,8 @@ typedef struct {
 
     /* Primitive singletons, built once by sn_types_init(). */
     SnTypeRep *error_ty, *unit_ty, *bool_ty, *int_ty, *long_ty, *double_ty,
-        *decimal_ty, *string_ty, *char_ty, *float_ty, *byte_ty, *any_ty;
+        *decimal_ty, *string_ty, *char_ty, *float_ty, *byte_ty, *any_ty,
+        *int8_ty, *int16_ty, *int32_ty, *int64_ty, *int128_ty;
 } SnTypeTable;
 
 void sn_types_init(SnTypeTable *t, SnArena *a);
@@ -85,6 +91,17 @@ SnTypeRep *sn_type_char(SnTypeTable *t);
 SnTypeRep *sn_type_float(SnTypeTable *t);
 SnTypeRep *sn_type_byte(SnTypeTable *t);
 SnTypeRep *sn_type_any(SnTypeTable *t);
+SnTypeRep *sn_type_int8(SnTypeTable *t);
+SnTypeRep *sn_type_int16(SnTypeTable *t);
+SnTypeRep *sn_type_int32(SnTypeTable *t);
+SnTypeRep *sn_type_int64(SnTypeTable *t);
+SnTypeRep *sn_type_int128(SnTypeTable *t);
+
+/* Width in bits of an integer type, or 0 when `t` is not an integer.
+ * `byte` is 8 and unsigned; `int`, `int64`, and `long` are 64 and signed. */
+int sn_type_integer_width(const SnTypeRep *t);
+int sn_type_integer_signed(const SnTypeRep *t);
+const char *sn_type_name(const SnTypeRep *t);
 
 /* True for `any` — the checker must not report a mismatch against it in
  * either direction. Kept next to the type model rather than inside check.c so

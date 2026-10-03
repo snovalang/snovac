@@ -90,7 +90,7 @@ static void test_basic_collection_and_package_level_lookup(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/basic", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "a.snova",
+    write_file(dir, "a.snl",
               "package pkg.a\n\nfunc helper(): int {\n    return 1\n}\n");
 
     World w;
@@ -119,7 +119,7 @@ static void test_local_shadows_package(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/shadow", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "s.snova",
+    write_file(dir, "s.snl",
               "package pkg.s\n\nfunc x(): int {\n    return 1\n}\n");
 
     World w;
@@ -149,7 +149,7 @@ static void test_inheritance_walk(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/inherit", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "i.snova",
+    write_file(dir, "i.snl",
               "package pkg.i\n\n"
               "class Animal {\n    method speak(): string\n}\n\n"
               "class Dog extends Animal {\n    method bark(): string\n}\n");
@@ -186,10 +186,10 @@ static void test_import_and_not_imported(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/imports", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "a.snova",
+    write_file(dir, "a.snl",
               "package pkg.ia\n\nclass Widget {\n    method use(): unit\n}\n");
-    write_file(dir, "b.snova", "package pkg.ib\n\nfunc noop(): int {\n    return 0\n}\n");
-    write_file(dir, "c.snova", "package pkg.ic\n\nfunc noop(): int {\n    return 0\n}\n");
+    write_file(dir, "b.snl", "package pkg.ib\n\nfunc noop(): int {\n    return 0\n}\n");
+    write_file(dir, "c.snl", "package pkg.ic\n\nfunc noop(): int {\n    return 0\n}\n");
 
     World w;
     world_init(&w);
@@ -221,7 +221,7 @@ static void test_truly_unknown_type(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/unknown", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "u.snova", "package pkg.u\n\nfunc noop(): int {\n    return 0\n}\n");
+    write_file(dir, "u.snl", "package pkg.u\n\nfunc noop(): int {\n    return 0\n}\n");
 
     World w;
     world_init(&w);
@@ -241,7 +241,7 @@ static void test_duplicate_declaration(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/dup", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "d.snova",
+    write_file(dir, "d.snl",
               "package pkg.dup\n\n"
               "func x(): int {\n    return 1\n}\n\n"
               "func x(): int {\n    return 2\n}\n");
@@ -268,7 +268,7 @@ static void test_field_method_same_name_is_not_a_collision(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/fieldmethod", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.fm\n\n"
               "class Holder {\n"
               "    private let path: string\n\n"
@@ -282,7 +282,7 @@ static void test_field_method_same_name_is_not_a_collision(const char *tmp) {
     sn_pkggraph_scan_root(&w.graph, dir);
     sn_resolver_collect(&w.resolver);
 
-    CHECK("field/method same name: no diagnostic (matches builtin/FileSystem.snova's File)",
+    CHECK("field/method same name: no diagnostic (matches builtin/FileSystem.snl's File)",
           w.diag.error_count == 0);
 
     const char *pkg_fm = sn_intern_cstr(&w.intern, "pkg.fm");
@@ -306,7 +306,7 @@ static void test_extension_merging_and_prelude(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/prelude", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "types.snova",
+    write_file(dir, "types.snl",
               "package builtin.types.Types\n\n"
               "enum Option {\n    Some(value: int),\n    None,\n}\n\n"
               "extension Option {\n"
@@ -380,7 +380,7 @@ static void test_multi_section_file_is_skipped(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/multisection", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "e.snova",
+    write_file(dir, "e.snl",
               "package pkg.multi1\n\nfunc providerFn(): int {\n    return 1\n}\n\n"
               "package pkg.multi2\n\nfunc consumerFn(): int {\n    return 2\n}\n");
 
@@ -413,7 +413,7 @@ static void test_member_path_package_prefix(const char *tmp) {
     char sub[1024];
     snprintf(sub, sizeof(sub), "%s/deep", dir);
     mkdir(sub, 0755);
-    write_file(sub, "c.snova", "package a.b\n\nclass C {\n    method m(): unit\n}\n");
+    write_file(sub, "c.snl", "package a.b\n\nclass C {\n    method m(): unit\n}\n");
 
     World w;
     world_init(&w);

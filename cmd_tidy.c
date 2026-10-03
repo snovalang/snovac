@@ -39,17 +39,7 @@ typedef struct {
 } DiscoveredModule;
 
 static int has_snova_extension(const char *path) {
-    size_t n = strlen(path);
-    if (n >= 6u && strcmp(path + n - 6u, ".snova") == 0) return 1;
-    if (n >= 4u && strcmp(path + n - 4u, ".sno") == 0) {
-        const char *slash = strrchr(path, '/');
-        const char *filename = slash ? slash + 1 : path;
-        if (strcmp(filename, "mod.sno") == 0 || strcmp(filename, "snova.sno") == 0) {
-            return 0;
-        }
-        return 1;
-    }
-    return 0;
+    return sn_path_is_source(path) || sn_path_is_script(path);
 }
 
 static void extract_package_from_file(const char *path, char *out_pkg, size_t out_sz) {

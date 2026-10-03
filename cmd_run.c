@@ -116,6 +116,16 @@ int cmd_run_project(const char *path) {
 }
 
 int cmd_run(const char *path) {
+    if (!sn_path_is_source(path) && !sn_path_is_script(path)) {
+        fprintf(stderr,
+                "error: '%s' is not a Snovalang source (.snl) or script (.sns)\n",
+                path);
+        return 2;
+    }
+    int check_rc = cmd_check_for_exec(path);
+    if (check_rc != 0) {
+        return check_rc;
+    }
     size_t len = 0;
     char *src = read_file(path, &len);
     if (!src) {

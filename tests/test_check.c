@@ -137,7 +137,7 @@ static void test_literals_and_arithmetic(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/lit", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.lit\n\n"
               "func good(): int {\n"
               "    let a = 1\n"
@@ -158,7 +158,7 @@ static void test_no_implicit_promotion(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/promo", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.promo\n\n"
               "func bad(): int {\n"
               "    let a: int = 1\n"
@@ -181,7 +181,7 @@ static void test_string_concat(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/strcat", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.strcat\n\n"
               "func greet(): string {\n"
               "    let name = \"world\"\n"
@@ -201,7 +201,7 @@ static void test_unary_operators(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/unary", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.unary\n\n"
               "func good(): bool {\n"
               "    let x = 5\n"
@@ -233,7 +233,7 @@ static void test_assignment_mutability(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/mut", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.mut\n\n"
               "func reassignVar(): int {\n"
               "    var total = 0\n"
@@ -265,7 +265,7 @@ static void test_member_access_with_inheritance(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/member", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.member\n\n"
               "class Animal {\n"
               "    method speak(): string {\n"
@@ -304,7 +304,7 @@ static void test_call_arity_and_arg_types(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/call", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.call\n\n"
               "func add(a: int, b: int): int {\n"
               "    return a + b\n"
@@ -344,13 +344,13 @@ static void test_variant_construction(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/variant", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "types.snova",
+    write_file(dir, "types.snl",
               "package builtin.types.Types\n\n"
               "enum Option {\n"
               "    Some(value: int),\n"
               "    None,\n"
               "}\n");
-    write_file(dir, "user.snova",
+    write_file(dir, "user.snl",
               "package pkg.user\n\n"
               "func makeSome(): int {\n"
               "    let x = Some(1)\n"
@@ -370,7 +370,7 @@ static void test_condition_must_be_bool(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/cond", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.cond\n\n"
               "func bad(): int {\n"
               "    let n = 5\n"
@@ -393,7 +393,7 @@ static void test_return_type_mismatch(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/ret", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.ret\n\n"
               "func bad(): int {\n"
               "    return \"not an int\"\n"
@@ -412,7 +412,7 @@ static void test_let_type_mismatch(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/lettype", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.lettype\n\n"
               "func bad(): int {\n"
               "    let x: int = \"nope\"\n"
@@ -433,7 +433,7 @@ static void test_empty_array_literal(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/arr", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.arr\n\n"
               "func bad(): int {\n"
               "    var xs = []\n"
@@ -456,7 +456,7 @@ static void test_array_intrinsic(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/arrint", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.arrint\n\n"
               "func good(xs: Array<int>): int {\n"
               "    let n = xs.len()\n"
@@ -481,7 +481,7 @@ static void test_array_intrinsic_unknown_member(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/arrbad", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.arrbad\n\n"
               "func bad(xs: Array<int>): int {\n"
               "    return xs.notAMember()\n"
@@ -500,7 +500,7 @@ static void test_array_literal_with_declared_type(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/arrann", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.arrann\n\n"
               "func good(): int {\n"
               "    var ids: Array<string> = []\n"
@@ -521,7 +521,7 @@ static void test_scalar_and_string_members(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/prim", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.prim\n\n"
               "func good(): int {\n"
               "    let n = 7\n"
@@ -545,7 +545,7 @@ static void test_constructor_call(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/ctor", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.ctor\n\n"
               "struct Point {\n"
               "    public let x: decimal\n"
@@ -569,7 +569,7 @@ static void test_constructor_arity(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/ctorbad", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.ctorbad\n\n"
               "struct Point {\n"
               "    public let x: int\n"
@@ -593,7 +593,7 @@ static void test_lambda_value_call(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/lamcall", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.lamcall\n\n"
               "func good(n: int): int {\n"
               "    let double = (x: int) -> x * 2\n"
@@ -613,7 +613,7 @@ static void test_lambda_value_call_arity(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/lamarity", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.lamarity\n\n"
               "func bad(n: int): int {\n"
               "    let double = (x: int) -> x * 2\n"
@@ -633,7 +633,7 @@ static void test_subtype_assignability(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/sub", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.sub\n\n"
               "class Animal {\n"
               "    method speak(): string = \"...\"\n"
@@ -658,7 +658,7 @@ static void test_subtype_not_symmetric(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/subrev", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.subrev\n\n"
               "class Animal {\n"
               "    method speak(): string = \"...\"\n"
@@ -684,7 +684,7 @@ static void test_literal_suffix_still_strict(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/suffix", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.suffix\n\n"
               "func bad(): int {\n"
               "    let a: int = 2L\n"
@@ -704,7 +704,7 @@ static void test_func_in_class_body(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/shape", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.shape\n\n"
               "class Greeter {\n"
               "    func greet(): string {\n"
@@ -735,7 +735,7 @@ static void test_extension_func_is_legal(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/extfn", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.extfn\n\n"
               "class Counter {\n"
               "    private var value: int\n"
@@ -759,7 +759,7 @@ static void test_cast_and_is(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/castis", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.castis\n\n"
               "func good(): long {\n"
               "    let x = 5\n"
@@ -781,7 +781,7 @@ static void test_this_in_method(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/thistest", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.thistest\n\n"
               "class Counter {\n"
               "    method self(): Counter {\n"
@@ -825,7 +825,7 @@ static void test_nested_optional_rejected(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/opt2", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.opt2\n\n"
               "func bad(x: string" "?" "?): int {\n"
               "    return 0\n"
@@ -844,7 +844,7 @@ static void test_null_coalescing_semantics(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/nullcoalesce", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.nullcoalesce\n\n"
               "func bad_fallback(opt: Option<int>): int {\n"
               "    return opt ?? \"not an int\"\n"
@@ -863,7 +863,7 @@ static void test_implicit_any_rejected(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/anyinf", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.anyinf\n\n"
               "func bad(x: any): int {\n"
               "    let y = x\n"
@@ -882,7 +882,7 @@ static void test_public_any_in_stdlib_rejected(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/pubany", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package stdlib.pubany\n\n"
               "public func bad(x: any): int {\n"
               "    return 0\n"
@@ -900,7 +900,7 @@ static void test_subsumption_non_null(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/subsumption", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.subsumption\n\n"
               "func accept_opt(opt: Option<int>): int {\n"
               "    return 0\n"
@@ -922,7 +922,7 @@ static void test_optional_type_required(const char *tmp) {
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/optreq", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova",
+    write_file(dir, "f.snl",
               "package pkg.optreq\n\n"
               "func accept_concrete(val: int): int {\n"
               "    return val\n"
@@ -944,7 +944,7 @@ static void test_pulsar_and_async_rules(const char *root) {
     snprintf(dir, sizeof(dir), "%s/pulsar_async", root);
     mkdir(dir, 0777);
 
-    write_file(dir, "p.snova",
+    write_file(dir, "p.snl",
               "package pkg.pulsar_async\n"
               "\n"
               "pulsar func worker(): unit {\n"
@@ -1003,6 +1003,180 @@ static void test_pulsar_and_async_rules(const char *root) {
     }
 }
 
+static void test_struct_field_rejects_string(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/fieldty", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snl",
+              "package pkg.fieldty\n\n"
+              "public struct Snovalang {\n"
+              "    public let field: int\n"
+              "}\n"
+              "func main(): unit {\n"
+              "    let snova = Snovalang(field: \"Oi!\")\n"
+              "    return\n"
+              "}\n");
+    World w;
+    world_init(&w);
+    run_check_on_func(&w, dir, "pkg.fieldty", "main");
+    CHECK("struct field: string is not int", w.diag.error_count >= 1);
+    CHECK("struct field: emits SNOVA0132", diag_has_code(&w, "SNOVA0132"));
+    sn_arena_free(&w.arena);
+}
+
+static void test_narrowing_cast(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/narrow", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snl",
+              "package pkg.narrow\n\n"
+              "func bad(): int8 {\n"
+              "    let x: int = 5\n"
+              "    let y = x as int8\n"
+              "    return y\n"
+              "}\n"
+              "func wide(): int16 {\n"
+              "    let x: int8 = 20\n"
+              "    return x as int16\n"
+              "}\n"
+              "func literal_ok(): int8 {\n"
+              "    let x: int8 = 20\n"
+              "    return x\n"
+              "}\n"
+              "func literal_big(): int8 {\n"
+              "    let x: int8 = 300\n"
+              "    return x\n"
+              "}\n");
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.narrow", "bad");
+        CHECK("narrowing: int as int8 is an error", w.diag.error_count >= 1);
+        CHECK("narrowing: emits SNOVA0145", diag_has_code(&w, "SNOVA0145"));
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.narrow", "wide");
+        CHECK("widening: int8 as int16 is allowed", w.diag.error_count == 0);
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.narrow", "literal_ok");
+        CHECK("literal: 20 fits int8", w.diag.error_count == 0);
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.narrow", "literal_big");
+        CHECK("literal: 300 does not fit int8", w.diag.error_count >= 1);
+        sn_arena_free(&w.arena);
+    }
+}
+
+static void test_string_is_chars(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/chars", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snl",
+              "package pkg.chars\n\n"
+              "func idx(): char {\n"
+              "    let s = \"ab\"\n"
+              "    return s[0]\n"
+              "}\n"
+              "func cat(): string {\n"
+              "    let a: char = 'a'\n"
+              "    return a + a\n"
+              "}\n"
+              "func bad(): string {\n"
+              "    return \"n\" + 1\n"
+              "}\n");
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.chars", "idx");
+        CHECK("string index yields char", w.diag.error_count == 0);
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.chars", "cat");
+        CHECK("char + char is string", w.diag.error_count == 0);
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.chars", "bad");
+        CHECK("string + int is an error", w.diag.error_count >= 1);
+        CHECK("string + int emits SNOVA0133", diag_has_code(&w, "SNOVA0133"));
+        sn_arena_free(&w.arena);
+    }
+}
+
+static void test_duplicate_fields(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/dupf", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snl",
+              "package pkg.dupf\n\n"
+              "struct Pair {\n"
+              "    public let field: int\n"
+              "    public let field: string\n"
+              "}\n"
+              "func main(): int { return 0 }\n");
+    World w;
+    world_init(&w);
+    sn_pkggraph_scan_root(&w.graph, dir);
+    sn_resolver_collect(&w.resolver);
+    world_finish_diag(&w);
+    CHECK("duplicate fields emit SNOVA0120", diag_has_code(&w, "SNOVA0120"));
+    sn_arena_free(&w.arena);
+}
+
+static void test_method_overload(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/ov", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snl",
+              "package pkg.ov\n\n"
+              "class Box {\n"
+              "    method show(value: int): string { return \"int\" }\n"
+              "    method show(value: string): string { return \"string\" }\n"
+              "    method both(value: int): string { return \"i\" }\n"
+              "    method both(value: int64): string { return \"i64\" }\n"
+              "}\n"
+              "func good(): string {\n"
+              "    let b = Box()\n"
+              "    return b.show(\"hi\")\n"
+              "}\n"
+              "func amb(): string {\n"
+              "    let b = Box()\n"
+              "    return b.both(1)\n"
+              "}\n");
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.ov", "good");
+        CHECK("overload: string argument selects the string method", w.diag.error_count == 0);
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.ov", "amb");
+        CHECK("overload: int literal matching int and int64 is ambiguous",
+              w.diag.error_count >= 1);
+        CHECK("overload: emits SNOVA0146", diag_has_code(&w, "SNOVA0146"));
+        sn_arena_free(&w.arena);
+    }
+}
+
 int main(void) {
     char tmp[] = "/tmp/snovac_check_test_XXXXXX";
     if (!mkdtemp(tmp)) {
@@ -1044,6 +1218,11 @@ int main(void) {
     test_subsumption_non_null(tmp);
     test_optional_type_required(tmp);
     test_pulsar_and_async_rules(tmp);
+    test_struct_field_rejects_string(tmp);
+    test_narrowing_cast(tmp);
+    test_string_is_chars(tmp);
+    test_duplicate_fields(tmp);
+    test_method_overload(tmp);
 
     printf("\n%d passed, %d failed\n", pass, fail);
     return fail == 0 ? 0 : 1;

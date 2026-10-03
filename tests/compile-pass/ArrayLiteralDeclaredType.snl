@@ -7,7 +7,7 @@ import builtin.console.Console
 // Regression: an empty array literal after a declared array type
 // (`Array<string>`, `string[]`) is a literal, not a subscript — it must not
 // trip SNOVA029. The untyped form `var ids = []` is rejected with SNOVA100
-// (see compile-fail/array_literal_untyped.snova).
+// (see compile-fail/array_literal_untyped.snl).
 
 func main(): int {
     var ids: Array<string> = []

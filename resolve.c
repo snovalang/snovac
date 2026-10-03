@@ -200,6 +200,92 @@ static SnSymbol *define_with_origin(SnResolver *r, SnScope *scope, const char *n
     return sym;
 }
 
+static int ast_type_eq(const SnType *a, const SnType *b) {
+    if (a == b) {
+        return 1;
+    }
+    if (!a || !b || a->kind != b->kind) {
+        return 0;
+    }
+    switch (a->kind) {
+    case SN_TYPE_NAME: {
+        if (!a->name || !b->name || strcmp(a->name, b->name) != 0) {
+            return 0;
+        }
+        if (a->args.len != b->args.len || a->is_optional != b->is_optional) {
+            return 0;
+        }
+        for (size_t i = 0; i < a->args.len; i++) {
+            if (!ast_type_eq(SN_LIST_AT(a->args, SnType, i),
+                             SN_LIST_AT(b->args, SnType, i))) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    case SN_TYPE_FUNC:
+        if (a->params.len != b->params.len || !ast_type_eq(a->ret, b->ret)) {
+            return 0;
+        }
+        for (size_t i = 0; i < a->params.len; i++) {
+            if (!ast_type_eq(SN_LIST_AT(a->params, SnType, i),
+                             SN_LIST_AT(b->params, SnType, i))) {
+                return 0;
+            }
+        }
+        return 1;
+    case SN_TYPE_TUPLE:
+        if (a->params.len != b->params.len) {
+            return 0;
+        }
+        for (size_t i = 0; i < a->params.len; i++) {
+            if (!ast_type_eq(SN_LIST_AT(a->params, SnType, i),
+                             SN_LIST_AT(b->params, SnType, i))) {
+                return 0;
+            }
+        }
+        return 1;
+    case SN_TYPE_REF:
+        return a->is_nullable == b->is_nullable && ast_type_eq(a->pointee, b->pointee);
+    default:
+        return 0;
+    }
+}
+
+static int decl_param_types_eq(const SnDecl *a, const SnDecl *b) {
+    if (!a || !b || a->params.len != b->params.len) {
+        return 0;
+    }
+    for (size_t i = 0; i < a->params.len; i++) {
+        const SnParam *pa = SN_LIST_AT(a->params, SnParam, i);
+        const SnParam *pb = SN_LIST_AT(b->params, SnParam, i);
+        if (!ast_type_eq(pa->type, pb->type)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int overload_chain_has_sig(const SnSymbol *primary, const SnDecl *decl) {
+    for (const SnSymbol *s = primary; s; s = s->overloads) {
+        if (decl_param_types_eq(s->decl, decl)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void chain_overload(SnResolver *r, SnSymbol *primary, const char *name,
+                           SnSymbolKind kind, const SnDecl *decl, SnSpan span) {
+    SnSymbol *extra = (SnSymbol *)sn_arena_calloc(r->arena, sizeof(SnSymbol));
+    extra->name = name;
+    extra->kind = kind;
+    extra->decl = decl;
+    extra->span = span;
+    extra->origin = r->current_origin;
+    sn_symbol_chain_overload(primary, extra);
+}
+
 static void collect_member(SnResolver *r, SnScope *member_scope, const SnDecl *owner,
                             const SnDecl *m, const char *via_extension) {
     /* `func` belongs at the top level or in an `extension` body; inside a
@@ -219,7 +305,7 @@ static void collect_member(SnResolver *r, SnScope *member_scope, const SnDecl *o
 
     /* A private backing field and its same-named public accessor method
      * (`private let path: Path` + `method path(): Path { return path }`,
-     * both real, in builtin/FileSystem.snova's `File`) is a legitimate,
+     * both real, in builtin/FileSystem.snl's `File`) is a legitimate,
      * idiomatic pattern — not a collision. Found while running this
      * collector against the real corpus (2026-07-25); not one of plan.md
      * §7's ratified ambiguities, so treated as its own narrow rule: a
@@ -232,6 +318,16 @@ static void collect_member(SnResolver *r, SnScope *member_scope, const SnDecl *o
     SnSymbol *existing = sn_scope_lookup_local(member_scope, mname);
     if (existing && ((existing->kind == SN_SYM_FIELD && msk == SN_SYM_METHOD) ||
                       (existing->kind == SN_SYM_METHOD && msk == SN_SYM_FIELD))) {
+        return;
+    }
+    if (existing && existing->kind == msk &&
+        (msk == SN_SYM_METHOD || msk == SN_SYM_FUNC)) {
+        if (overload_chain_has_sig(existing, m)) {
+            sn_diag_emit(r->diag, SN_DIAG_ERROR, SNOVA_DUPLICATE_DECL, m->span,
+                         "`%s` is already declared in `%s`", m->name, owner->name);
+            return;
+        }
+        chain_overload(r, existing, mname, msk, m, m->span);
         return;
     }
 
@@ -370,6 +466,11 @@ size_t sn_resolver_collect(SnResolver *r) {
                         /* Duplicate identical declaration from redundant dependency roots; reuse existing */
                         continue;
                     }
+                    if (existing && existing->kind == sk && sk == SN_SYM_FUNC &&
+                        !overload_chain_has_sig(existing, d)) {
+                        chain_overload(r, existing, name, sk, d, d->span);
+                        continue;
+                    }
                     sn_diag_emit(r->diag, SN_DIAG_ERROR, SNOVA_DUPLICATE_DECL,
                                  d->span, "`%s` is already declared in package `%s`",
                                  d->name, node->name);
@@ -417,7 +518,7 @@ size_t sn_resolver_collect(SnResolver *r) {
 
 
 /* Option/Result's own variants (Some/None/Ok/Err) are also usable with no
- * import — builtin/Types.snova's own doc comment says so explicitly
+ * import — builtin/Types.snl's own doc comment says so explicitly
  * ("construction (Some(v), None, Ok(v), Err(e))... is usable in every
  * Snovalang program with no import"). Found while testing variant
  * construction (`Some(1)`) against the checker: registering only the type
@@ -472,7 +573,7 @@ void sn_resolver_build_prelude(SnResolver *r) {
      * and `builtin.collections.Collections` on demand
      * (COLLECTIONS_PRELUDE_PACKAGE), and
      * specs/20260711/builtin-prelude-types/ plus
-     * tests/compile-pass/packages/builtin_prelude_no_import.snova state the
+     * tests/compile-pass/packages/builtin_prelude_no_import.snl state the
      * same three.
      *
      * snovac folds Collections in unconditionally instead of on demand: the
@@ -540,7 +641,7 @@ static SnTypeRep *primitive_by_name(SnResolver *r, const char *iname) {
     if (iname == sn_intern_cstr(it, "double")) return sn_type_double(r->types);
     if (iname == sn_intern_cstr(it, "decimal")) return sn_type_decimal(r->types);
     if (iname == sn_intern_cstr(it, "char")) return sn_type_char(r->types);
-    /* Also intrinsic, and also declared by no .snova file anywhere (measured
+    /* Also intrinsic, and also declared by no .snl file anywhere (measured
      * the same way as the seven above): `any`, `float` and `byte` are used in
      * builtin signatures (`func printline(value: any)`) and are on the Rust
      * frontend's builtin-type list too — see
@@ -549,6 +650,11 @@ static SnTypeRep *primitive_by_name(SnResolver *r, const char *iname) {
     if (iname == sn_intern_cstr(it, "any")) return sn_type_any(r->types);
     if (iname == sn_intern_cstr(it, "float")) return sn_type_float(r->types);
     if (iname == sn_intern_cstr(it, "byte")) return sn_type_byte(r->types);
+    if (iname == sn_intern_cstr(it, "int8")) return sn_type_int8(r->types);
+    if (iname == sn_intern_cstr(it, "int16")) return sn_type_int16(r->types);
+    if (iname == sn_intern_cstr(it, "int32")) return sn_type_int32(r->types);
+    if (iname == sn_intern_cstr(it, "int64")) return sn_type_int64(r->types);
+    if (iname == sn_intern_cstr(it, "int128")) return sn_type_int128(r->types);
     return NULL;
 }
 
@@ -561,7 +667,7 @@ static SnTypeRep *primitive_by_name(SnResolver *r, const char *iname) {
  * crates/snovalang/src/native/selfcheck/mod.rs warns about under SNOVA011.
  * The last four complete the set over the primitives snovac actually has a
  * tag for: `Float` alone accounts for 13 of the errors this gate attributes to
- * tests/compile-pass/data_class.snova, which writes `public let x: Float`.
+ * tests/compile-pass/data_class.snl, which writes `public let x: Float`.
  * The Rust table stops at six only because it is a hardcoded list, not because
  * the capitalized spelling means something else there — so the same advice is
  * given, rather than SNOVA0027 for a type the shipped `snova check` accepts. */
@@ -712,7 +818,7 @@ SnTypeRep *sn_resolve_type_name(SnResolver *r, const char *current_package,
     /* Legacy capitalized spellings resolve to the primitive with a warning,
      * not an error — the same six pairs, and the same SNOVA011 advice, that
      * crates/snovalang/src/native/selfcheck/mod.rs applies. Without this,
-     * `func main(): Int` (tests/compile-pass/hello.snova) failed here while
+     * `func main(): Int` (tests/compile-pass/hello.snl) failed here while
      * the shipped `snova check` accepted it. */
     SnTypeRep *legacy = legacy_primitive_alias(r, iname, name, span);
     if (legacy) {

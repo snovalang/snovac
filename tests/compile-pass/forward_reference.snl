@@ -7,7 +7,7 @@ import builtin.console.Console
 // collection is two-pass (all signatures first, then bodies), so a
 // top-level function may call another declared later in the same file —
 // same as Rust/Go/Java. A previous fixture
-// (tests/conformance/diagnostics/no_hoisting.snova) wrongly asserted this
+// (tests/conformance/diagnostics/no_hoisting.snl) wrongly asserted this
 // must be a compile error; removed in favor of this positive guard.
 
 func main(): int {

@@ -9,6 +9,7 @@ typedef enum {
     B_INT,
     B_BOOL,
     B_STRING,
+    B_CHAR,
     B_ANY,
     B_ELEM,         /* the receiver array's element type */
     B_SELF,         /* the receiver type unchanged */
@@ -44,16 +45,14 @@ static const BMember ARRAY_MEMBERS[] = {
     {"concurrentForEach", B_UNIT},
 };
 
-/* Same source, "string" entry. `charAt`/`substring` come back as `string`
- * rather than `char`: the corpus indexes strings and compares the result
- * against string literals, and `char` in Snovalang is written with a char
- * literal, never produced by these. */
+/* Same source, "string" entry. Indexing and `charAt` yield `char`: a string
+ * is a concatenation of char values. `substring` stays a string. */
 static const BMember STRING_MEMBERS[] = {
     {"length", B_INT},
     {"len", B_INT},
     {"toString", B_STRING},
     {"asString", B_STRING},
-    {"charAt", B_STRING},
+    {"charAt", B_CHAR},
     {"substring", B_STRING},
     {"trim", B_STRING},
     {"trimStart", B_STRING},
@@ -84,6 +83,8 @@ static SnTypeRep *slot_type(SnTypeTable *t, BSlot slot, const SnTypeRep *recv) {
         return sn_type_bool(t);
     case B_STRING:
         return sn_type_string(t);
+    case B_CHAR:
+        return sn_type_char(t);
     case B_ANY:
         return sn_type_any(t);
     case B_ELEM:
@@ -160,6 +161,11 @@ SnTypeRep *sn_builtin_member(SnTypeTable *t, SnInternTable *it, const SnTypeRep 
     case SN_T_DECIMAL:
     case SN_T_FLOAT:
     case SN_T_BYTE:
+    case SN_T_INT8:
+    case SN_T_INT16:
+    case SN_T_INT32:
+    case SN_T_INT64:
+    case SN_T_INT128:
     case SN_T_BOOL:
     case SN_T_CHAR:
         m = find_member(SCALAR_MEMBERS, sizeof(SCALAR_MEMBERS) / sizeof(SCALAR_MEMBERS[0]),
@@ -181,7 +187,7 @@ SnTypeRep *sn_builtin_index_result(SnTypeTable *t, SnInternTable *it,
         return recv->nargs == 1 ? recv->args[0] : sn_type_any(t);
     }
     if (recv->tag == SN_T_STRING) {
-        return sn_type_string(t);
+        return sn_type_char(t);
     }
     return NULL;
 }
@@ -192,7 +198,7 @@ SnTypeRep *sn_builtin_static_member(SnTypeTable *t, SnInternTable *it,
     if (!recv || recv->tag != SN_T_ARRAY) {
         return NULL;
     }
-    /* `Array<Post>.new()` — tests/compile-pass/pipeline-element-type.snova.
+    /* `Array<Post>.new()` — tests/compile-pass/pipeline-element-type.snl.
      * The only static member the corpus uses on an intrinsic. */
     if (strcmp(iname, "new") == 0) {
         return sn_type_func(t, NULL, 0, (SnTypeRep *)recv);

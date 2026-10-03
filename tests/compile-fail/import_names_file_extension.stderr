@@ -1,1 +1,1 @@
-error[SNOVA051]: import `com.example.Helper.snova` must name a file, not a file extension — drop the trailing `.snova`/`.sno` segment.
+error[SNOVA051]: import `com.example.Helper.snl` must name a package or symbol, not a file extension — drop the trailing `.snl`/`.sns` segment.

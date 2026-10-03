@@ -180,6 +180,16 @@ Flow exec_stmt(Interp *in, Env *env, const SnStmt *s) {
     case SN_STMT_LET:
     case SN_STMT_VAR: {
         Value v = s->expr ? eval_expr(in, env, s->expr) : default_for(s->type);
+        if (v.kind == V_INT && s->type && s->type->name) {
+            const char *n = s->type->name;
+            if (strcmp(n, "int8") == 0) v.iwidth = 8;
+            else if (strcmp(n, "int16") == 0) v.iwidth = 16;
+            else if (strcmp(n, "int32") == 0) v.iwidth = 32;
+            else if (strcmp(n, "byte") == 0) v.iwidth = 8;
+            else if (strcmp(n, "int128") == 0) v.iwidth = 128;
+            else if (strcmp(n, "int") == 0 || strcmp(n, "int64") == 0 ||
+                     strcmp(n, "long") == 0) v.iwidth = 64;
+        }
         env_define(in, env, s->name, v);
         return FLOW_NORMAL;
     }

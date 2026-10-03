@@ -1,5 +1,5 @@
 error[SNOVA024]: Expected an expression after `=`; this statement is incomplete.
- --> tests/compile-fail/incomplete_assignment.snova:12:16
+ --> tests/compile-fail/incomplete_assignment.snl:12:16
    |
 12 |     let todoId =
    |                ^ expected an expression after `=`

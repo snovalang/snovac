@@ -11,7 +11,7 @@ typedef struct {
  * yield, short, byte, char, data, value, key, name, get, new-as-member.
  * Primitive type names (int, long, double, decimal, bool, string, unit) are NOT
  * keywords either — they are ordinary type references resolved by name, which
- * is what lets `builtin.types` declare them in .snova. */
+ * is what lets `builtin.types` declare them in .snl. */
 static const Keyword KEYWORDS[] = {
     {"package", SN_TOK_PACKAGE},     {"import", SN_TOK_IMPORT},
     {"class", SN_TOK_CLASS},         {"struct", SN_TOK_STRUCT},

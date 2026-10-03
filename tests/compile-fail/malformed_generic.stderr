@@ -1,5 +1,5 @@
 error[SNOVA025]: Malformed generic argument: `<` is not closed with a matching `>` before `(`.
- --> tests/compile-fail/malformed_generic.snova:20:31
+ --> tests/compile-fail/malformed_generic.snl:20:31
    |
 20 |     for (let todo in response.json<Array<Post>()) {
    |                               ^^^^^ generic argument is never closed with `>`

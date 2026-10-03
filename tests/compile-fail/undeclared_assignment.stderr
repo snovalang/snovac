@@ -1,5 +1,5 @@
 error[SNOVA023]: `todoId` is assigned but never declared; introduce it with `let` or `var`.
- --> tests/compile-fail/undeclared_assignment.snova:11:5
+ --> tests/compile-fail/undeclared_assignment.snl:11:5
    |
 11 |     todoId = "1"
    |     ^^^^^^ assignment to an undeclared name

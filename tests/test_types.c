@@ -53,6 +53,20 @@ static void test_primitives(SnTypeTable *t) {
               sn_type_double(t) != sn_type_decimal(t) &&
               sn_type_decimal(t) != sn_type_string(t) &&
               sn_type_string(t) != sn_type_char(t));
+    CHECK("primitives: integer ladder is distinct from int",
+          sn_type_int8(t) != sn_type_int(t) &&
+              sn_type_int16(t) != sn_type_int8(t) &&
+              sn_type_int32(t) != sn_type_int16(t) &&
+              sn_type_int64(t) != sn_type_int(t) &&
+              sn_type_int64(t) != sn_type_long(t) &&
+              sn_type_int128(t) != sn_type_int64(t) &&
+              sn_type_byte(t) != sn_type_int8(t) &&
+              sn_type_integer_width(sn_type_int(t)) == 64 &&
+              sn_type_integer_width(sn_type_int8(t)) == 8 &&
+              sn_type_integer_width(sn_type_byte(t)) == 8 &&
+              sn_type_integer_signed(sn_type_int(t)) &&
+              !sn_type_integer_signed(sn_type_byte(t)) &&
+              sn_type_integer_width(sn_type_char(t)) == 0);
 }
 
 static void test_named_generics(SnTypeTable *t, SnScope *scope, SnInternTable *it) {
@@ -238,9 +252,9 @@ static void test_later_argument(SnTypeTable *t, SnScope *scope, SnInternTable *i
               fn3->nargs == 3 && fn3->args[2] == sn_type_bool(t));
 }
 
-/* sn_types_init caches 12 primitive singletons in a 64-bucket table.
+/* sn_types_init caches 17 primitive singletons in a 64-bucket table.
  * Rehash runs when (count + 1) * 4 > nbuckets * 3, i.e. the insert that
- * starts at count == 48 doubles 64 to 128. 36 further typevars land exactly
+ * starts at count == 48 doubles 64 to 128. 31 further typevars land exactly
  * on that boundary. */
 static void test_load_factor(SnArena *scratch) {
     SnInternTable it;
@@ -250,13 +264,13 @@ static void test_load_factor(SnArena *scratch) {
     SnScope scope;
     sn_scope_init(&scope, scratch, NULL);
 
-    CHECK("load: twelve primitive singletons", t.count == 12u);
+    CHECK("load: seventeen primitive singletons", t.count == 17u);
     CHECK("load: initial capacity is 64", t.nbuckets == 64u);
 
     char buf[32];
     SnTypeRep *first = NULL;
     SnSymbol *first_sym = NULL;
-    for (int i = 0; i < 36; i++) {
+    for (int i = 0; i < 31; i++) {
         snprintf(buf, sizeof(buf), "L%d", i);
         SnSymbol *sym = fake_decl(&scope, &it, buf);
         SnTypeRep *ty = sn_type_typevar(&t, sym);
