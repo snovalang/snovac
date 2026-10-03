@@ -42,6 +42,25 @@ jobs:
       - name: Run Mull mutation tests
         run: sh .github/scripts/mull-unix.sh
 
+  install-ps1:
+    name: Windows installer dry run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PowerShell
+        run: |
+          curl -fsSL -o /tmp/pwsh.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/powershell-7.5.4-linux-x64.tar.gz
+          sudo mkdir -p /opt/microsoft/powershell/7
+          sudo tar -xzf /tmp/pwsh.tar.gz -C /opt/microsoft/powershell/7
+          sudo chmod +x /opt/microsoft/powershell/7/pwsh
+          sudo ln -sfn /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh
+
+      - name: Simulate irm | iex with no script path
+        run: pwsh -NoProfile -File tests/install_iex_dry_run.ps1
+
   test-macos:
     name: Test & Conformance (darwin-${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}

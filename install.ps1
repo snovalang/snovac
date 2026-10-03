@@ -6,6 +6,9 @@
 # clone this repository and build it, so an update does not need a manual
 # git pull and rebuild.
 #
+# `irm | iex` has no script file. A missing release archive is cloned into a
+# temporary directory and built there. The command text is not a path.
+#
 #   irm https://raw.githubusercontent.com/snovalang/snovac/master/install.ps1 | iex
 #   $env:SNOVA_UPDATE = '1'; irm https://raw.githubusercontent.com/snovalang/snovac/master/install.ps1 | iex
 #   powershell -ExecutionPolicy Bypass -File install.ps1
@@ -19,6 +22,12 @@ $Repo = "snovalang/snovac"
 $Version = "0.0.1-p1"
 $ExplicitUpdate = $false
 $RunningAsFile = -not [string]::IsNullOrEmpty($MyInvocation.MyCommand.Path)
+# Only -File sets MyCommand.Path. Under `irm | iex` it is empty.
+# MyCommand.Definition and MyInvocation.Line are the command text
+# (`irm https://...`). Join-Path treats the words before ":" as a drive
+# name ("irm https"), so those strings are never used as a filesystem path.
+$ScriptFile = [string]$MyInvocation.MyCommand.Path
+$DryRun = $env:SNOVA_INSTALL_DRY_RUN -match '^(1|true|yes)$'
 
 if ($env:SNOVA_UPDATE -match '^(1|true|yes)$') {
     $ExplicitUpdate = $true
@@ -84,6 +93,36 @@ Write-Host "==> Detected target: $Platform" -ForegroundColor Green
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("snovac-install-" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
+function Get-SnovaLocalCheckout {
+    param([string]$ScriptFile)
+
+    if ([string]::IsNullOrWhiteSpace($ScriptFile)) {
+        return $null
+    }
+    # Reject command text such as `irm https://... | iex`. A real -File path
+    # has neither a URL scheme nor a pipe.
+    if ($ScriptFile.Contains('://') -or $ScriptFile.Contains('|') -or $ScriptFile.Contains("`n") -or $ScriptFile.Contains("`r")) {
+        return $null
+    }
+
+    $dir = $null
+    try {
+        $dir = [System.IO.Path]::GetDirectoryName($ScriptFile)
+    } catch {
+        return $null
+    }
+    if ([string]::IsNullOrWhiteSpace($dir) -or -not [System.IO.Directory]::Exists($dir)) {
+        return $null
+    }
+
+    $full = [System.IO.Path]::GetFullPath($dir)
+    $makefile = [System.IO.Path]::Combine($full, 'Makefile')
+    if (-not [System.IO.File]::Exists($makefile)) {
+        return $null
+    }
+    return $full
+}
+
 function Install-FromSource([string]$Dir) {
     Push-Location $Dir
     try {
@@ -102,7 +141,33 @@ function Install-FromSource([string]$Dir) {
     }
 }
 
+$PreserveTemp = $false
 try {
+    $LocalCheckout = Get-SnovaLocalCheckout -ScriptFile $ScriptFile
+    # TempDir comes from GetTempPath(), so this Join-Path is a real location.
+    $CloneDir = [System.IO.Path]::GetFullPath((Join-Path $TempDir "snovac-repo"))
+
+    # Test hook. Resolves the directory a missing release would build from
+    # and does not download, clone, or install. SNOVA_INSTALL_DRY_RUN=1.
+    if ($DryRun) {
+        if ($LocalCheckout -and -not $Updating) {
+            $SourceDir = $LocalCheckout
+            $SourceKind = "local"
+        } else {
+            New-Item -ItemType Directory -Path $CloneDir -Force | Out-Null
+            $SourceDir = $CloneDir
+            $SourceKind = "clone"
+        }
+        if (-not [System.IO.Directory]::Exists($SourceDir)) {
+            Write-Error "Source directory is not a real path: $SourceDir"
+        }
+        Write-Output "SNOVA_SOURCE_KIND=$SourceKind"
+        Write-Output "SNOVA_SOURCE_DIR=$SourceDir"
+        Write-Output "SNOVA_TEMP_DIR=$TempDir"
+        $PreserveTemp = $true
+        return
+    }
+
     $Installed = $false
     # 2. Try downloading pre-built zip release
     Write-Host "==> Checking release package $ZipName..." -ForegroundColor Cyan
@@ -131,27 +196,23 @@ try {
 
     # 3. Source build fallback. An update clones the latest tree instead of
     # rebuilding whatever checkout happens to sit next to this script.
+    # With no script file (`irm | iex`), the clone target is $CloneDir.
     if (-not $Installed) {
-        $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-        $SourceDir = $ScriptDir
-        if ([string]::IsNullOrEmpty($SourceDir) -or -not (Test-Path (Join-Path $SourceDir "Makefile"))) {
-            $SourceDir = (Get-Location).Path
-        }
-        $LocalMakefile = Test-Path (Join-Path $SourceDir "Makefile")
-
-        if ($LocalMakefile -and -not $Updating) {
+        if ($LocalCheckout -and -not $Updating) {
             Write-Host "==> Compiling snl from source..." -ForegroundColor Cyan
-            Install-FromSource $SourceDir
+            Install-FromSource $LocalCheckout
             $Installed = $true
         } elseif (Get-Command git -ErrorAction SilentlyContinue) {
             Write-Host "==> Cloning $Repo repository..." -ForegroundColor Cyan
-            $CloneDir = Join-Path $TempDir "snovac-repo"
-            git clone --depth 1 "https://github.com/$Repo.git" $CloneDir
+            & git clone --depth 1 "https://github.com/$Repo.git" $CloneDir
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "git clone of $Repo failed."
+            }
             Install-FromSource $CloneDir
             $Installed = $true
-        } elseif ($LocalMakefile) {
+        } elseif ($LocalCheckout) {
             Write-Host "Could not reach GitHub. Building the local tree..." -ForegroundColor Yellow
-            Install-FromSource $SourceDir
+            Install-FromSource $LocalCheckout
             $Installed = $true
         } else {
             Write-Error "Neither prebuilt release nor git/make build environment was found."
@@ -165,5 +226,7 @@ try {
         Write-Host "Run 'snl --version' or 'snl --target-info' to get started." -ForegroundColor Cyan
     }
 } finally {
-    Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not $PreserveTemp) {
+        Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }

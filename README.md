@@ -33,6 +33,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 powershell -ExecutionPolicy Bypass -File install.ps1 -Update
 ```
 
+If the latest release does not include `snovac-windows-x86_64.zip`, PowerShell clones this repository into a temporary directory and builds `snl` there. `irm | iex` has no script path, so the installer does not treat the command text or the current directory as the source tree.
+
 ### macOS and Linux
 
 `install.sh` is a POSIX `sh` script. It installs `snl` into `$HOME/.snova/bin`. Set `SNOVA_INSTALL_DIR` to choose another directory. On Unix that variable is the directory that receives the `snl` binary, not a prefix above `bin`.
