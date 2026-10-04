@@ -1,15 +1,27 @@
-# snovac — Snovalang compiler, C11, no cargo.
+# snovac — Snovalang compiler, C11.
 #
-# Standalone on purpose: the repo-root Makefile still wraps `cargo xtask` for
-# the Rust Stage 0, which snovac replaces only at phase P7 (see
-# specs/20260719/snovac-c-toolchain/plan.md). Until then the two build systems
-# coexist and neither depends on the other.
+# Namespaces are directories under src/ plus an identifier prefix:
+#   src/base     sn_arena_  sn_diag_  sn_intern_
+#   src/lex      sn_lex_    sn_tok_
+#   src/parse    sn_parse_
+#   src/ast      sn_list_   sn_dump_
+#   src/sema     sn_scope_  sn_pkggraph_  sn_type_  sn_resolve_
+#                sn_builtin_  sn_check_  sn_borrow_
+#   src/eval     sn_eval_  sn_rt_  sn_async_  sn_pulsar_  sn_socket_
+#   src/bc       sn_chunk_  sn_bcunit_  sn_emit_
+#   src/native   sn_native_  sn_target_
+#   src/driver   sn_driver_  sn_project_  sn_cmd_
+#
+# `make compdb` writes compile_commands.json for clangd from the flags below.
+# compile_flags.txt mirrors those flags for a checkout that has not been built.
 
 CC      ?= cc
 CFLAGS  ?= -std=c11 -O2 -g -pthread
 CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
            -Wmissing-prototypes -Wconversion -Wno-sign-conversion
+INCLUDES = -Isrc/base -Isrc/lex -Isrc/parse -Isrc/ast -Isrc/sema \
+           -Isrc/eval -Isrc/bc -Isrc/native -Isrc/driver
 BUILD   ?= build
 
 # OS detection for `install`/`uninstall`: native Windows `make` (and
@@ -26,18 +38,26 @@ endif
 
 BIN      = $(BUILD)/snl$(EXE)
 
-SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd_build.c cmd_tidy.c cmd_get.c \
-       target.c native_backend.c pulsar.c async.c \
-       dump.c ast.c \
-       lex.c lex_token.c lex_literal.c \
-       parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
-       parse_decl.c parse_decl_parts.c parse_ptr.c \
-       eval.c eval_expr.c eval_stmt.c eval_string.c rt_mem.c rt_ptr.c rt_defer.c \
-       socket_abi.c native_dispatch.c \
-       diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
-       check_ptr.c borrow.c borrow_expr.c borrow_flow.c borrow_task.c \
-       snbc.c value.c vm.c emit_bc.c link_append.c
-OBJS = $(addprefix $(BUILD)/,$(SRCS:.c=.o))
+SRCS = src/driver/main.c src/driver/driver_utils.c src/driver/project.c \
+       src/driver/cmd_check.c src/driver/cmd_lex_parse.c src/driver/cmd_run.c \
+       src/driver/cmd_build.c src/driver/cmd_tidy.c src/driver/cmd_get.c \
+       src/native/target.c src/native/native_backend.c \
+       src/eval/pulsar.c src/eval/async.c \
+       src/ast/dump.c src/ast/ast.c \
+       src/lex/lex.c src/lex/lex_token.c src/lex/lex_literal.c \
+       src/parse/parse.c src/parse/parse_type.c src/parse/parse_expr.c \
+       src/parse/parse_primary.c src/parse/parse_stmt.c \
+       src/parse/parse_decl.c src/parse/parse_decl_parts.c src/parse/parse_ptr.c \
+       src/eval/eval.c src/eval/eval_expr.c src/eval/eval_stmt.c \
+       src/eval/eval_string.c src/eval/rt_mem.c src/eval/rt_ptr.c src/eval/rt_defer.c \
+       src/eval/socket_abi.c src/eval/native_dispatch.c \
+       src/base/diag.c src/base/arena.c src/base/intern.c \
+       src/sema/symbol.c src/sema/package.c src/sema/types.c src/sema/resolve.c \
+       src/sema/builtins.c src/sema/check.c src/sema/check_ptr.c \
+       src/sema/borrow.c src/sema/borrow_expr.c src/sema/borrow_flow.c \
+       src/sema/borrow_task.c \
+       src/bc/snbc.c src/bc/emit_bc.c
+OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
 DEPS = $(OBJS:.o=.d)
 
 # intern.c/symbol.c/package.c/types.c have no CLI surface yet (P2.1/P2.2/P2.3)
@@ -45,38 +65,29 @@ DEPS = $(OBJS:.o=.d)
 # $(BIN). See tests/test_symbol.c, tests/test_package.c, tests/test_types.c.
 TEST_SYMBOL_BIN = $(BUILD)/test_symbol$(EXE)
 TEST_PACKAGE_BIN = $(BUILD)/test_package$(EXE)
-TEST_PACKAGE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
-                     $(BUILD)/symbol.o $(BUILD)/package.o $(BUILD)/ast.o \
-                     $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o \
-                     $(BUILD)/driver_utils.o
+TEST_PACKAGE_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/diag.o $(BUILD)/base/intern.o \
+                     $(BUILD)/sema/symbol.o $(BUILD)/sema/package.o $(BUILD)/ast/ast.o \
+                     $(BUILD)/lex/lex.o $(BUILD)/lex/lex_token.o $(BUILD)/lex/lex_literal.o \
+                     $(BUILD)/driver/driver_utils.o
 TEST_TYPES_BIN = $(BUILD)/test_types$(EXE)
-TEST_TYPES_OBJS = $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o \
-                   $(BUILD)/types.o
+TEST_TYPES_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/intern.o $(BUILD)/sema/symbol.o \
+                   $(BUILD)/sema/types.o
 TEST_RESOLVE_BIN = $(BUILD)/test_resolve$(EXE)
-TEST_RESOLVE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
-                     $(BUILD)/symbol.o $(BUILD)/package.o $(BUILD)/types.o \
-                     $(BUILD)/resolve.o $(BUILD)/ast.o \
-                     $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o \
-                     $(BUILD)/parse.o $(BUILD)/parse_type.o $(BUILD)/parse_expr.o \
-                     $(BUILD)/parse_primary.o $(BUILD)/parse_stmt.o \
-                     $(BUILD)/parse_decl.o $(BUILD)/parse_decl_parts.o \
-                     $(BUILD)/parse_ptr.o $(BUILD)/driver_utils.o
+TEST_RESOLVE_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/diag.o $(BUILD)/base/intern.o \
+                     $(BUILD)/sema/symbol.o $(BUILD)/sema/package.o $(BUILD)/sema/types.o \
+                     $(BUILD)/sema/resolve.o $(BUILD)/ast/ast.o \
+                     $(BUILD)/lex/lex.o $(BUILD)/lex/lex_token.o $(BUILD)/lex/lex_literal.o \
+                     $(BUILD)/parse/parse.o $(BUILD)/parse/parse_type.o $(BUILD)/parse/parse_expr.o \
+                     $(BUILD)/parse/parse_primary.o $(BUILD)/parse/parse_stmt.o \
+                     $(BUILD)/parse/parse_decl.o $(BUILD)/parse/parse_decl_parts.o \
+                     $(BUILD)/parse/parse_ptr.o $(BUILD)/driver/driver_utils.o
 TEST_CHECK_BIN = $(BUILD)/test_check$(EXE)
-TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtins.o $(BUILD)/check.o \
-                  $(BUILD)/check_ptr.o $(BUILD)/borrow.o $(BUILD)/borrow_expr.o \
-                  $(BUILD)/borrow_flow.o $(BUILD)/borrow_task.o
+TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/sema/builtins.o $(BUILD)/sema/check.o \
+                  $(BUILD)/sema/check_ptr.o $(BUILD)/sema/borrow.o $(BUILD)/sema/borrow_expr.o \
+                  $(BUILD)/sema/borrow_flow.o $(BUILD)/sema/borrow_task.o
 
-RT_SRCS = driver_utils.c project.c target.c native_backend.c pulsar.c async.c \
-          dump.c ast.c \
-          lex.c lex_token.c lex_literal.c \
-          parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
-          parse_decl.c parse_decl_parts.c parse_ptr.c \
-          eval.c eval_expr.c eval_stmt.c eval_string.c rt_mem.c rt_ptr.c rt_defer.c \
-          socket_abi.c native_dispatch.c \
-          diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
-          check_ptr.c borrow.c borrow_expr.c borrow_flow.c borrow_task.c \
-          snbc.c value.c vm.c emit_bc.c link_append.c
-RT_OBJS = $(addprefix $(BUILD)/,$(RT_SRCS:.c=.o))
+RT_SRCS = $(filter-out src/driver/main.c,$(SRCS))
+RT_OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(RT_SRCS))
 LIB_RT  = $(BUILD)/libsnovart.a
 
 # Default install prefix (~/.snova on Unix, %USERPROFILE%/.snova on Windows)
@@ -95,9 +106,9 @@ INCDIR  ?= $(PREFIX)/include
 STD_SRC_DIR := ../snova-std/src
 STD_INSTALL_DIR ?= $(HOME)/.snovalang/std/src
 
-.PHONY: all clean test unit conformance install uninstall installer-windows
+.PHONY: all clean test unit conformance install uninstall installer-windows compdb
 
-all: $(BIN) $(LIB_RT)
+all: $(BIN) $(LIB_RT) compile_commands.json
 
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(EXTRA_LIBS)
@@ -127,7 +138,7 @@ else
 	install -m 755 $(BIN) $(BINDIR)/snl$(EXE)
 	@echo "✓ Installed snl to $(BINDIR)/snl$(EXE)"
 	install -m 644 $(LIB_RT) $(LIBDIR)/libsnovart.a
-	install -m 644 *.h $(INCDIR)/
+	find src -name '*.h' -type f -exec install -m 644 {} $(INCDIR)/ \;
 	@echo "✓ Installed runtime lib + headers to $(LIBDIR), $(INCDIR)"
 	@if [ -d $(STD_SRC_DIR) ]; then \
 		mkdir -p "$(STD_INSTALL_DIR)"; \
@@ -143,7 +154,7 @@ ifeq ($(OS),Windows_NT)
 else
 	rm -f $(BINDIR)/snl$(EXE) $(BINDIR)/snovac$(EXE) $(BINDIR)/sncli$(EXE)
 	rm -f $(LIBDIR)/libsnovart.a
-	rm -f $(addprefix $(INCDIR)/,$(notdir $(wildcard *.h)))
+	rm -f $(addprefix $(INCDIR)/,$(notdir $(shell find src -name '*.h' -type f)))
 	@echo "✓ Removed snl from $(BINDIR)/snl$(EXE) (and its runtime lib/headers)"
 	@echo "Note: PATH entries added by 'make install' in shell rc files /"
 	@echo "the PowerShell profile are left untouched; remove them manually if desired."
@@ -153,8 +164,13 @@ endif
 installer-windows: $(BIN) $(LIB_RT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File installer/windows/build_installer.ps1
 
-$(BUILD)/%.o: %.c | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<
+$(BUILD)/%.o: src/%.c | $(BUILD)
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force -Path '$(subst /,\,$(dir $@))' | Out-Null"
+else
+	@mkdir -p $(dir $@)
+endif
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -MMD -MP -c -o $@ $<
 
 $(BUILD):
 ifeq ($(OS),Windows_NT)
@@ -163,21 +179,21 @@ else
 	mkdir -p $(BUILD)
 endif
 
-$(TEST_SYMBOL_BIN): tests/test_symbol.c $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_symbol.c \
-	    $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o
+$(TEST_SYMBOL_BIN): tests/test_symbol.c $(BUILD)/base/arena.o $(BUILD)/base/intern.o $(BUILD)/sema/symbol.o | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_symbol.c \
+	    $(BUILD)/base/arena.o $(BUILD)/base/intern.o $(BUILD)/sema/symbol.o
 
 $(TEST_PACKAGE_BIN): tests/test_package.c $(TEST_PACKAGE_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_package.c $(TEST_PACKAGE_OBJS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_package.c $(TEST_PACKAGE_OBJS)
 
 $(TEST_TYPES_BIN): tests/test_types.c $(TEST_TYPES_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_types.c $(TEST_TYPES_OBJS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_types.c $(TEST_TYPES_OBJS)
 
 $(TEST_RESOLVE_BIN): tests/test_resolve.c $(TEST_RESOLVE_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_resolve.c $(TEST_RESOLVE_OBJS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_resolve.c $(TEST_RESOLVE_OBJS)
 
 $(TEST_CHECK_BIN): tests/test_check.c $(TEST_CHECK_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_check.c $(TEST_CHECK_OBJS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_check.c $(TEST_CHECK_OBJS)
 
 # Assertions for the lexer decisions derived from the corpus, plus the
 # standalone symbol-table, package-graph, type-representation, resolver and
@@ -210,6 +226,16 @@ ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path '$(BUILD)') { Remove-Item -Path '$(BUILD)' -Recurse -Force }"
 else
 	rm -rf $(BUILD)
+endif
+	rm -f compile_commands.json
+
+compdb: compile_commands.json
+
+compile_commands.json: $(SRCS) tests/test_symbol.c tests/test_package.c tests/test_types.c tests/test_resolve.c tests/test_check.c scripts/gen_compile_commands.py
+ifeq ($(OS),Windows_NT)
+	@python scripts/gen_compile_commands.py "$(CURDIR)" "$(CC)" "$(CPPFLAGS)" "$(CFLAGS)" "$(WARN)" "$(INCLUDES)"
+else
+	@python3 scripts/gen_compile_commands.py "$(CURDIR)" "$(CC)" "$(CPPFLAGS)" "$(CFLAGS)" "$(WARN)" "$(INCLUDES)"
 endif
 
 -include $(DEPS)

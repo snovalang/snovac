@@ -72,7 +72,7 @@ If the latest GitHub release has no prebuilt archive, the script clones this rep
 - **Pure C11 Implementation**: Zero dependencies, extremely fast compilation speed.
 - **Diagnostics & Error Reporting**: Colorized source snippets with precise diagnostic codes (`SNOVA0001` - `SNOVA0040`).
 - **Module Management**: Discovers root packages with `mod.sns`.
-- **Bytecode VM & Native Compilation**: Ahead-of-time bytecode compilation and interpretation.
+- **Bytecode and native compilation**: Ahead-of-time bytecode emission and native linking. `snl run` executes the checked program.
 - **Pulsar Concurrency**: Actor model and streaming concurrency support.
 
 ## Building from Source

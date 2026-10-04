@@ -19,8 +19,8 @@ CLANG=${CLANG:-clang-18}
 PLUGIN=${MULL_PLUGIN:-/usr/lib/mull-ir-frontend-18}
 RUNNER=${MULL_RUNNER:-mull-runner-18}
 # Measured on origin/master at cfa2b2c with Mull 0.34.1 / LLVM 18.1.3
-# against build/mull-symbol/test_symbol (arena.c, intern.c, symbol.c,
-# tests/test_symbol.c): 33 killed / 20 survived = 62%, and 32/21 = 60% when
+# against build/mull-symbol/test_symbol (src/base/arena.c, src/base/intern.c,
+# src/sema/symbol.c, tests/test_symbol.c): 33 killed / 20 survived = 62%, and 32/21 = 60% when
 # the out-of-bounds `i <= nbuckets` mutant in symbol.c happens to survive.
 # 60 is the lower score those runs reported. CI fails below it.
 THRESHOLD=${MULL_SCORE_THRESHOLD:-60}
@@ -30,11 +30,13 @@ OUT=build/mull-symbol
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-for src in arena.c intern.c symbol.c tests/test_symbol.c; do
+INCLUDES="-Isrc/base -Isrc/lex -Isrc/parse -Isrc/ast -Isrc/sema -Isrc/eval -Isrc/bc -Isrc/native -Isrc/driver"
+for src in src/base/arena.c src/base/intern.c src/sema/symbol.c tests/test_symbol.c; do
   obj="$OUT/$(basename "${src%.c}").o"
   "$CLANG" -std=c11 -O0 -g -grecord-command-line -pthread \
     -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE \
     -fpass-plugin="$PLUGIN" \
+    $INCLUDES \
     -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
     -Wmissing-prototypes -Wconversion -Wno-sign-conversion \
     -c -o "$obj" "$src"

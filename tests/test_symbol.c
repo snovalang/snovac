@@ -10,9 +10,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../arena.h"
-#include "../intern.h"
-#include "../symbol.h"
+#include "arena.h"
+#include "intern.h"
+#include "symbol.h"
 
 static int pass = 0;
 static int fail = 0;

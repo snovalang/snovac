@@ -33,10 +33,10 @@
 #define mkdir(dir, mode) _mkdir(dir)
 #endif
 
-#include "../arena.h"
-#include "../diag.h"
-#include "../intern.h"
-#include "../package.h"
+#include "arena.h"
+#include "diag.h"
+#include "intern.h"
+#include "package.h"
 
 static int pass = 0;
 static int fail = 0;

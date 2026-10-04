@@ -16,14 +16,14 @@
 #define mkdir(dir, mode) _mkdir(dir)
 #endif
 
-#include "../arena.h"
-#include "../check.h"
-#include "../diag.h"
-#include "../intern.h"
-#include "../package.h"
-#include "../resolve.h"
-#include "../symbol.h"
-#include "../types.h"
+#include "arena.h"
+#include "check.h"
+#include "diag.h"
+#include "intern.h"
+#include "package.h"
+#include "resolve.h"
+#include "symbol.h"
+#include "types.h"
 
 static int pass = 0;
 static int fail = 0;
