@@ -1,4 +1,7 @@
-/* emit_bc.c — AST to SnBC bytecode code generation. */
+/* emit_bc.c — AST to SnBC bytecode code generation.
+ * A node this file does not lower is SNOVA_EMIT_UNSUPPORTED. The implicit
+ * OP_CONST_UNIT / OP_RETURN epilogue is the fall-off return of a body that
+ * was lowered. It is not a substitute for a dropped node. */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -25,9 +28,22 @@ typedef struct {
     SnFunctionChunk *current_fn;
     LocalVar locals[256];
     uint32_t local_count;
+    int failed;
 } Compiler;
 
-static uint32_t add_local(Compiler *c, const char *name) {
+static void emit_unsupported(Compiler *c, SnSpan span, const char *what) {
+    c->failed = 1;
+    if (c->diag) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_EMIT_UNSUPPORTED, span,
+                     "cannot lower %s to SnBC\n", what);
+    }
+}
+
+static uint32_t add_local(Compiler *c, const char *name, SnSpan span) {
+    if (c->local_count >= 256) {
+        emit_unsupported(c, span, "local");
+        return 0;
+    }
     uint32_t idx = c->local_count++;
     c->locals[idx].name = name;
     c->locals[idx].index = idx;
@@ -93,9 +109,36 @@ static void patch_jump(Compiler *c, size_t jump_offset_pos) {
 static void compile_expr(Compiler *c, const SnExpr *e);
 static void compile_stmt(Compiler *c, const SnStmt *s);
 
+/* A type declaration has no opcode. It is a dropped program only when it
+ * carries code this pass does not lower: a nested routine, an initializer,
+ * or an accessor projection. A field-only struct is not one of those. */
+static void reject_unlowered_decl(Compiler *c, const SnDecl *d) {
+    if (!d) {
+        return;
+    }
+    if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
+        emit_unsupported(c, d->span, "declaration");
+        return;
+    }
+    if (d->init) {
+        emit_unsupported(c, d->init->span, "declaration");
+    }
+    if (d->has_accessors) {
+        if ((d->getter && d->getter->proj) || (d->setter && d->setter->proj)) {
+            emit_unsupported(c, d->span, "declaration");
+        }
+    }
+    for (size_t i = 0; i < d->members.len; i++) {
+        reject_unlowered_decl(c, SN_LIST_AT(d->members, SnDecl, i));
+    }
+    for (size_t i = 0; i < d->variants.len; i++) {
+        reject_unlowered_decl(c, SN_LIST_AT(d->variants, SnDecl, i));
+    }
+}
+
 static void compile_expr(Compiler *c, const SnExpr *e) {
     if (!e) {
-        emit_byte(c, OP_CONST_UNIT, 0);
+        emit_unsupported(c, (SnSpan){0}, "missing expression");
         return;
     }
     uint32_t line = e->span.line;
@@ -117,6 +160,10 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
     }
     case SN_EXPR_STRING:
     case SN_EXPR_CHAR: {
+        if (e->interpolated) {
+            emit_unsupported(c, e->span, "interpolated string");
+            return;
+        }
         const char *raw = e->text ? e->text : "";
         char buf[8192];
         size_t n = strlen(raw);
@@ -165,19 +212,24 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
                 emit_byte(c, OP_CONST_INT, line);
                 emit_i64(c, (int64_t)fn_idx, line);
             } else {
-                emit_byte(c, OP_CONST_UNIT, line);
+                emit_unsupported(c, e->span, "name");
             }
         }
         break;
     }
     case SN_EXPR_ASSIGN: {
         compile_expr(c, e->rhs);
-        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
+        int stored = 0;
+        if (e->op == SN_TOK_ASSIGN && e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
             uint32_t loc_idx;
             if (resolve_local(c, e->lhs->text, &loc_idx)) {
                 emit_byte(c, OP_SET_LOCAL, line);
                 emit_u32(c, loc_idx, line);
+                stored = 1;
             }
+        }
+        if (!stored) {
+            emit_unsupported(c, e->span, "assignment");
         }
         break;
     }
@@ -196,7 +248,9 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
         case SN_TOK_LE:      emit_byte(c, OP_LE, line); break;
         case SN_TOK_GT:      emit_byte(c, OP_GT, line); break;
         case SN_TOK_GE:      emit_byte(c, OP_GE, line); break;
-        default: break;
+        default:
+            emit_unsupported(c, e->span, "operator");
+            break;
         }
         break;
     case SN_EXPR_UNARY:
@@ -205,6 +259,8 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
             emit_byte(c, OP_NEG, line);
         } else if (e->op == SN_TOK_BANG) {
             emit_byte(c, OP_NOT, line);
+        } else {
+            emit_unsupported(c, e->span, "operator");
         }
         break;
     case SN_EXPR_CALL: {
@@ -252,7 +308,7 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
             emit_u32(c, fn_idx, line);
             emit_u32(c, (uint32_t)e->args.len, line);
         } else {
-            emit_byte(c, OP_CONST_UNIT, line);
+            emit_unsupported(c, e->span, "call");
         }
         break;
     }
@@ -271,7 +327,7 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
         break;
     }
     default:
-        emit_byte(c, OP_CONST_UNIT, line);
+        emit_unsupported(c, e->span, "expression");
         break;
     }
 }
@@ -292,7 +348,7 @@ static void compile_stmt(Compiler *c, const SnStmt *s) {
         } else {
             emit_byte(c, OP_CONST_UNIT, line);
         }
-        uint32_t idx = add_local(c, s->name);
+        uint32_t idx = add_local(c, s->name, s->span);
         emit_byte(c, OP_SET_LOCAL, line);
         emit_u32(c, idx, line);
         emit_byte(c, OP_POP, line);
@@ -341,12 +397,12 @@ static void compile_stmt(Compiler *c, const SnStmt *s) {
         break;
     }
     default:
+        emit_unsupported(c, s->span, "statement");
         break;
     }
 }
 
 int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCUnit *out) {
-    (void)diag;
     sn_bcunit_init(out);
 
     Compiler c;
@@ -354,15 +410,21 @@ int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCU
     c.diag = diag;
     c.unit = unit;
     c.bc = out;
+    c.current_fn = NULL;
+    c.local_count = 0;
+    c.failed = 0;
 
-    /* First pass: register function prototypes */
+    /* First pass: register function prototypes. Any other declaration is
+     * still in the program, so dropping it would publish a partial image. */
     for (size_t i = 0; i < unit->decls.len; i++) {
         const SnDecl *d = SN_LIST_AT(unit->decls, SnDecl, i);
         if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
             uint32_t fn_idx = sn_bcunit_add_function(out, d->name, (uint32_t)d->params.len);
-            if (strcmp(d->name, "main") == 0) {
+            if (d->name && strcmp(d->name, "main") == 0) {
                 out->main_func_idx = fn_idx;
             }
+        } else {
+            reject_unlowered_decl(&c, d);
         }
     }
 
@@ -377,16 +439,18 @@ int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCU
 
             for (size_t pi = 0; pi < d->params.len; pi++) {
                 const SnParam *p = SN_LIST_AT(d->params, SnParam, pi);
-                add_local(&c, p->name);
+                add_local(&c, p->name, p->span);
             }
 
             if (d->body) {
                 compile_stmt(&c, d->body);
+            } else {
+                emit_unsupported(&c, d->span, "function without a body");
             }
             emit_byte(&c, OP_CONST_UNIT, d->span.line);
             emit_byte(&c, OP_RETURN, d->span.line);
         }
     }
 
-    return 1;
+    return c.failed ? 0 : 1;
 }

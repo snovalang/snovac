@@ -627,6 +627,49 @@ if [ -f "$SNBC_DIR/no-input.snbc" ] || [ -f "$SNBC_DIR/no-input.snbc.snbt" ]; th
   present=1
 fi
 assert "emit-snbc: missing input writes no image" 0 "$present"
+
+# A lowered program still writes an image. A dropped node must not.
+assert "emit-snbc: arithmetic.snl succeeds" 0 \
+  "$(rc_of "$SNOVAC" emit-snbc "$DIR/compile-pass/arithmetic.snl" -o "$SNBC_DIR/arith.snbc")"
+arith_present=0
+if [ -f "$SNBC_DIR/arith.snbc" ] && [ -f "$SNBC_DIR/arith.snbc.snbt" ]; then
+  arith_present=1
+fi
+assert "emit-snbc: arithmetic.snl writes an image" 1 "$arith_present"
+
+reject_lower() {
+  label="$1"
+  src="$2"
+  out="$SNBC_DIR/$label.snbc"
+  err="$SNBC_DIR/$label.err"
+  rm -f "$out" "$out.snbt" "$err"
+  if "$SNOVAC" emit-snbc "$src" -o "$out" >"$SNBC_DIR/$label.stdout" 2>"$err"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  assert "emit-snbc: $label exits non-zero" 1 "$(printf '%s' "$rc" | grep -c '[^0]')"
+  present=0
+  if [ -f "$out" ] || [ -f "$out.snbt" ]; then
+    present=1
+  fi
+  assert "emit-snbc: $label writes no image" 0 "$present"
+  reported=0
+  if grep -q 'SNOVA0400' "$err"; then
+    reported=1
+  fi
+  assert "emit-snbc: $label reports SNOVA0400" 1 "$reported"
+}
+
+printf 'package tests.bootstrap.drop_null\n\nfunc main(): int {\n    return null\n}\n' > "$SNBC_DIR/drop_null.snl"
+printf 'package tests.bootstrap.drop_break\n\nfunc main(): int {\n    break\n    return 0\n}\n' > "$SNBC_DIR/drop_break.snl"
+printf 'package tests.bootstrap.drop_and\n\nfunc main(): int {\n    return true && false\n}\n' > "$SNBC_DIR/drop_and.snl"
+printf 'package tests.bootstrap.drop_body\n\nfunc main(): int\n' > "$SNBC_DIR/drop_body.snl"
+reject_lower "drop_null" "$SNBC_DIR/drop_null.snl"
+reject_lower "drop_break" "$SNBC_DIR/drop_break.snl"
+reject_lower "drop_and" "$SNBC_DIR/drop_and.snl"
+reject_lower "drop_body" "$SNBC_DIR/drop_body.snl"
+reject_lower "classes" "$DIR/compile-pass/classes.snl"
 rm -rf "$SNBC_DIR"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

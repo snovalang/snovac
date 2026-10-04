@@ -1,6 +1,7 @@
 /* cmd_emit_snbc.c — lex and parse one .snl program, then write canonical SnBC.
- * Manifests and .sns scripts are rejected. The emitter is not asked to fail
- * closed; that is a later phase. */
+ * Manifests and .sns scripts are rejected. The image is written only when
+ * sn_emit_bytecode lowered every node. Nothing in this command reads an
+ * image back or runs it. */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -76,6 +77,7 @@ int sn_cmd_emit_snbc(const char *path, const char *out_path) {
     SnBCUnit bc;
     int emitted = sn_emit_bytecode(&arena, &diag, &unit, &bc);
     if (!emitted) {
+        sn_driver_report_errors(&diag, path);
         sn_bcunit_free(&bc);
         sn_arena_free(&arena);
         free(src);
