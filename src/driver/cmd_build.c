@@ -69,6 +69,7 @@ int sn_cmd_build(const char *path, const char *out_path,
   SnBCUnit bc;
   if (!sn_emit_bytecode(&arena, &diag, &unit, &bc)) {
     fprintf(stderr, "error: failed to emit bytecode for '%s'\n", path);
+    sn_bcunit_free(&bc);
     sn_arena_free(&arena);
     free(src);
     return 1;
@@ -200,6 +201,7 @@ int sn_cmd_build_project(const char *path, const char *out_path,
   SnBCUnit bc;
   if (!sn_emit_bytecode(&arena, &diag, &merged, &bc)) {
     fprintf(stderr, "error: failed to emit bytecode for project '%s'\n", path);
+    sn_bcunit_free(&bc);
     sn_arena_free(&arena);
     return 1;
   }
