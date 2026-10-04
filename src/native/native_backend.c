@@ -15,6 +15,54 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* Split whitespace-separated flags into argv slots. `storage` is mutated.
+ * Returns 0 when the flag list does not fit. */
+static int append_ws_args(char *storage, char **argv, int *argc, int max_argc) {
+  if (!storage || !storage[0]) {
+    return 1;
+  }
+  for (char *tok = strtok(storage, " \t"); tok; tok = strtok(NULL, " \t")) {
+    if (*argc >= max_argc) {
+      return 0;
+    }
+    argv[(*argc)++] = tok;
+  }
+  return 1;
+}
+
+static int sn_native_spawn_cc(const SnTargetInfo *target, const char *output_path,
+                              const char *c_source_path, const char *inc_dir,
+                              const char *lib_path) {
+  char cflags_buf[256];
+  char ldflags_buf[256];
+  snprintf(cflags_buf, sizeof(cflags_buf), "%s", target->cflags);
+  snprintf(ldflags_buf, sizeof(ldflags_buf), "%s", target->ldflags);
+
+  char *argv[96];
+  int argc = 0;
+  argv[argc++] = (char *)target->c_compiler;
+  if (!append_ws_args(cflags_buf, argv, &argc, 80)) {
+    fprintf(stderr, "error: compiler flag list is too long\n");
+    return -1;
+  }
+  if (inc_dir && inc_dir[0]) {
+    argv[argc++] = "-I";
+    argv[argc++] = (char *)inc_dir;
+  }
+  argv[argc++] = "-o";
+  argv[argc++] = (char *)output_path;
+  argv[argc++] = (char *)c_source_path;
+  if (lib_path && lib_path[0]) {
+    argv[argc++] = (char *)lib_path;
+  }
+  if (!append_ws_args(ldflags_buf, argv, &argc, 94)) {
+    fprintf(stderr, "error: linker flag list is too long\n");
+    return -1;
+  }
+  argv[argc] = NULL;
+  return sn_driver_execv(argv);
+}
+
 int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
                       const char *output_path) {
   if (!bc || !target || !output_path) {
@@ -97,9 +145,23 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "typedef struct Val Val;\n");
   fprintf(f, "struct Val { ValTag tag; union { bool b; int64_t i; double d; "
              "char *str; void *ptr; } as; };\n\n");
-  fprintf(f, "static Val g_stack[4096];\nstatic Val *g_sp = g_stack;\n");
-  fprintf(f, "static inline void push(Val v) { *g_sp++ = v; }\n");
-  fprintf(f, "static inline Val pop(void) { return *(--g_sp); }\n");
+  fprintf(f, "#define SN_VAL_STACK_MAX 4096\n");
+  fprintf(f, "static Val g_stack[SN_VAL_STACK_MAX];\n");
+  fprintf(f, "static Val *g_sp = g_stack;\n");
+  fprintf(f, "static inline void push(Val v) {\n");
+  fprintf(f, "  if (g_sp >= g_stack + SN_VAL_STACK_MAX) {\n");
+  fprintf(f, "    fputs(\"error: value stack overflow\\n\", stderr);\n");
+  fprintf(f, "    exit(70);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  *g_sp++ = v;\n");
+  fprintf(f, "}\n");
+  fprintf(f, "static inline Val pop(void) {\n");
+  fprintf(f, "  if (g_sp <= g_stack) {\n");
+  fprintf(f, "    fputs(\"error: value stack underflow\\n\", stderr);\n");
+  fprintf(f, "    exit(70);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  return *(--g_sp);\n");
+  fprintf(f, "}\n");
   fprintf(f, "static inline Val peek(int d) { return g_sp[-1 - d]; }\n\n");
 
   fprintf(f, "static uint32_t read_u32(const uint8_t **ip) {\n");
@@ -177,6 +239,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
 
   fprintf(f, "static void pulsar_spawn(size_t fn_idx) {\n");
   fprintf(f, "  PulsarWork *work = (PulsarWork*)malloc(sizeof(PulsarWork));\n");
+  fprintf(f, "  if (!work) { fputs(\"error: out of memory\\n\", stderr); exit(70); }\n");
   fprintf(f, "  work->fn_idx = fn_idx;\n  work->next = NULL;\n");
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "  EnterCriticalSection(&g_pulsar_mutex);\n");
@@ -238,8 +301,12 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
           "    case %d: { Val b = pop(), a = pop(), r;\n"
           "      if (a.tag == VAL_STRING && b.tag == VAL_STRING) {\n"
           "        size_t la = strlen(a.as.str), lb = strlen(b.as.str);\n"
-          "        char *buf = malloc(la + lb + 1); strcpy(buf, a.as.str); "
-          "strcat(buf, b.as.str);\n"
+          "        if (lb > ((size_t)-1) - la - 1) {\n"
+          "          fputs(\"error: string concat overflow\\n\", stderr); exit(70);\n"
+          "        }\n"
+          "        char *buf = malloc(la + lb + 1);\n"
+          "        if (!buf) { fputs(\"error: out of memory\\n\", stderr); exit(70); }\n"
+          "        memcpy(buf, a.as.str, la); memcpy(buf + la, b.as.str, lb); buf[la + lb] = 0;\n"
           "        r.tag = VAL_STRING; r.as.str = buf;\n"
           "      } else if (a.tag == VAL_DOUBLE || b.tag == VAL_DOUBLE) {\n"
           "        r.tag = VAL_DOUBLE; r.as.d = (a.tag == VAL_DOUBLE ? a.as.d "
@@ -358,18 +425,12 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fclose(f);
 
   /* Compile runner C code to final binary using target compiler & flags */
-  char cmd[4096];
-  snprintf(cmd, sizeof(cmd), "%s %s -o %s %s %s",
-           target->c_compiler, target->cflags, output_path, c_source_path,
-           target->ldflags);
-
-  int status = system(cmd);
+  int status = sn_native_spawn_cc(target, output_path, c_source_path, NULL, NULL);
   remove(c_source_path);
   if (status != 0) {
     fprintf(stderr,
-            "error: compilation to native binary failed with exit status %d "
-            "(command: %s)\n",
-            status, cmd);
+            "error: compilation to native binary failed with exit status %d\n",
+            status);
     return 0;
   }
 
@@ -526,18 +587,14 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
     }
   }
 
-  char cmd[4096];
-  snprintf(cmd, sizeof(cmd), "%s %s -I%s -o %s %s %s %s",
-           target->c_compiler, target->cflags, inc_dir, output_path,
-           c_source_path, lib_path, target->ldflags);
-
-  int status = system(cmd);
+  int status = sn_native_spawn_cc(target, output_path, c_source_path, inc_dir,
+                                 lib_path);
   remove(c_source_path);
   if (status != 0) {
     fprintf(stderr,
-            "error: compilation of standalone runtime binary failed (command: "
-            "%s)\n",
-            cmd);
+            "error: compilation of standalone runtime binary failed with exit "
+            "status %d\n",
+            status);
     return 0;
   }
 

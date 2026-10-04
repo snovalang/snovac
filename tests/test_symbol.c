@@ -27,6 +27,16 @@ static int fail = 0;
         }                                                                    \
     } while (0)
 
+static void test_arena_strndup(SnArena *a) {
+    /* n == 0 kills `n + 1` -> `n - 1` (the size underflows and the arena
+     * aborts). Any n other than SIZE_MAX kills `n == SIZE_MAX` -> `!=`. */
+    char *empty = sn_arena_strndup(a, "", 0);
+    CHECK("arena: empty strndup is a NUL", empty != NULL && empty[0] == '\0');
+    char *hello = sn_arena_strndup(a, "hello", 5);
+    CHECK("arena: strndup keeps the requested bytes",
+          hello != NULL && strcmp(hello, "hello") == 0);
+}
+
 static void test_intern(SnInternTable *it) {
     const char *a1 = sn_intern_cstr(it, "hello");
     const char *a2 = sn_intern_cstr(it, "hello");
@@ -48,15 +58,21 @@ static void test_intern(SnInternTable *it) {
     /* force several rehashes and confirm early entries are still found */
     char buf[32];
     const char *first = NULL;
+    const char *past = NULL;
     for (int i = 0; i < 500; i++) {
         snprintf(buf, sizeof(buf), "sym_%d", i);
         const char *p = sn_intern_cstr(it, buf);
         if (i == 0) {
             first = p;
         }
+        if (strcmp(buf, "sym_500") == 0) {
+            past = p;
+        }
     }
     const char *refound = sn_intern_cstr(it, "sym_0");
     CHECK("intern: survives rehash", refound == first);
+    /* `<` -> `<=` interns sym_500 and still finds sym_0. */
+    CHECK("intern: rehash loop stops before sym_500", past == NULL);
 }
 
 static void test_scope_single(SnInternTable *it, SnArena *a) {
@@ -131,12 +147,16 @@ static void test_scope_rehash(SnInternTable *it, SnArena *a) {
 
     char buf[32];
     SnSymbol *first_sym = NULL;
+    SnSymbol *past = NULL;
     for (int i = 0; i < 200; i++) {
         snprintf(buf, sizeof(buf), "member_%d", i);
         const char *name = sn_intern_cstr(it, buf);
         SnSymbol *sym = sn_scope_define(&big, name, SN_SYM_METHOD, NULL, span0);
         if (i == 0) {
             first_sym = sym;
+        }
+        if (strcmp(buf, "member_200") == 0) {
+            past = sym;
         }
     }
     const char *member0 = sn_intern_cstr(it, "member_0");
@@ -145,6 +165,7 @@ static void test_scope_rehash(SnInternTable *it, SnArena *a) {
           sn_scope_lookup_local(&big, member0) == first_sym);
     CHECK("scope: survives rehash — latest entry also found",
           sn_scope_lookup_local(&big, member199) != NULL);
+    CHECK("scope: rehash loop stops before member_200", past == NULL);
 }
 
 int main(void) {
@@ -154,6 +175,7 @@ int main(void) {
     SnInternTable it;
     sn_intern_init(&it, &arena);
 
+    test_arena_strndup(&arena);
     test_intern(&it);
     test_scope_single(&it, &arena);
     test_scope_nesting(&it, &arena);

@@ -72,7 +72,7 @@ If the latest GitHub release has no prebuilt archive, the script clones this rep
 - **Pure C11 Implementation**: Zero dependencies, extremely fast compilation speed.
 - **Diagnostics & Error Reporting**: Colorized source snippets with precise diagnostic codes (`SNOVA0001` - `SNOVA0040`).
 - **Module Management**: Discovers root packages with `mod.sns`.
-- **Bytecode and native compilation**: Ahead-of-time bytecode emission and native linking. `snl run` executes the checked program.
+- **Bytecode and native compilation**: Ahead-of-time bytecode emission and native linking. `snl run` executes the checked program with the tree-walking interpreter.
 - **Pulsar Concurrency**: Actor model and streaming concurrency support.
 
 ## Building from Source
@@ -139,7 +139,7 @@ make uninstall
   Performs symbol resolution, scope analysis, and static type-checking on a single file.
 
 - **`snl run <file.snl>`**:
-  Compiles and directly executes a single Snovalang source file in the bytecode VM runtime.
+  Checks and executes a single Snovalang source file with the tree-walking interpreter (`sn_eval_run`).
 
 - **`snl build <file.snl> [-o output] [--target=triple]`**:
   Compiles a single file to a standalone native binary or bytecode unit. Supports cross-compilation target triples (e.g. `aarch64-apple-darwin`, `x86_64-linux-gnu`).

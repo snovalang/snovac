@@ -23,11 +23,7 @@
 
 #if defined(_WIN32)
 #include <direct.h>
-#include <process.h>
 #include <windows.h>
-#else
-#include <sys/wait.h>
-#include <unistd.h>
 #endif
 
 /* ── String helpers ──────────────────────────────────────────────────────── */
@@ -101,30 +97,9 @@ static int copy_dir_recursive(const char *src_dir, const char *dst_dir) {
     return 1;
 }
 
-#include <fcntl.h>
-
-/* ── Safe Git Clone (No Shell Interpolation, Silent Output) ───────────────── */
+/* ── Safe Git (No Shell Interpolation) ────────────────────────────────────── */
 
 static int run_git_clone_safe(const char *url, const char *version, const char *dest_dir) {
-#if defined(_WIN32)
-    const char *argv[10];
-    int argc = 0;
-    argv[argc++] = "git";
-    argv[argc++] = "clone";
-    argv[argc++] = "-q";
-    if (version && version[0]) {
-        argv[argc++] = "--branch";
-        argv[argc++] = version;
-    }
-    argv[argc++] = "--depth";
-    argv[argc++] = "1";
-    argv[argc++] = url;
-    argv[argc++] = dest_dir;
-    argv[argc] = NULL;
-
-    intptr_t status = _spawnvp(_P_WAIT, "git", argv);
-    return (status == 0) ? 0 : 1;
-#else
     char *argv[10];
     int argc = 0;
     argv[argc++] = "git";
@@ -140,61 +115,46 @@ static int run_git_clone_safe(const char *url, const char *version, const char *
     argv[argc++] = (char *)dest_dir;
     argv[argc] = NULL;
 
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        int devnull = open("/dev/null", O_WRONLY);
-        if (devnull >= 0) {
-            dup2(devnull, STDOUT_FILENO);
-            dup2(devnull, STDERR_FILENO);
-            close(devnull);
-        }
-        execvp("git", argv);
-        _exit(127);
-    }
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0) return -1;
-    if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
-    }
-    return -1;
-#endif
+    int status = sn_driver_execv_read(argv, NULL, 0);
+    return (status == 0) ? 0 : 1;
 }
 
 static int query_latest_remote_tag(const char *url, char *tag_out, size_t tag_sz) {
-    char cmd[1024];
-#if defined(_WIN32)
-    snprintf(cmd, sizeof(cmd), "git ls-remote --tags --sort=-v:refname \"%s\"", url);
-    FILE *pipe = _popen(cmd, "r");
-#else
-    snprintf(cmd, sizeof(cmd), "git ls-remote --tags --sort=-v:refname '%s' 2>/dev/null", url);
-    FILE *pipe = popen(cmd, "r");
-#endif
-    if (!pipe) return 0;
+    char *argv[6];
+    argv[0] = "git";
+    argv[1] = "ls-remote";
+    argv[2] = "--tags";
+    argv[3] = "--sort=-v:refname";
+    argv[4] = (char *)url;
+    argv[5] = NULL;
 
-    char line[512];
+    char buf[65536];
+    if (sn_driver_execv_read(argv, buf, sizeof(buf)) < 0) {
+        return 0;
+    }
+
     int found = 0;
-    while (fgets(line, sizeof(line), pipe)) {
+    char *line = buf;
+    while (line && *line) {
+        char *nl = strchr(line, '\n');
+        if (nl) {
+            *nl = '\0';
+        }
         char *ref = strstr(line, "refs/tags/");
         if (ref) {
             ref += 10;
             size_t n = strlen(ref);
-            while (n > 0 && (ref[n - 1] == '\n' || ref[n - 1] == '\r' || ref[n - 1] == ' ' || ref[n - 1] == '\t')) {
+            while (n > 0 && (ref[n - 1] == '\r' || ref[n - 1] == ' ' || ref[n - 1] == '\t')) {
                 ref[--n] = '\0';
             }
-            if (strstr(ref, "^{}")) continue;
-            if (n > 0) {
+            if (!strstr(ref, "^{}") && n > 0) {
                 snprintf(tag_out, tag_sz, "%s", ref);
                 found = 1;
                 break;
             }
         }
+        line = nl ? nl + 1 : NULL;
     }
-#if defined(_WIN32)
-    _pclose(pipe);
-#else
-    pclose(pipe);
-#endif
     return found;
 }
 

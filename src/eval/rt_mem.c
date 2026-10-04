@@ -46,6 +46,10 @@ void sn_rt_mem_reset(SnEvalInterp *in) {
 
 void sn_rt_frame_push(SnEvalInterp *in) {
     SnEvalMemFrame *f = (SnEvalMemFrame *)malloc(sizeof(SnEvalMemFrame));
+    if (!f) {
+        fprintf(stderr, "snovac: fatal: out of memory allocating eval frame\n");
+        exit(70);
+    }
     f->parent = in->mem;
     f->blocks = NULL;
     in->mem = f;

@@ -6,9 +6,8 @@
  *   eval_stmt.c    statement execution
  *   eval_string.c  literal decoding and `${...}` interpolation
  *
- * This interpreter is the P1 smoke path — `snovac run` — not the P3 VM. It
- * exists so parser output can be executed end to end while the bytecode
- * backend is still ahead of us.
+ * This interpreter is the execution path for `snl run`. `snl build` emits
+ * bytecode and compiles a generated C runner; there is no in-process VM.
  */
 #ifndef SNOVAC_EVAL_INTERNAL_H
 #define SNOVAC_EVAL_INTERNAL_H

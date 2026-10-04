@@ -22,14 +22,26 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <direct.h>
-#include <io.h>
+#include <process.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #elif defined(__linux__)
 #include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #elif defined(__FreeBSD__)
 #include <sys/sysctl.h>
 #include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#else
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #endif
 
 char sn_driver_exe_dir[SNOVAC_PATH_MAX] = {0};
@@ -465,5 +477,211 @@ void sn_driver_normalize_path(const char *path, char *out, size_t out_sz) {
   } else if (out != path) {
     snprintf(out, out_sz, "%s", path);
   }
+#endif
+}
+
+int sn_driver_execv(char *const argv[]) {
+  if (!argv || !argv[0] || !argv[0][0]) {
+    return -1;
+  }
+#if defined(_WIN32)
+  intptr_t rc = _spawnvp(_P_WAIT, argv[0], (const char *const *)argv);
+  if (rc < 0) {
+    return -1;
+  }
+  return (int)rc;
+#else
+  pid_t pid = fork();
+  if (pid < 0) {
+    return -1;
+  }
+  if (pid == 0) {
+    execvp(argv[0], argv);
+    _exit(127);
+  }
+  int status = 0;
+  if (waitpid(pid, &status, 0) < 0) {
+    return -1;
+  }
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  }
+  if (WIFSIGNALED(status)) {
+    return 128 + WTERMSIG(status);
+  }
+  return -1;
+#endif
+}
+
+#if defined(_WIN32)
+/* CreateProcess takes one command line. Quote every argument and refuse a
+ * quote character so the line cannot be re-split. This is not a shell. */
+static int append_quoted_arg(char *dst, size_t cap, size_t *used, const char *arg) {
+  size_t n = strlen(arg);
+  if (memchr(arg, '"', n) != NULL) {
+    return 0;
+  }
+  if (*used + n + 3 >= cap) {
+    return 0;
+  }
+  if (*used > 0) {
+    dst[(*used)++] = ' ';
+  }
+  dst[(*used)++] = '"';
+  memcpy(dst + *used, arg, n);
+  *used += n;
+  dst[(*used)++] = '"';
+  dst[*used] = '\0';
+  return 1;
+}
+#endif
+
+int sn_driver_execv_read(char *const argv[], char *out, size_t out_sz) {
+  if (out && out_sz > 0) {
+    out[0] = '\0';
+  }
+  if (!argv || !argv[0] || !argv[0][0]) {
+    return -1;
+  }
+#if defined(_WIN32)
+  char cmdline[8192];
+  size_t used = 0;
+  cmdline[0] = '\0';
+  for (int i = 0; argv[i]; i++) {
+    if (!append_quoted_arg(cmdline, sizeof(cmdline), &used, argv[i])) {
+      return -1;
+    }
+  }
+
+  SECURITY_ATTRIBUTES sa;
+  sa.nLength = sizeof(sa);
+  sa.lpSecurityDescriptor = NULL;
+  sa.bInheritHandle = TRUE;
+  HANDLE rd = NULL;
+  HANDLE wr = NULL;
+  if (!CreatePipe(&rd, &wr, &sa, 0)) {
+    return -1;
+  }
+  SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+
+  HANDLE nul = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  STARTUPINFOA si;
+  PROCESS_INFORMATION pi;
+  ZeroMemory(&si, sizeof(si));
+  ZeroMemory(&pi, sizeof(pi));
+  si.cb = sizeof(si);
+  si.dwFlags = STARTF_USESTDHANDLES;
+  si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+  si.hStdOutput = wr;
+  si.hStdError = (nul != INVALID_HANDLE_VALUE) ? nul : GetStdHandle(STD_ERROR_HANDLE);
+
+  BOOL ok = CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+  CloseHandle(wr);
+  if (nul != INVALID_HANDLE_VALUE) {
+    CloseHandle(nul);
+  }
+  if (!ok) {
+    CloseHandle(rd);
+    return -1;
+  }
+
+  size_t n = 0;
+  for (;;) {
+    char sink[512];
+    DWORD got = 0;
+    char *dest = sink;
+    DWORD want = (DWORD)sizeof(sink);
+    if (out && out_sz > 1 && n + 1 < out_sz) {
+      dest = out + n;
+      want = (DWORD)(out_sz - 1 - n);
+      if (want > 512) {
+        want = 512;
+      }
+    }
+    if (!ReadFile(rd, dest, want, &got, NULL) || got == 0) {
+      break;
+    }
+    if (dest != sink) {
+      n += (size_t)got;
+    }
+  }
+  if (out && out_sz > 0) {
+    if (n >= out_sz) {
+      n = out_sz - 1;
+    }
+    out[n] = '\0';
+  }
+  CloseHandle(rd);
+
+  WaitForSingleObject(pi.hProcess, INFINITE);
+  DWORD code = 1;
+  GetExitCodeProcess(pi.hProcess, &code);
+  CloseHandle(pi.hProcess);
+  CloseHandle(pi.hThread);
+  return (int)code;
+#else
+  int fds[2];
+  if (pipe(fds) != 0) {
+    return -1;
+  }
+  pid_t pid = fork();
+  if (pid < 0) {
+    close(fds[0]);
+    close(fds[1]);
+    return -1;
+  }
+  if (pid == 0) {
+    close(fds[0]);
+    if (dup2(fds[1], STDOUT_FILENO) < 0) {
+      _exit(127);
+    }
+    close(fds[1]);
+    int dn = open("/dev/null", O_WRONLY);
+    if (dn >= 0) {
+      dup2(dn, STDERR_FILENO);
+      close(dn);
+    }
+    execvp(argv[0], argv);
+    _exit(127);
+  }
+  close(fds[1]);
+  {
+    size_t n = 0;
+    char sink[256];
+    for (;;) {
+      char *dest = sink;
+      size_t want = sizeof(sink);
+      if (out && out_sz > 1 && n + 1 < out_sz) {
+        dest = out + n;
+        want = out_sz - 1 - n;
+      }
+      ssize_t r = read(fds[0], dest, want);
+      if (r <= 0) {
+        break;
+      }
+      if (dest != sink) {
+        n += (size_t)r;
+      }
+    }
+    if (out && out_sz > 0) {
+      if (n >= out_sz) {
+        n = out_sz - 1;
+      }
+      out[n] = '\0';
+    }
+  }
+  close(fds[0]);
+  int status = 0;
+  if (waitpid(pid, &status, 0) < 0) {
+    return -1;
+  }
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  }
+  if (WIFSIGNALED(status)) {
+    return 128 + WTERMSIG(status);
+  }
+  return -1;
 #endif
 }

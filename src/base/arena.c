@@ -15,6 +15,9 @@ struct SnArenaBlock {
 };
 
 static size_t align_up(size_t n) {
+    if (n > SIZE_MAX - (SN_ARENA_ALIGN - 1u)) {
+        return SIZE_MAX;
+    }
     return (n + (SN_ARENA_ALIGN - 1u)) & ~((size_t)SN_ARENA_ALIGN - 1u);
 }
 
@@ -34,6 +37,9 @@ static SnArenaBlock *push_block(SnArena *a, size_t need) {
     if (cap < need) {
         cap = align_up(need);
     }
+    if (cap > SIZE_MAX - sizeof(SnArenaBlock)) {
+        oom(need);
+    }
     SnArenaBlock *b = (SnArenaBlock *)malloc(sizeof(SnArenaBlock) + cap);
     if (!b) {
         oom(cap);
@@ -47,6 +53,9 @@ static SnArenaBlock *push_block(SnArena *a, size_t need) {
 }
 
 void *sn_arena_alloc(SnArena *a, size_t size) {
+    if (size > SIZE_MAX - SN_ARENA_ALIGN) {
+        oom(size);
+    }
     size_t need = align_up(size ? size : 1u);
     SnArenaBlock *b = a->head;
     if (!b || b->cap - b->used < need) {
@@ -64,6 +73,9 @@ void *sn_arena_calloc(SnArena *a, size_t size) {
 }
 
 char *sn_arena_strndup(SnArena *a, const char *s, size_t n) {
+    if (n == SIZE_MAX) {
+        oom(n);
+    }
     char *p = (char *)sn_arena_alloc(a, n + 1u);
     memcpy(p, s, n);
     p[n] = '\0';
