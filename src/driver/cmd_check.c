@@ -184,6 +184,29 @@ int sn_cmd_check(const char *path, int dump) {
 }
 
 int sn_cmd_check_for_exec(const char *path) {
+#if defined(_WIN32)
+    /* MinGW has no open_memstream. A temporary file keeps a successful check
+     * quiet and still prints diagnostics when the check fails. */
+    FILE *mem = tmpfile();
+    if (!mem) {
+        return sn_cmd_check(path, 0);
+    }
+    int rc = check_file_to(path, mem, 1);
+    long sz = ftell(mem);
+    if (rc && sz > 0) {
+        rewind(mem);
+        char *buf = (char *)malloc((size_t)sz);
+        if (buf) {
+            size_t n = fread(buf, 1, (size_t)sz, mem);
+            if (n > 0) {
+                fwrite(buf, 1, n, stderr);
+            }
+            free(buf);
+        }
+    }
+    fclose(mem);
+    return rc;
+#else
     char *buf = NULL;
     size_t n = 0;
     FILE *mem = open_memstream(&buf, &n);
@@ -197,6 +220,7 @@ int sn_cmd_check_for_exec(const char *path) {
     }
     free(buf);
     return rc;
+#endif
 }
 
 int sn_cmd_check_project(const char *path, int typecheck_bodies) {
