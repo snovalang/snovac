@@ -10,6 +10,11 @@
 # from the entry file.
 #
 # usage: sh tests/battery.sh [path/to/snl] [path/to/tests]
+#
+# The run is a gate. A fixture that fails its check fails this script, except
+# the paths listed in tests/battery.allow. Those are known gaps. A listed
+# fixture that now passes, or a listed path that is not a fixture, also fails
+# the script so the allowlist cannot silently hide a fix.
 set -eu
 
 SNOVAC="${1:-build/snl}"
@@ -63,6 +68,27 @@ own_codes() { # file -> newline-separated ERROR codes reported against it
         $0 ~ " --> " f ":" && code != "" { print code + 0; code = "" }' "$(check_once "$1")"
 }
 
+ALLOW="$ROOT/battery.allow"
+SEEN="$CACHE/seen"
+: > "$SEEN"
+
+rel_of() { # absolute fixture -> path relative to $ROOT
+  printf '%s' "${1#"$ROOT"/}"
+}
+
+allowed() { # relative path -> 0 when tests/battery.allow names it
+  [ -f "$ALLOW" ] || return 1
+  awk -v p="$1" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    { sub(/[[:space:]]+$/, "", $0); if ($0 == p) found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$ALLOW"
+}
+
+note_seen() {
+  printf '%s\n' "$1" >> "$SEEN"
+}
+
 pass_total=0; pass_ok=0
 # Fixtures under compile-pass/packages/ import DOMAIN SLUGS
 # (`builtin.http.Http`, `builtin.sql.Sql`, `builtin.async`, ...). Those are
@@ -83,6 +109,7 @@ needs_materialized_deps() { # file
 }
 
 deps_total=0; deps_clean=0
+unexpected=0; known=0; stale=0
 printf '\n== compile-pass (expect: no error attributed to the fixture) ==\n'
 for f in $(find "$ROOT/compile-pass" -name '*.snl' | sort); do
   n=$(own_errors "$f")
@@ -91,36 +118,85 @@ for f in $(find "$ROOT/compile-pass" -name '*.snl' | sort); do
     [ "$n" -eq 0 ] && deps_clean=$((deps_clean + 1))
     continue
   fi
+  rel=$(rel_of "$f")
+  note_seen "$rel"
   pass_total=$((pass_total + 1))
   if [ "$n" -eq 0 ]; then
     pass_ok=$((pass_ok + 1))
+    if allowed "$rel"; then
+      stale=$((stale + 1))
+      printf '  STALE %-57s clean now; delete it from battery.allow\n' "$rel"
+    fi
+  elif allowed "$rel"; then
+    known=$((known + 1))
+    printf '  KNOWN %-57s %s own error(s)\n' "$rel" "$n"
   else
-    printf '  FAIL %-58s %s own error(s)\n' "${f#$ROOT/}" "$n"
+    unexpected=$((unexpected + 1))
+    printf '  FAIL %-58s %s own error(s)\n' "$rel" "$n"
   fi
 done
 
 fail_total=0; fail_ok=0; fail_code_ok=0; fail_code_bad=0
 printf '\n== compile-fail (expect: at least one error on the fixture) ==\n'
 for f in $(find "$ROOT/compile-fail" -name '*.snl' | sort); do
+  rel=$(rel_of "$f")
+  note_seen "$rel"
   fail_total=$((fail_total + 1))
   n=$(own_errors "$f")
   if [ "$n" -eq 0 ]; then
-    printf '  MISSED %-56s no error reported\n' "${f#$ROOT/}"
+    if allowed "$rel"; then
+      known=$((known + 1))
+      printf '  KNOWN %-57s no error reported\n' "$rel"
+    else
+      unexpected=$((unexpected + 1))
+      printf '  MISSED %-56s no error reported\n' "$rel"
+    fi
     continue
   fi
   fail_ok=$((fail_ok + 1))
   want=$(expected_code "$f")
   if [ -z "$want" ]; then
+    if allowed "$rel"; then
+      stale=$((stale + 1))
+      printf '  STALE %-57s caught now; delete it from battery.allow\n' "$rel"
+    fi
     continue
   fi
   if own_codes "$f" | grep -qx "$want"; then
     fail_code_ok=$((fail_code_ok + 1))
+    if allowed "$rel"; then
+      stale=$((stale + 1))
+      printf '  STALE %-57s code matches; delete it from battery.allow\n' "$rel"
+    fi
   else
     fail_code_bad=$((fail_code_bad + 1))
-    printf '  WRONG-CODE %-51s want SNOVA%04d, got %s\n' "${f#$ROOT/}" "$want" \
-      "$(own_codes "$f" | sort -u | tr '\n' ',' | sed 's/,$//')"
+    if allowed "$rel"; then
+      known=$((known + 1))
+      printf '  KNOWN %-57s want SNOVA%04d, got %s\n' "$rel" "$want" \
+        "$(own_codes "$f" | sort -u | tr '\n' ',' | sed 's/,$//')"
+    else
+      unexpected=$((unexpected + 1))
+      printf '  WRONG-CODE %-51s want SNOVA%04d, got %s\n' "$rel" "$want" \
+        "$(own_codes "$f" | sort -u | tr '\n' ',' | sed 's/,$//')"
+    fi
   fi
 done
+
+if [ -f "$ALLOW" ]; then
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    case "$raw" in
+      ''|'#'*) continue ;;
+    esac
+    rel=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    case "$rel" in
+      ''|'#'*) continue ;;
+    esac
+    if ! grep -qxF "$rel" "$SEEN"; then
+      stale=$((stale + 1))
+      printf '  STALE %-57s not a fixture\n' "$rel"
+    fi
+  done < "$ALLOW"
+fi
 
 printf '\n== P2.6 battery ==\n'
 printf '  compile-pass clean          : %d/%d\n' "$pass_ok" "$pass_total"
@@ -128,8 +204,11 @@ printf '  compile-fail caught         : %d/%d\n' "$fail_ok" "$fail_total"
 printf '  ...with the documented code : %d\n' "$fail_code_ok"
 printf '  not checkable (needs `snova deps`, see note above): %d/%d clean\n' \
   "$deps_clean" "$deps_total"
+printf '  known gaps (battery.allow)  : %d\n' "$known"
+printf '  new failures                : %d\n' "$unexpected"
+printf '  stale allow entries         : %d\n' "$stale"
 printf '\n'
 
-if [ "$pass_ok" -ne "$pass_total" ] || [ "$fail_ok" -ne "$fail_total" ] || [ "$fail_code_bad" -ne 0 ]; then
+if [ "$unexpected" -ne 0 ] || [ "$stale" -ne 0 ]; then
   exit 1
 fi

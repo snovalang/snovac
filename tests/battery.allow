@@ -1,0 +1,30 @@
+# Fixtures the checker does not yet judge the way the Rust frontend recorded.
+# battery.sh fails when a fixture outside this list regresses, and when a
+# line here starts passing or no longer names a fixture. Delete the line in
+# the same change that fixes the fixture.
+#
+# Measured on Linux and macOS CI for feat/test-gate-and-exec-safety
+# (run 37219977017): compile-pass 25/32, compile-fail caught 32/36,
+# documented SNOVA code 22.
+
+compile-pass/GenericsMapSubscript.snl
+compile-pass/enums.snl
+compile-pass/enums_and_match.snl
+compile-pass/p1_syntax_additions.snl
+compile-pass/package_function_call_coloncolon.snl
+compile-pass/postfix_question_newline_dot.snl
+compile-pass/result_type.snl
+
+compile-fail/import_cycle_self.snl
+compile-fail/incomplete_assignment.snl
+compile-fail/incomplete_member_access.snl
+compile-fail/json_shape_mismatch.snl
+compile-fail/malformed_generic.snl
+compile-fail/missing_package_declaration.snl
+compile-fail/packages/decorator_undefined_reference.snl
+compile-fail/packages/json_decorator_wrong_target.snl
+compile-fail/pulsar_receive_missing_rhs.snl
+compile-fail/pulsar_receive_outside_pulsar.snl
+compile-fail/pulsar_send_outside_streaming.snl
+compile-fail/untyped_variable.snl
+compile-fail/visibility_internal_cross_package.snl
