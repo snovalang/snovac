@@ -2,9 +2,16 @@
  * The keyword table lives in lex_token.c and literals in lex_literal.c. */
 #include "lex_internal.h"
 
+#include <stdint.h>
+#include <stdio.h>
+
 void sn_lex_vec_push(SnLexer *L, SnToken t) {
     SnTokenVec *v = L->out;
     if (v->len == v->cap) {
+        if (v->cap > (SIZE_MAX / 2) / sizeof(SnToken)) {
+            fprintf(stderr, "snovac: fatal: token vector overflow\n");
+            exit(70);
+        }
         size_t ncap = v->cap ? v->cap * 2 : 256;
         SnToken *nd =
             (SnToken *)sn_arena_alloc(L->arena, ncap * sizeof(SnToken));

@@ -99,7 +99,7 @@ for f in $(find "$ROOT/compile-pass" -name '*.snl' | sort); do
   fi
 done
 
-fail_total=0; fail_ok=0; fail_code_ok=0
+fail_total=0; fail_ok=0; fail_code_ok=0; fail_code_bad=0
 printf '\n== compile-fail (expect: at least one error on the fixture) ==\n'
 for f in $(find "$ROOT/compile-fail" -name '*.snl' | sort); do
   fail_total=$((fail_total + 1))
@@ -116,6 +116,7 @@ for f in $(find "$ROOT/compile-fail" -name '*.snl' | sort); do
   if own_codes "$f" | grep -qx "$want"; then
     fail_code_ok=$((fail_code_ok + 1))
   else
+    fail_code_bad=$((fail_code_bad + 1))
     printf '  WRONG-CODE %-51s want SNOVA%04d, got %s\n' "${f#$ROOT/}" "$want" \
       "$(own_codes "$f" | sort -u | tr '\n' ',' | sed 's/,$//')"
   fi
@@ -128,3 +129,7 @@ printf '  ...with the documented code : %d\n' "$fail_code_ok"
 printf '  not checkable (needs `snova deps`, see note above): %d/%d clean\n' \
   "$deps_clean" "$deps_total"
 printf '\n'
+
+if [ "$pass_ok" -ne "$pass_total" ] || [ "$fail_ok" -ne "$fail_total" ] || [ "$fail_code_bad" -ne 0 ]; then
+  exit 1
+fi

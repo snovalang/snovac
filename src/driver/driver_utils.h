@@ -29,4 +29,13 @@ int sn_driver_path_is_manifest(const char *path); /* mod.sns or snova.sns */
 void sn_driver_ensure_parent_dir(const char *path);
 int sn_driver_find_builtin_root(const char *start_dir, char *out, size_t out_sz);
 
+/* Run argv[0] with argv, no shell. Returns the process exit code, or -1 if
+ * the process could not be started. stdio is inherited (compiler errors stay
+ * visible). */
+int sn_driver_execv(char *const argv[]);
+/* Same, but captures stdout into `out` (NUL-terminated, truncated to out_sz)
+ * and sends the child's stderr to the platform null device. `out` may be
+ * NULL to discard stdout. */
+int sn_driver_execv_read(char *const argv[], char *out, size_t out_sz);
+
 #endif /* SNOVAC_DRIVER_UTILS_H */
