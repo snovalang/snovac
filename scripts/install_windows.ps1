@@ -85,7 +85,7 @@ if (Test-Path $LibRt) {
 }
 
 # 4. Copy Header Files
-$headers = Get-ChildItem -Path $RootDir -Filter "*.h" -File
+$headers = Get-ChildItem -Path (Join-Path $RootDir "src") -Filter "*.h" -Recurse -File
 foreach ($h in $headers) {
     Copy-Item -Path $h.FullName -Destination $IncDir -Force
 }

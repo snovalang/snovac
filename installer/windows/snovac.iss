@@ -38,7 +38,15 @@ Name: "envPath"; Description: "Add snl to Environment PATH"; GroupDescription: "
 [Files]
 Source: "..\..\build\snl.exe"; DestDir: "{app}\bin"; DestName: "snl.exe"; Flags: ignoreversion
 Source: "..\..\build\libsnovart.a"; DestDir: "{app}\lib"; Flags: ignoreversion
-Source: "..\..\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\base\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\lex\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\parse\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\ast\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\sema\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\eval\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\bc\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\native\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
+Source: "..\..\src\driver\*.h"; DestDir: "{app}\include"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]

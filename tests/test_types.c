@@ -7,10 +7,10 @@
  */
 #include <stdio.h>
 
-#include "../arena.h"
-#include "../intern.h"
-#include "../symbol.h"
-#include "../types.h"
+#include "arena.h"
+#include "intern.h"
+#include "symbol.h"
+#include "types.h"
 
 static int pass = 0;
 static int fail = 0;

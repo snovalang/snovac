@@ -27,7 +27,7 @@ New-Item -ItemType Directory -Path (Join-Path $StageDir "include") -Force | Out-
 
 Copy-Item -Path (Join-Path $BuildDir "snl.exe") -Destination (Join-Path $StageDir "bin\snl.exe") -Force
 Copy-Item -Path (Join-Path $BuildDir "libsnovart.a") -Destination (Join-Path $StageDir "lib\libsnovart.a") -Force
-Get-ChildItem -Path $RootDir -Filter "*.h" -File | ForEach-Object {
+Get-ChildItem -Path (Join-Path $RootDir "src") -Filter "*.h" -Recurse -File | ForEach-Object {
     Copy-Item -Path $_.FullName -Destination (Join-Path $StageDir "include") -Force
 }
 Copy-Item -Path (Join-Path $RootDir "README.md") -Destination $StageDir -Force
