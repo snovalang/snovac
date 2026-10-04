@@ -1,0 +1,13 @@
+---
+description: Hard invariants for Snova syntax, types, pointers, parallelism, asynchrony, English text, and bootstrap trust
+alwaysApply: true
+---
+
+# snovac invariants
+
+These apply to every edit of this compiler. `src/` is the namespaced tree (`src/base`, `src/lex`, `src/parse`, `src/ast`, `src/sema`, `src/eval`, `src/bc`, `src/native`, `src/driver`). Do not put sources back at the repository root and do not invent further directories.
+
+- Do not change Snova syntax. The grammar, the keyword spellings in `src/lex/lex_token.c`, and the concrete forms those spellings introduce stay as they are. That includes `async`, `await`, `pulsar`, `trait` (it already maps to the interface token), `&`, `*`, and `null`. `and` / `or` / `not` are identifiers, not operators. `>>` is two `>` tokens, not a shift token. Do not translate a keyword into another language.
+- Do not weaken or remove type safety, pointer semantics, parallelism, or asynchrony. Hash-consed `SnTypeRep` equality, the distinct integer types, borrow errors, `&T` / `&T?`, `src/eval/rt_ptr.c`, `src/eval/async.c`, `src/eval/pulsar.c`, and the pulsar queue emitted by `src/native/native_backend.c` stay in force. There is no in-process bytecode VM in this tree (`vm.c` and `value.c` are absent). `link_append`, `sn_bcunit_read_file`, and `sn_bcunit_merge` are absent. `sn_bcunit_write_file` remains.
+- Identifiers, comments, diagnostics, docs, and other human-readable text are English. Syntax keywords are not vocabulary to translate.
+- A clean source tree is not proof against a trusting-trust style compiler backdoor. `make test` does not check the host C compiler that produced `build/snl`. A bootstrap or release binary needs an explicit reproducible rebuild and a diverse double compilation. Do not add exploit or backdoor procedures. See the `snovac-bootstrap` skill.
