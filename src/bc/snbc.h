@@ -108,4 +108,12 @@ uint32_t sn_bcunit_add_function(SnBCUnit *unit, const char *name, uint32_t arity
 
 int sn_bcunit_write_file(const SnBCUnit *unit, const char *path);
 
+/* Four little-endian bytes: (v) & 0xff, then v >> 8, v >> 16, v >> 24. */
+void sn_write_u32_le(uint8_t *out, uint32_t v);
+/* Portable image. Integers go through sn_write_u32_le. Code bytes are copied
+ * as the emitter produced them. sn_bcunit_write_file stays host-endian. */
+int sn_bcunit_write_canonical(const SnBCUnit *unit, const char *path);
+/* Deterministic text listing. One fact per line. No paths or timestamps. */
+int sn_bcunit_write_listing(const SnBCUnit *unit, const char *path);
+
 #endif /* SNOVAC_SNBC_H */

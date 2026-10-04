@@ -41,6 +41,7 @@ BIN      = $(BUILD)/snl$(EXE)
 SRCS = src/driver/main.c src/driver/driver_utils.c src/driver/project.c \
        src/driver/cmd_check.c src/driver/cmd_lex_parse.c src/driver/cmd_run.c \
        src/driver/cmd_build.c src/driver/cmd_tidy.c src/driver/cmd_get.c \
+       src/driver/cmd_emit_snbc.c \
        src/native/target.c src/native/native_backend.c \
        src/eval/pulsar.c src/eval/async.c \
        src/ast/dump.c src/ast/ast.c \
@@ -64,6 +65,7 @@ DEPS = $(OBJS:.o=.d)
 # — exercised directly by standalone C test binaries instead of through
 # $(BIN). See tests/test_symbol.c, tests/test_package.c, tests/test_types.c.
 TEST_SYMBOL_BIN = $(BUILD)/test_symbol$(EXE)
+TEST_SNBC_BIN = $(BUILD)/test_snbc$(EXE)
 TEST_PACKAGE_BIN = $(BUILD)/test_package$(EXE)
 TEST_PACKAGE_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/diag.o $(BUILD)/base/intern.o \
                      $(BUILD)/sema/symbol.o $(BUILD)/sema/package.o $(BUILD)/ast/ast.o \
@@ -183,6 +185,10 @@ $(TEST_SYMBOL_BIN): tests/test_symbol.c $(BUILD)/base/arena.o $(BUILD)/base/inte
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_symbol.c \
 	    $(BUILD)/base/arena.o $(BUILD)/base/intern.o $(BUILD)/sema/symbol.o
 
+$(TEST_SNBC_BIN): tests/test_snbc.c $(BUILD)/bc/snbc.o | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_snbc.c \
+	    $(BUILD)/bc/snbc.o
+
 $(TEST_PACKAGE_BIN): tests/test_package.c $(TEST_PACKAGE_OBJS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_package.c $(TEST_PACKAGE_OBJS)
 
@@ -197,14 +203,15 @@ $(TEST_CHECK_BIN): tests/test_check.c $(TEST_CHECK_OBJS) | $(BUILD)
 
 # Assertions for the lexer decisions derived from the corpus, plus the
 # standalone symbol-table, package-graph, type-representation, resolver and
-# checker unit tests.
-unit: $(BIN) $(TEST_SYMBOL_BIN) $(TEST_PACKAGE_BIN) $(TEST_TYPES_BIN) $(TEST_RESOLVE_BIN) $(TEST_CHECK_BIN)
+# checker unit tests, plus the little-endian SnBC writer.
+unit: $(BIN) $(TEST_SYMBOL_BIN) $(TEST_PACKAGE_BIN) $(TEST_TYPES_BIN) $(TEST_RESOLVE_BIN) $(TEST_CHECK_BIN) $(TEST_SNBC_BIN)
 ifeq ($(OS),Windows_NT)
 	@$(TEST_SYMBOL_BIN)
 	@$(TEST_PACKAGE_BIN)
 	@$(TEST_TYPES_BIN)
 	@$(TEST_RESOLVE_BIN)
 	@$(TEST_CHECK_BIN)
+	@$(TEST_SNBC_BIN)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Get-Command sh -ErrorAction SilentlyContinue) { sh tests/run.sh $(BIN); if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }; sh tests/battery.sh $(BIN) } elseif (Test-Path 'C:\Program Files\Git\bin\sh.exe') { & 'C:\Program Files\Git\bin\sh.exe' tests/run.sh $(BIN); if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }; & 'C:\Program Files\Git\bin\sh.exe' tests/battery.sh $(BIN) } else { Write-Host 'Note: tests/run.sh and tests/battery.sh skipped (requires bash/sh shell)' }"
 else
 	@sh tests/run.sh $(BIN)
@@ -214,6 +221,7 @@ else
 	@./$(TEST_TYPES_BIN)
 	@./$(TEST_RESOLVE_BIN)
 	@./$(TEST_CHECK_BIN)
+	@./$(TEST_SNBC_BIN)
 endif
 
 # Lexes every .snl in the repository and reports coverage.
@@ -232,7 +240,7 @@ endif
 
 compdb: compile_commands.json
 
-compile_commands.json: $(SRCS) tests/test_symbol.c tests/test_package.c tests/test_types.c tests/test_resolve.c tests/test_check.c scripts/gen_compile_commands.py
+compile_commands.json: $(SRCS) tests/test_symbol.c tests/test_package.c tests/test_types.c tests/test_resolve.c tests/test_check.c tests/test_snbc.c scripts/gen_compile_commands.py
 ifeq ($(OS),Windows_NT)
 	@python scripts/gen_compile_commands.py "$(CURDIR)" "$(CC)" "$(CPPFLAGS)" "$(CFLAGS)" "$(WARN)" "$(INCLUDES)"
 else

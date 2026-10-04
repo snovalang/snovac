@@ -12,6 +12,7 @@
 
 #include "cmd_build.h"
 #include "cmd_check.h"
+#include "cmd_emit_snbc.h"
 #include "cmd_get.h"
 #include "cmd_lex_parse.h"
 #include "cmd_run.h"
@@ -155,6 +156,40 @@ int main(int argc, char **argv) {
             }
         }
         return sn_cmd_build(file_path, out_path, target_triple);
+    }
+
+    /* `emit-snbc <file.snl> -o <file.snbc>`: canonical image plus a .snbt listing.
+     * Not a FILE_COMMANDS entry: that table cannot carry -o. */
+    if (strcmp(argv[1], "emit-snbc") == 0) {
+        const char *file_path = NULL;
+        const char *out_path = NULL;
+
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+                out_path = argv[++i];
+            } else if (strncmp(argv[i], "-o=", 3) == 0) {
+                out_path = argv[i] + 3;
+            } else if (argv[i][0] != '-' && !file_path) {
+                file_path = argv[i];
+            }
+        }
+
+        if (!file_path) {
+            fprintf(stderr, "error: emit-snbc needs a file.snl\n");
+            return 2;
+        }
+        if (!out_path || out_path[0] == '\0') {
+            fprintf(stderr, "error: emit-snbc needs -o <file.snbc>\n");
+            return 2;
+        }
+        if (!sn_driver_path_is_source(file_path) ||
+            sn_driver_path_is_manifest(file_path) ||
+            sn_driver_path_is_script(file_path)) {
+            fprintf(stderr, "error: '%s' is not a Snovalang program (.snl)\n",
+                    file_path);
+            return 2;
+        }
+        return sn_cmd_emit_snbc(file_path, out_path);
     }
 
     /* `get [<repo-url>] [--version=<ver>] [--project=<path>]`: fetches dependencies and updates mod.sns */

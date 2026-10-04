@@ -559,5 +559,75 @@ assert "get: cycle detection reports cycle error" 1 \
 
 rm -rf "$GET_TEST_DIR"
 
+# Canonical SnBC. Two runs must match, including the listing beside -o.
+# .sns paths, including manifests, stay off this compile path.
+SNBC_DIR="$(mktemp -d)"
+SRC_SNL="$DIR/bootstrap/return_zero.snl"
+A="$SNBC_DIR/a.snbc"
+B="$SNBC_DIR/b.snbc"
+assert "emit-snbc: return_zero.snl succeeds" 0 \
+  "$(rc_of "$SNOVAC" emit-snbc "$SRC_SNL" -o "$A")"
+assert "emit-snbc: second run succeeds" 0 \
+  "$(rc_of "$SNOVAC" emit-snbc "$SRC_SNL" -o "$B")"
+images_match=0
+cmp -s "$A" "$B" || images_match=$?
+assert "emit-snbc: images are byte-identical" 0 "$images_match"
+listings_match=0
+cmp -s "$A.snbt" "$B.snbt" || listings_match=$?
+assert "emit-snbc: listings are byte-identical" 0 "$listings_match"
+dd if="$A" of="$SNBC_DIR/head4" bs=1 count=4 >/dev/null 2>&1 || true
+printf 'SNBC' > "$SNBC_DIR/magic"
+magic_match=0
+cmp -s "$SNBC_DIR/head4" "$SNBC_DIR/magic" || magic_match=$?
+assert "emit-snbc: magic is 53 4e 42 43" 0 "$magic_match"
+image_size="$(wc -c < "$A" | tr -d '[:space:]')"
+assert "emit-snbc: image is the return_zero container" 52 "$image_size"
+assert "emit-snbc: listing names snbc 1" 1 "$(grep -c '^; snbc 1$' "$A.snbt")"
+assert "emit-snbc: listing names main 0" 1 "$(grep -c '^; main 0$' "$A.snbt")"
+assert "emit-snbc: listing has OP_CONST_INT 0" 1 \
+  "$(grep -c '^0 OP_CONST_INT 0$' "$A.snbt")"
+assert "emit-snbc: listing has the trailing OP_CONST_UNIT" 1 \
+  "$(grep -c '^10 OP_CONST_UNIT$' "$A.snbt")"
+assert "emit-snbc: listing has both OP_RETURN bytes" 2 \
+  "$(grep -c 'OP_RETURN$' "$A.snbt")"
+assert "emit-snbc: listing has no source path" 0 \
+  "$(grep -c 'return_zero' "$A.snbt" || true)"
+assert "emit-snbc: .snl still parses" 0 \
+  "$(rc_of "$SNOVAC" --check-parse "$SRC_SNL")"
+assert "emit-snbc: .snl still runs" 0 \
+  "$(rc_of "$SNOVAC" run "$SRC_SNL")"
+
+reject_sns() {
+  label="$1"
+  src="$2"
+  out="$SNBC_DIR/$label.snbc"
+  rm -f "$out" "$out.snbt"
+  rc="$(rc_of "$SNOVAC" emit-snbc "$src" -o "$out")"
+  assert "emit-snbc: $label exits non-zero" 1 "$(printf '%s' "$rc" | grep -c '[^0]')"
+  present=0
+  if [ -f "$out" ] || [ -f "$out.snbt" ]; then
+    present=1
+  fi
+  assert "emit-snbc: $label writes no image" 0 "$present"
+}
+printf 'package tests.bootstrap.rejected\n\nfunc main(): int {\n    return 0\n}\n' > "$SNBC_DIR/mod.sns"
+printf 'package tests.bootstrap.rejected\n\nfunc main(): int {\n    return 0\n}\n' > "$SNBC_DIR/snova.sns"
+printf 'package tests.bootstrap.rejected\n\nfunc main(): int {\n    return 0\n}\n' > "$SNBC_DIR/helper.sns"
+reject_sns "mod.sns" "$SNBC_DIR/mod.sns"
+reject_sns "snova.sns" "$SNBC_DIR/snova.sns"
+reject_sns "helper.sns" "$SNBC_DIR/helper.sns"
+
+rc="$(rc_of "$SNOVAC" emit-snbc "$SRC_SNL")"
+assert "emit-snbc: missing -o exits non-zero" 1 "$(printf '%s' "$rc" | grep -c '[^0]')"
+rm -f "$SNBC_DIR/no-input.snbc" "$SNBC_DIR/no-input.snbc.snbt"
+rc="$(rc_of "$SNOVAC" emit-snbc -o "$SNBC_DIR/no-input.snbc")"
+assert "emit-snbc: missing input exits non-zero" 1 "$(printf '%s' "$rc" | grep -c '[^0]')"
+present=0
+if [ -f "$SNBC_DIR/no-input.snbc" ] || [ -f "$SNBC_DIR/no-input.snbc.snbt" ]; then
+  present=1
+fi
+assert "emit-snbc: missing input writes no image" 0 "$present"
+rm -rf "$SNBC_DIR"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
