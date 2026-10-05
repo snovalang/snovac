@@ -126,16 +126,25 @@ function Get-SnovaLocalCheckout {
 function Install-FromSource([string]$Dir) {
     Push-Location $Dir
     try {
-        if (Get-Command make -ErrorAction SilentlyContinue) {
-            make
-        } elseif (Get-Command gcc -ErrorAction SilentlyContinue) {
-            New-Item -ItemType Directory -Path build -Force | Out-Null
-            gcc -std=c11 -O2 -g -pthread -o build/snl.exe *.c
-        } else {
-            Write-Error "GCC or Make is required to compile snl from source on Windows. Install MinGW-w64 or use a pre-built binary."
+        if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
+            Write-Error "make is required to build snl. Install MinGW-w64 make, or use a published release."
         }
-
-        & powershell.exe -ExecutionPolicy Bypass -File (Join-Path $Dir "scripts\install_windows.ps1") -Prefix "$InstallPrefix" -BinDir "$BinDir" -LibDir "$LibDir" -IncDir "$IncDir"
+        # -s hides the cc recipe lines. OS=Windows_NT still wins if MSYS
+        # make stripped the OS environment variable, and -lws2_32 resolves
+        # the Winsock imports in socket_abi.c.
+        & make -s OS=Windows_NT EXTRA_LIBS="-lws2_32" build/snl.exe build/libsnovart.a
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Building snl failed."
+        }
+        $built = Join-Path $Dir "build\snl.exe"
+        if (-not (Test-Path -LiteralPath $built)) {
+            Write-Error "Build finished without $built."
+        }
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir "scripts\install_windows.ps1") -Prefix "$InstallPrefix" -BinDir "$BinDir" -LibDir "$LibDir" -IncDir "$IncDir" -Bin "$built"
+        $installedExe = Join-Path $BinDir "snl.exe"
+        if (-not (Test-Path -LiteralPath $installedExe)) {
+            Write-Error "snl.exe was not installed into $BinDir."
+        }
     } finally {
         Pop-Location
     }
@@ -199,19 +208,19 @@ try {
     # With no script file (`irm | iex`), the clone target is $CloneDir.
     if (-not $Installed) {
         if ($LocalCheckout -and -not $Updating) {
-            Write-Host "==> Compiling snl from source..." -ForegroundColor Cyan
+            Write-Host "==> Building snl..." -ForegroundColor Cyan
             Install-FromSource $LocalCheckout
             $Installed = $true
         } elseif (Get-Command git -ErrorAction SilentlyContinue) {
-            Write-Host "==> Cloning $Repo repository..." -ForegroundColor Cyan
-            & git clone --depth 1 "https://github.com/$Repo.git" $CloneDir
+            Write-Host "==> Building snl..." -ForegroundColor Cyan
+            & git clone --depth 1 --quiet "https://github.com/$Repo.git" $CloneDir
             if ($LASTEXITCODE -ne 0) {
                 Write-Error "git clone of $Repo failed."
             }
             Install-FromSource $CloneDir
             $Installed = $true
         } elseif ($LocalCheckout) {
-            Write-Host "Could not reach GitHub. Building the local tree..." -ForegroundColor Yellow
+            Write-Host "==> Building snl..." -ForegroundColor Cyan
             Install-FromSource $LocalCheckout
             $Installed = $true
         } else {

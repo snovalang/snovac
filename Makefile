@@ -19,16 +19,38 @@ CC      ?= cc
 CFLAGS  ?= -std=c11 -O2 -g -pthread
 CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
-           -Wmissing-prototypes -Wconversion -Wno-sign-conversion
+           -Wmissing-prototypes -Wconversion -Wno-sign-conversion \
+           -Wno-format-truncation
 INCLUDES = -Isrc/base -Isrc/lex -Isrc/parse -Isrc/ast -Isrc/sema \
            -Isrc/eval -Isrc/bc -Isrc/native -Isrc/driver
 BUILD   ?= build
 
-# OS detection for `install`/`uninstall`: native Windows `make` (and
-# MSYS2/Git Bash, which still inherit OS=Windows_NT from the environment)
-# need a .exe suffix and a PowerShell-based PATH setup instead of the
-# POSIX shell one used for Linux/macOS.
+# Windows needs snl.exe and Winsock (-lws2_32). MSYS make removes the OS
+# environment variable, so a MinGW cc is also detected from uname and
+# `cc -dumpmachine`. Otherwise socket_abi.c fails at link with
+# __imp_inet_addr / __imp_closesocket.
+UNAME_S := $(shell uname -s 2>/dev/null)
+CC_MACHINE := $(shell $(CC) -dumpmachine 2>/dev/null)
+WINDOWS_HOST :=
 ifeq ($(OS),Windows_NT)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring MINGW,$(UNAME_S)),)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring MSYS,$(UNAME_S)),)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring CYGWIN,$(UNAME_S)),)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring mingw,$(CC_MACHINE)),)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring cygwin,$(CC_MACHINE)),)
+  WINDOWS_HOST := 1
+endif
+ifeq ($(WINDOWS_HOST),1)
   EXE := .exe
   EXTRA_LIBS := -lws2_32
 else

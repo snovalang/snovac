@@ -153,12 +153,18 @@ cleanup() {
 trap cleanup EXIT
 
 compile_from_source() {
-    echo "${YELLOW}Release archive not found yet on latest release. Attempting source compile fallback...${RESET}"
+    echo "${YELLOW}Release archive not found yet on latest release. Building snl...${RESET}"
     if ! command -v git >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then
         return 1
     fi
-    git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_DIR/snovac-src"
-    make -C "$TMP_DIR/snovac-src"
+    git clone --depth 1 --quiet "https://github.com/${REPO}.git" "$TMP_DIR/snovac-src" || return 1
+    # Quiet recipes. On Windows, force the Winsock link even when MSYS make
+    # has cleared the OS environment variable.
+    if [ "$PLATFORM" = "windows" ]; then
+        make -s -C "$TMP_DIR/snovac-src" OS=Windows_NT EXTRA_LIBS="-lws2_32" build/snl.exe build/libsnovart.a || return 1
+    else
+        make -s -C "$TMP_DIR/snovac-src" build/snl build/libsnovart.a || return 1
+    fi
     mkdir -p "$TMP_DIR/extracted"
     if [ -f "$TMP_DIR/snovac-src/build/snl.exe" ]; then
         cp "$TMP_DIR/snovac-src/build/snl.exe" "$TMP_DIR/extracted/snl.exe"
