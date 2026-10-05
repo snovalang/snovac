@@ -1,7 +1,7 @@
 # build_installer.ps1 — Build Native Windows Installers for snovac
 
 param(
-    [string]$Version = "0.0.1-p1"
+    [string]$Version = "0.0.1-p3"
 )
 
 $ErrorActionPreference = "Stop"

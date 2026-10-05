@@ -165,6 +165,13 @@ jobs:
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.title }}
+          # Notes for v0.0.1-p3. Replace this body when cutting the next tag.
+          body: |
+            snl 0.0.1-p3
+
+            This release accepts break, continue, null, a function or method with no body, class, enum, trait, match, async, await, pulsar, for, and defer.
+
+            bootstrap/src/compiler.snl is the self-hosted compiler for this slice.
           draft: ${{ inputs.draft || false }}
           prerelease: ${{ inputs.prerelease || false }}
           files: release-dist/*

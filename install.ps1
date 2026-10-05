@@ -19,7 +19,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = "snovalang/snovac"
-$Version = "0.0.1-p1"
+$Version = "0.0.1-p3"
 $ExplicitUpdate = $false
 $RunningAsFile = -not [string]::IsNullOrEmpty($MyInvocation.MyCommand.Path)
 # Only -File sets MyCommand.Path. Under `irm | iex` it is empty.
