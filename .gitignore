@@ -3,3 +3,4 @@ build/
 *.o
 *.d
 compile_commands.json
+.copilot-feature-verified

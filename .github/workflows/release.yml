@@ -145,6 +145,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -174,18 +176,22 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "title=$TITLE" >> $GITHUB_OUTPUT
 
+      - name: Ask Gemini for the code review and English release notes
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          DIR="$(python3 scripts/gemini_release_notes.py --version "${{ steps.meta.outputs.tag }}")"
+          NAME="$(basename "$DIR")"
+          cp "$DIR/code-review.md" "release-dist/snovac-${NAME}-code-review.md"
+          cp "$DIR/release-notes.md" "release-dist/snovac-${NAME}-release-notes.md"
+
       - name: Publish or Update Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.title }}
-          # Notes for v0.0.1-p3. Replace this body when cutting the next tag.
-          body: |
-            snl 0.0.1-p3
-
-            This release accepts break, continue, null, a function or method with no body, class, enum, trait, match, async, await, pulsar, for, and defer.
-
-            bootstrap/src/compiler.snl is the self-hosted compiler for this slice.
+          body_path: RELEASE_NOTES.md
           draft: ${{ inputs.draft || false }}
           prerelease: ${{ inputs.prerelease || false }}
           files: release-dist/*
