@@ -62,6 +62,7 @@ jobs:
             make
             grep
             gawk
+            python
             mingw-w64-ucrt-x86_64-gcc
 
       - name: Compile snovac binary
@@ -74,6 +75,17 @@ jobs:
         if: matrix.os == 'windows'
         shell: msys2 {0}
         run: |
+          # `make` writes compile_commands.json with `python`. MSYS2's
+          # python package provides python3.
+          if ! command -v python >/dev/null 2>&1; then
+            if ! command -v python3 >/dev/null 2>&1; then
+              echo "python3 is required to build compile_commands.json" >&2
+              exit 1
+            fi
+            mkdir -p /usr/local/bin
+            printf '%s\n' '#!/bin/sh' 'exec python3 "$@"' > /usr/local/bin/python
+            chmod +x /usr/local/bin/python
+          fi
           make clean OS=Windows_NT
           make OS=Windows_NT EXTRA_LIBS="-lws2_32 -static"
 
