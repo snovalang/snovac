@@ -69,7 +69,21 @@ SnPulsarPool *sn_pulsar_pool_create(size_t num_threads) {
     pthread_cond_init(&pool->done, NULL);
 
     for (size_t i = 0; i < num_threads; i++) {
-        pthread_create(&pool->threads[i], NULL, pulsar_worker, pool);
+        if (pthread_create(&pool->threads[i], NULL, pulsar_worker, pool) != 0) {
+            pthread_mutex_lock(&pool->lock);
+            pool->stop = true;
+            pthread_cond_broadcast(&pool->notify);
+            pthread_mutex_unlock(&pool->lock);
+            for (size_t j = 0; j < i; j++) {
+                pthread_join(pool->threads[j], NULL);
+            }
+            free(pool->threads);
+            pthread_mutex_destroy(&pool->lock);
+            pthread_cond_destroy(&pool->notify);
+            pthread_cond_destroy(&pool->done);
+            free(pool);
+            return NULL;
+        }
     }
     return pool;
 }

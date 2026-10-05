@@ -234,7 +234,8 @@ ifeq ($(OS),Windows_NT)
 	@$(TEST_RESOLVE_BIN)
 	@$(TEST_CHECK_BIN)
 	@$(TEST_SNBC_BIN)
-	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Get-Command sh -ErrorAction SilentlyContinue) { sh tests/run.sh $(BIN); if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }; sh tests/battery.sh $(BIN) } elseif (Test-Path 'C:\Program Files\Git\bin\sh.exe') { & 'C:\Program Files\Git\bin\sh.exe' tests/run.sh $(BIN); if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }; & 'C:\Program Files\Git\bin\sh.exe' tests/battery.sh $(BIN) } else { Write-Host 'Note: tests/run.sh and tests/battery.sh skipped (requires bash/sh shell)' }"
+	@sh tests/run.sh $(BIN)
+	@sh tests/battery.sh $(BIN)
 else
 	@sh tests/run.sh $(BIN)
 	@sh tests/battery.sh $(BIN)
