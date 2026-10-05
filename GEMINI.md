@@ -1,4 +1,6 @@
-# Snovalang Compiler (`snovac`) — Gemini Context & Guidelines
+# Snovalang Compiler (`snovac`) — compiler invariants
+
+CI review and release notes use GitHub Copilot (`.github/copilot-instructions.md`). Do not start Gemini, Cursor, or another agent for those jobs.
 
 You are reviewing code changes for **snovac**, the reference compiler for **Snovalang** written in pure, zero-dependency **ISO C11**.
 
