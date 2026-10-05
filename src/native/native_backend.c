@@ -181,7 +181,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
              "(i * 8));\n");
   fprintf(f, "  *ip += 8;\n  return cvt.d;\n}\n\n");
 
-  fprintf(f, "typedef struct SnArray { Val *items; uint32_t count; } SnArray;\n");
+  fprintf(f, "typedef struct SnArray { Val *items; uint32_t count; uint32_t cap; } SnArray;\n");
   fprintf(f, "typedef struct SnObj { Val *fields; uint32_t count; } SnObj;\n\n");
   fprintf(f, "static int val_truthy(Val cond) {\n");
   fprintf(f, "  if (cond.tag == VAL_BOOL) return cond.as.b != 0;\n");
@@ -235,6 +235,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "  SnArray *a = (SnArray *)calloc(1, sizeof(SnArray));\n");
   fprintf(f, "  if (!a) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
   fprintf(f, "  a->count = (uint32_t)n;\n");
+  fprintf(f, "  a->cap = (uint32_t)n;\n");
   fprintf(f, "  a->items = (Val *)calloc(n ? n : 1, sizeof(Val));\n");
   fprintf(f, "  if (!a->items) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
   fprintf(f, "  for (size_t i = 0; i < n; i++) {\n");
@@ -269,6 +270,36 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "  }\n");
   fprintf(f, "  Val u; memset(&u, 0, sizeof(u)); u.tag = VAL_UNIT;\n");
   fprintf(f, "  return u;\n");
+  fprintf(f, "}\n\n");
+  fprintf(f, "static Val sn_array_len(Val arr) {\n");
+  fprintf(f, "  if (arr.tag != VAL_ARRAY || !arr.as.ptr) {\n");
+  fprintf(f, "    fputs(\"error: len expects an array\\n\", stderr);\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  Val r; memset(&r, 0, sizeof(r)); r.tag = VAL_INT;\n");
+  fprintf(f, "  r.as.i = (int64_t)((SnArray *)arr.as.ptr)->count;\n");
+  fprintf(f, "  return r;\n");
+  fprintf(f, "}\n\n");
+  fprintf(f, "static Val sn_array_push(Val arr, Val item) {\n");
+  fprintf(f, "  if (arr.tag != VAL_ARRAY || !arr.as.ptr) {\n");
+  fprintf(f, "    fputs(\"error: push expects an array\\n\", stderr);\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  SnArray *a = (SnArray *)arr.as.ptr;\n");
+  fprintf(f, "  if (a->count == a->cap) {\n");
+  fprintf(f, "    if (a->cap > (UINT32_MAX / 2u)) {\n");
+  fprintf(f, "      fputs(\"error: out of memory\\n\", stderr); exit(1);\n");
+  fprintf(f, "    }\n");
+  fprintf(f, "    uint32_t cap = a->cap < 4u ? 4u : a->cap * 2u;\n");
+  fprintf(f, "    Val *grown = (Val *)realloc(a->items, (size_t)cap * sizeof(Val));\n");
+  fprintf(f, "    if (!grown) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
+  fprintf(f, "    a->items = grown;\n");
+  fprintf(f, "    a->cap = cap;\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  a->items[a->count] = item;\n");
+  fprintf(f, "  a->count += 1u;\n");
+  fprintf(f, "  Val r; memset(&r, 0, sizeof(r)); r.tag = VAL_INT; r.as.i = (int64_t)a->count;\n");
+  fprintf(f, "  return r;\n");
   fprintf(f, "}\n\n");
 
   /* Emit Pulsar Multi-parallelism Runtime */
@@ -534,6 +565,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
           "      SnArray *a = (SnArray *)calloc(1, sizeof(SnArray));\n"
           "      if (!a) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n"
           "      a->count = n;\n"
+          "      a->cap = n;\n"
           "      a->items = (Val *)calloc(n ? n : 1, sizeof(Val));\n"
           "      if (!a->items) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n"
           "      for (uint32_t i = n; i > 0; i--) a->items[i - 1] = pop();\n"
@@ -557,6 +589,12 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
           "      if (path.tag != VAL_STRING) { fputs(\"error: write_bytes expects a string path\\n\", stderr); exit(1); }\n"
           "      push(sn_write_bytes(path.as.str, data)); break; }\n",
           OP_WRITE_BYTES);
+  fprintf(f,
+          "    case %d: { push(sn_array_len(pop())); break; }\n",
+          OP_ARRAY_LEN);
+  fprintf(f,
+          "    case %d: { Val item = pop(); Val arr = pop(); push(sn_array_push(arr, item)); break; }\n",
+          OP_ARRAY_PUSH);
   fprintf(f,
           "    case %d: { uint8_t nl = *ip++; Val v = pop(); print_val(v, nl); break; }\n",
           OP_PRINT);

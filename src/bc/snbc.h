@@ -67,7 +67,11 @@ typedef enum {
     /* Byte I/O. Args are on the stack, so images that never emit these
      * still decode. SNBC_VERSION stays 1. */
     OP_READ_BYTES,    /* pop path string, push int array */
-    OP_WRITE_BYTES    /* pop int array, pop path string, push unit */
+    OP_WRITE_BYTES,   /* pop int array, pop path string, push unit */
+    /* Array length and append. Images that never emit these still decode.
+     * SNBC_VERSION stays 1. */
+    OP_ARRAY_LEN,     /* pop array, push int length */
+    OP_ARRAY_PUSH     /* pop value, pop array, append, push new length */
 } SnOpcode;
 
 typedef struct {
