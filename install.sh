@@ -68,7 +68,7 @@ BANNER
 echo "${RESET}"
 
 ALREADY=0
-if [ -x "${INSTALL_DIR}/snl" ] || command -v snl >/dev/null 2>&1; then
+if [ -x "${INSTALL_DIR}/snl" ] || [ -x "${INSTALL_DIR}/snl.exe" ] || command -v snl >/dev/null 2>&1; then
     ALREADY=1
 fi
 
@@ -85,28 +85,38 @@ case "$OS" in
     Darwin*)    PLATFORM="darwin" ;;
     MINGW*|MSYS*|CYGWIN*|Windows_NT*)
         PLATFORM="windows"
+        # `command -v` only checks PATH. MSYS can see powershell.exe and
+        # still fail to exec it (EACCES). Probe before handing off so
+        # `set -e` does not abort the shell installer.
+        PSH=""
         if command -v powershell.exe >/dev/null 2>&1; then
+            PSH=$(command -v powershell.exe)
+        elif command -v pwsh >/dev/null 2>&1; then
+            PSH=$(command -v pwsh)
+        fi
+        if [ -n "$PSH" ] && [ -x "$PSH" ] && "$PSH" -NoProfile -NonInteractive -Command "exit 0" >/dev/null 2>&1; then
             echo "${CYAN}==> Windows environment detected. Invoking native Windows installer...${RESET}"
             SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || SCRIPT_DIR="."
             if [ -f "$SCRIPT_DIR/install.ps1" ]; then
                 if [ "$EXPLICIT" -eq 1 ]; then
-                    powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1" -Update
+                    "$PSH" -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1" -Update && exit 0
                 else
-                    powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1"
+                    "$PSH" -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1" && exit 0
                 fi
-                exit 0
+                exit $?
             elif [ -f "$SCRIPT_DIR/scripts/install_windows.ps1" ]; then
-                powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/scripts/install_windows.ps1"
-                exit 0
+                "$PSH" -ExecutionPolicy Bypass -File "$SCRIPT_DIR/scripts/install_windows.ps1" && exit 0
+                exit $?
             else
                 if [ "$EXPLICIT" -eq 1 ]; then
-                    powershell.exe -ExecutionPolicy Bypass -Command "\$env:SNOVA_UPDATE='1'; irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex"
+                    "$PSH" -ExecutionPolicy Bypass -Command "\$env:SNOVA_UPDATE='1'; irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex" && exit 0
                 else
-                    powershell.exe -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex"
+                    "$PSH" -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex" && exit 0
                 fi
-                exit 0
+                exit $?
             fi
         fi
+        echo "${YELLOW}PowerShell cannot be started from this shell. Continuing with the shell installer.${RESET}"
         ;;
     *)
         echo "${RED}Error: Unsupported Operating System: $OS${RESET}" >&2
@@ -125,11 +135,16 @@ case "$ARCH" in
         ;;
 esac
 
-TARBALL="snovac-${PLATFORM}-${ARCH_NAME}.tar.gz"
-DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${TARBALL}"
+# The release workflow publishes a zip for Windows and a tar.gz elsewhere.
+if [ "$PLATFORM" = "windows" ]; then
+    ARCHIVE="snovac-${PLATFORM}-${ARCH_NAME}.zip"
+else
+    ARCHIVE="snovac-${PLATFORM}-${ARCH_NAME}.tar.gz"
+fi
+DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${ARCHIVE}"
 
 echo "${BOLD}==>${RESET} Detected target: ${GREEN}${PLATFORM}-${ARCH_NAME}${RESET}"
-echo "${BOLD}==>${RESET} Downloading ${CYAN}${TARBALL}${RESET} from ${REPO}..."
+echo "${BOLD}==>${RESET} Downloading ${CYAN}${ARCHIVE}${RESET} from ${REPO}..."
 
 TMP_DIR="$(mktemp -d)"
 cleanup() {
@@ -138,14 +153,16 @@ cleanup() {
 trap cleanup EXIT
 
 compile_from_source() {
-    echo "${YELLOW}Release tarball not found yet on latest release. Attempting source compile fallback...${RESET}"
+    echo "${YELLOW}Release archive not found yet on latest release. Attempting source compile fallback...${RESET}"
     if ! command -v git >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then
         return 1
     fi
     git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_DIR/snovac-src"
     make -C "$TMP_DIR/snovac-src"
     mkdir -p "$TMP_DIR/extracted"
-    if [ -f "$TMP_DIR/snovac-src/build/snl" ]; then
+    if [ -f "$TMP_DIR/snovac-src/build/snl.exe" ]; then
+        cp "$TMP_DIR/snovac-src/build/snl.exe" "$TMP_DIR/extracted/snl.exe"
+    elif [ -f "$TMP_DIR/snovac-src/build/snl" ]; then
         cp "$TMP_DIR/snovac-src/build/snl" "$TMP_DIR/extracted/snl"
     else
         cp "$TMP_DIR/snovac-src/build/snovac" "$TMP_DIR/extracted/snl"
@@ -154,16 +171,16 @@ compile_from_source() {
 
 # 3. Download release binary. curl and wget both fall back to a source build.
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$TARBALL" || {
-        rm -f "$TMP_DIR/$TARBALL"
+    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE" || {
+        rm -f "$TMP_DIR/$ARCHIVE"
         compile_from_source
     } || {
         echo "${RED}Failed to download binary from $DOWNLOAD_URL${RESET}" >&2
         exit 1
     }
 elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$TMP_DIR/$TARBALL" "$DOWNLOAD_URL" || {
-        rm -f "$TMP_DIR/$TARBALL"
+    wget -qO "$TMP_DIR/$ARCHIVE" "$DOWNLOAD_URL" || {
+        rm -f "$TMP_DIR/$ARCHIVE"
         compile_from_source
     } || {
         echo "${RED}Failed to download binary using wget${RESET}" >&2
@@ -174,30 +191,60 @@ else
     exit 1
 fi
 
-if [ -f "$TMP_DIR/$TARBALL" ]; then
+if [ -f "$TMP_DIR/$ARCHIVE" ]; then
     mkdir -p "$TMP_DIR/extracted"
-    tar -xzf "$TMP_DIR/$TARBALL" -C "$TMP_DIR/extracted"
+    case "$ARCHIVE" in
+        *.zip)
+            if command -v unzip >/dev/null 2>&1; then
+                unzip -q "$TMP_DIR/$ARCHIVE" -d "$TMP_DIR/extracted"
+            else
+                tar -xf "$TMP_DIR/$ARCHIVE" -C "$TMP_DIR/extracted"
+            fi
+            ;;
+        *)
+            tar -xzf "$TMP_DIR/$ARCHIVE" -C "$TMP_DIR/extracted"
+            ;;
+    esac
 fi
 
 # Release archives named the binary `snovac` before the `snl` command rename.
 if [ -f "$TMP_DIR/extracted/snovac" ] && [ ! -f "$TMP_DIR/extracted/snl" ]; then
     mv "$TMP_DIR/extracted/snovac" "$TMP_DIR/extracted/snl"
 fi
+if [ -f "$TMP_DIR/extracted/snovac.exe" ] && [ ! -f "$TMP_DIR/extracted/snl.exe" ]; then
+    mv "$TMP_DIR/extracted/snovac.exe" "$TMP_DIR/extracted/snl.exe"
+fi
 
-if [ ! -f "$TMP_DIR/extracted/snl" ]; then
+BIN_SRC=""
+if [ -f "$TMP_DIR/extracted/snl.exe" ]; then
+    BIN_SRC="$TMP_DIR/extracted/snl.exe"
+elif [ -f "$TMP_DIR/extracted/bin/snl.exe" ]; then
+    BIN_SRC="$TMP_DIR/extracted/bin/snl.exe"
+elif [ -f "$TMP_DIR/extracted/snl" ]; then
+    BIN_SRC="$TMP_DIR/extracted/snl"
+elif [ -f "$TMP_DIR/extracted/snovac" ]; then
+    BIN_SRC="$TMP_DIR/extracted/snovac"
+fi
+
+if [ -z "$BIN_SRC" ]; then
     echo "${RED}Error: installer did not produce an snl binary.${RESET}" >&2
     exit 1
 fi
 
-# 4. Install binary
+# 4. Install binary. Windows needs the .exe suffix so PATHEXT can find it.
 mkdir -p "$INSTALL_DIR"
-cp -f "$TMP_DIR/extracted/snl" "$INSTALL_DIR/snl"
-chmod +x "$INSTALL_DIR/snl"
+if [ "$PLATFORM" = "windows" ]; then
+    DEST="${INSTALL_DIR}/snl.exe"
+else
+    DEST="${INSTALL_DIR}/snl"
+fi
+cp -f "$BIN_SRC" "$DEST"
+chmod +x "$DEST"
 
 if [ "$ALREADY" -eq 1 ]; then
-    echo "${GREEN}${BOLD}Updated snl binary at ${INSTALL_DIR}/snl${RESET}"
+    echo "${GREEN}${BOLD}Updated snl binary at ${DEST}${RESET}"
 else
-    echo "${GREEN}${BOLD}Installed snl binary into ${INSTALL_DIR}/snl${RESET}"
+    echo "${GREEN}${BOLD}Installed snl binary into ${DEST}${RESET}"
 fi
 
 # 5. Check and configure PATH
