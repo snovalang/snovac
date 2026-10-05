@@ -274,6 +274,39 @@ static void test_empty_array_struct_field(const char *tmp) {
     }
 }
 
+static void test_struct_paren_rejected(const char *tmp) {
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/structparen", tmp);
+    mkdir(dir, 0755);
+    write_file(dir, "f.snl",
+              "package pkg.structparen\n\n"
+              "struct Message {\n"
+              "    message: string\n"
+              "}\n\n"
+              "func bad(): int {\n"
+              "    let msg = Message(\"ola\")\n"
+              "    return 0\n"
+              "}\n"
+              "func good(): int {\n"
+              "    let msg = Message{\"ola\"}\n"
+              "    return 0\n"
+              "}\n");
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.structparen", "bad");
+        CHECK("struct: parentheses are SNOVA0151", diag_has_code(&w, "SNOVA0151"));
+        sn_arena_free(&w.arena);
+    }
+    {
+        World w;
+        world_init(&w);
+        run_check_on_func(&w, dir, "pkg.structparen", "good");
+        CHECK("struct: positional braces typecheck", w.diag.error_count == 0);
+        sn_arena_free(&w.arena);
+    }
+}
+
 int main(void) {
     char tmp[1024];
     if (!scratch_dir(tmp, sizeof(tmp), "snovac_check_test_XXXXXX")) {
@@ -301,6 +334,7 @@ int main(void) {
     test_scalar_and_string_members(tmp);
     test_constructor_call(tmp);
     test_constructor_arity(tmp);
+    test_struct_paren_rejected(tmp);
     test_lambda_value_call(tmp);
     test_lambda_value_call_arity(tmp);
     test_subtype_assignability(tmp);

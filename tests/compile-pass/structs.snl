@@ -11,7 +11,7 @@ struct Point {
 }
 
 func main(): int {
-    let p = Point(3.0, 4.0)
+    let p = Point{3.0, 4.0}
     let d = p.distanceFromOrigin()
     return 0
 }

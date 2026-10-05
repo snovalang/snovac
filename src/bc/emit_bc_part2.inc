@@ -249,8 +249,15 @@ void compile_expr(Compiler *c, const SnExpr *e) {
             emit_unsupported(c, e->span, "struct literal");
             break;
         }
+        int positional = 0;
+        int named = 0;
         for (size_t j = 0; j < e->field_names.len; j++) {
             const char *fname = (const char *)e->field_names.items[j];
+            if (!fname) {
+                positional = 1;
+                continue;
+            }
+            named = 1;
             if (!struct_field_at(st, fname, NULL, NULL)) {
                 emit_unsupported(c, e->span, "struct field");
                 break;
@@ -259,18 +266,30 @@ void compile_expr(Compiler *c, const SnExpr *e) {
         if (c->failed) {
             break;
         }
+        if (positional && named) {
+            emit_unsupported(c, e->span, "struct literal");
+            break;
+        }
         uint32_t nfields = 0;
+        size_t argi = 0;
         for (size_t i = 0; i < st->members.len; i++) {
             const SnDecl *m = SN_LIST_AT(st->members, SnDecl, i);
             if (!m || m->kind != SN_DECL_FIELD) {
                 continue;
             }
             const SnExpr *val = NULL;
-            for (size_t j = 0; j < e->field_names.len; j++) {
-                const char *fname = (const char *)e->field_names.items[j];
-                if (m->name && fname && strcmp(fname, m->name) == 0) {
-                    val = SN_LIST_AT(e->args, SnExpr, j);
-                    break;
+            if (positional) {
+                if (argi < e->args.len) {
+                    val = SN_LIST_AT(e->args, SnExpr, argi);
+                    argi++;
+                }
+            } else {
+                for (size_t j = 0; j < e->field_names.len; j++) {
+                    const char *fname = (const char *)e->field_names.items[j];
+                    if (m->name && fname && strcmp(fname, m->name) == 0) {
+                        val = SN_LIST_AT(e->args, SnExpr, j);
+                        break;
+                    }
                 }
             }
             if (val) {

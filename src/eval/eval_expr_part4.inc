@@ -130,30 +130,12 @@ SnEvalValue sn_eval_expr(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
                      e->lhs->text);
             return v_unit();
         }
-        SnEvalObject *o = (SnEvalObject *)sn_arena_calloc(in->arena, sizeof(SnEvalObject));
-        o->cls = cls;
-        for (size_t i = 0; i < cls->members.len; i++) {
-            const SnDecl *m = (const SnDecl *)cls->members.items[i];
-            if (m->kind != SN_DECL_FIELD) {
-                continue;
-            }
-            SnEvalValue v = m->init ? sn_eval_expr(in, env, m->init)
-                              : sn_eval_default_for(m->type);
-            for (size_t j = 0; j < e->field_names.len; j++) {
-                const char *fname = (const char *)e->field_names.items[j];
-                if (m->name && strcmp(fname, m->name) == 0) {
-                    v = sn_eval_expr(in, env, (const SnExpr *)e->args.items[j]);
-                    break;
-                }
-            }
-            SnEvalValue *slot = (SnEvalValue *)sn_arena_alloc(in->arena, sizeof(SnEvalValue));
-            *slot = v;
-            sn_list_push(in->arena, &o->names, (void *)m->name);
-            sn_list_push(in->arena, &o->slots, slot);
-        }
+        /* Named (`Point { x: 3 }`) and positional (`Point{3, 4}`) share the
+         * constructor filler. A NULL field name is positional. */
         SnEvalValue v;
         v.kind = V_OBJECT;
-        v.as.o = o;
+        v.as.o = sn_eval_instantiate(in, cls, (SnList *)&e->args,
+                                    (SnList *)&e->field_names, env, e->span);
         return v;
     }
     case SN_EXPR_MATCH: {

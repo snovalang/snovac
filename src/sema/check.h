@@ -97,6 +97,8 @@
 #define SNOVA_NARROWING_CONVERSION 145
 #define SNOVA_AMBIGUOUS_OVERLOAD 146
 #define SNOVA_NO_MATCHING_OVERLOAD 147
+/* A struct's values are written in braces (`Message{"olá"}`), not parentheses. */
+#define SNOVA_STRUCT_BRACE_INIT 151
 
 /* Canonical codes, not new: already documented in docs/snovalang-diagnostics.md
  * and implemented in crates/snovalang/src/native/selfcheck/pulsar.rs

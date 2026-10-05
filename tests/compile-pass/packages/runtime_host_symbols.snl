@@ -18,7 +18,7 @@ struct DecoratorExtension {
 
 func checkRegistry(): unit {
     let reg: RuntimeExtensionRegistry = RuntimeExtensionRegistry
-    let ext = DecoratorExtension(
+    let ext = DecoratorExtension{
         name: "TestExt",
         packageName: "builtin.test.Test",
         targetKinds: [ExtensionTargetKind.Function],
@@ -26,7 +26,7 @@ func checkRegistry(): unit {
         validatorId: "test.v",
         runtimeHookId: "test.h",
         description: "demo"
-    )
+    }
     let _ = reg.register(ext)
     let looked = reg.lookup("TestExt")
     // looked is Option; we just check it doesn't blow up at compile time

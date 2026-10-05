@@ -96,6 +96,68 @@
             result = sn_type_named(c->types, sym, NULL, 0);
             const SnDecl *td = sym->decl;
             if (td) {
+                int saw_named = 0;
+                int saw_pos = 0;
+                for (size_t i = 0; i < e->field_names.len; i++) {
+                    if (SN_LIST_AT(e->field_names, const char, i)) {
+                        saw_named = 1;
+                    } else {
+                        saw_pos = 1;
+                    }
+                }
+                if (saw_named && saw_pos) {
+                    sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, e->span,
+                                "struct literal mixes named and positional values");
+                    break;
+                }
+                if (saw_pos) {
+                    /* `Message{"olá"}` / `Point{3.0, 4.0}` fill fields in source order. */
+                    size_t total = 0;
+                    size_t required = 0;
+                    for (size_t i = 0; i < td->members.len; i++) {
+                        const SnDecl *m = SN_LIST_AT(td->members, SnDecl, i);
+                        if (m->kind != SN_DECL_FIELD) {
+                            continue;
+                        }
+                        total++;
+                        if (!m->init) {
+                            required++;
+                        }
+                    }
+                    if (e->args.len < required || e->args.len > total) {
+                        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARITY_MISMATCH, e->span,
+                                    "expected %zu argument(s), found %zu", required, e->args.len);
+                        break;
+                    }
+                    size_t ai = 0;
+                    for (size_t i = 0; i < td->members.len && ai < e->args.len; i++) {
+                        const SnDecl *m = SN_LIST_AT(td->members, SnDecl, i);
+                        if (m->kind != SN_DECL_FIELD) {
+                            continue;
+                        }
+                        SnExpr *arg = SN_LIST_AT(e->args, SnExpr, ai);
+                        SnTypeRep *decl_ty = resolve_declared_type(c, sym, m->type);
+                        SnTypeRep *arg_ty;
+                        if (decl_ty && decl_ty->tag == SN_T_ARRAY && arg &&
+                            arg->kind == SN_EXPR_ARRAY && arg->args.len == 0) {
+                            arg->resolved_type = decl_ty;
+                            arg_ty = decl_ty;
+                        } else {
+                            arg_ty = sn_check_expr(c, local, arg);
+                            if (decl_ty) {
+                                arg_ty = adopt_literal_type(c, arg, arg_ty, decl_ty);
+                            }
+                        }
+                        if (decl_ty && types_clash(c, arg_ty, decl_ty)) {
+                            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH,
+                                         arg ? arg->span : e->span,
+                                         "cannot assign incompatible value to field `%s`",
+                                         m->name ? m->name : "?");
+                        }
+                        ai++;
+                    }
+                    break;
+                }
                 for (size_t i = 0; i < e->field_names.len; i++) {
                     const char *fname = SN_LIST_AT(e->field_names, const char, i);
                     SnExpr *arg = SN_LIST_AT(e->args, SnExpr, i);

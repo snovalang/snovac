@@ -234,7 +234,7 @@ static void test_struct_field_rejects_string(const char *tmp) {
               "    public let field: int\n"
               "}\n"
               "func main(): unit {\n"
-              "    let snova = Snovalang(field: \"Oi!\")\n"
+              "    let snova = Snovalang{field: \"Oi!\"}\n"
               "    return\n"
               "}\n");
     World w;

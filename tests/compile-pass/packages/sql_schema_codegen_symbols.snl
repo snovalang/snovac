@@ -74,7 +74,7 @@ func main(): int {
 
     // The result row type (UserRow) is annotated explicitly and independently
     // from the params/request DTO (FindUserByEmail) — never inferred as `any`.
-    let generated: GeneratedQuery<UserRow> = sql<FindUserByEmail, UserRow>(FindUserByEmail("a@b.com"))
+    let generated: GeneratedQuery<UserRow> = sql<FindUserByEmail, UserRow>(FindUserByEmail{"a@b.com"})
 
     return 0
 }

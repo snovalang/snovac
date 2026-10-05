@@ -82,7 +82,7 @@ typedef enum {
     SN_EXPR_IS,      /* e is T     */
     SN_EXPR_MATCH,   /* match e { } used in expression position */
     SN_EXPR_IF,      /* if c { a } else { b } used in expression position */
-    SN_EXPR_STRUCT_LIT, /* UserDto { id: "1" } — construction by field list */
+    SN_EXPR_STRUCT_LIT, /* UserDto { id: "1" } or Message{"olá"} — values live in braces */
     SN_EXPR_NULL        /* null — only inhabits &T? */
 } SnExprKind;
 
@@ -107,7 +107,7 @@ struct SnExpr {
     /* IF: `lhs` is the condition, `body` the then-block, and the else side is
      * either `else_body` (a block) or `rhs` (a chained else-if expression). */
     SnStmt *else_body;
-    SnList field_names; /* STRUCT_LIT: const char* — values are in `args` */
+    SnList field_names; /* STRUCT_LIT: const char* (NULL when positional); values are in `args` */
     uint8_t interpolated; /* STRING: contains at least one ${...} */
     /* Set by the pointer/borrow passes. 0 = none. */
     uint8_t adjust;        /* 1 auto-deref, 2 auto-reborrow at this node */

@@ -162,14 +162,14 @@ static void test_constructor_call(const char *tmp) {
               "    public let y: decimal\n"
               "}\n\n"
               "func good(): int {\n"
-              "    let p = Point(3.0, 4.0)\n"
+              "    let p = Point{3.0, 4.0}\n"
               "    return 0\n"
               "}\n");
 
     World w;
     world_init(&w);
     run_check_on_func(&w, dir, "pkg.ctor", "good");
-    CHECK("constructor: the field list is the signature, and `3.0` adopts `decimal`",
+    CHECK("struct literal: the field list is the signature, and `3.0` adopts `decimal`",
           w.diag.error_count == 0);
 
     sn_arena_free(&w.arena);
@@ -186,15 +186,15 @@ static void test_constructor_arity(const char *tmp) {
               "    public let y: int\n"
               "}\n\n"
               "func bad(): int {\n"
-              "    let p = Point(1)\n"
+              "    let p = Point{1}\n"
               "    return 0\n"
               "}\n");
 
     World w;
     world_init(&w);
     run_check_on_func(&w, dir, "pkg.ctorbad", "bad");
-    CHECK("constructor: too few arguments is exactly one error", w.diag.error_count == 1);
-    CHECK("constructor: emits SNOVA0131 (arity)", diag_has_code(&w, "SNOVA0131"));
+    CHECK("struct literal: too few values is exactly one error", w.diag.error_count == 1);
+    CHECK("struct literal: emits SNOVA0131 (arity)", diag_has_code(&w, "SNOVA0131"));
 
     sn_arena_free(&w.arena);
 }
