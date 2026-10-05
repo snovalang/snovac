@@ -1,0 +1,339 @@
+func kind_of(bg: Bags, cx: Cx): int {
+    if cx.pos < 0 { return 0 }
+    if cx.pos >= bg.tk.len() { return 0 }
+    return bg.tk[cx.pos]
+}
+
+func at_tok(bg: Bags, cx: Cx, k: int): bool {
+    if kind_of(bg, cx) == k { return true }
+    return false
+}
+
+func bump(cx: Cx): unit {
+    cx.pos = cx.pos + 1
+}
+
+func expect_tok(bg: Bags, cx: Cx, k: int): unit {
+    if cx.failed != 0 { return }
+    if at_tok(bg, cx, k) {
+        bump(cx)
+        return
+    }
+    fail(cx)
+}
+
+func accept_tok(bg: Bags, cx: Cx, k: int): unit {
+    if at_tok(bg, cx, k) {
+        bump(cx)
+    }
+}
+
+func peek_kind(bg: Bags, cx: Cx, dist: int): int {
+    let p = cx.pos + dist
+    if p < 0 { return 0 }
+    if p >= bg.tk.len() { return 0 }
+    return bg.tk[p]
+}
+
+func infix_bp(k: int): int {
+    if k == 27 { return 1 }
+    if k == 44 { return 2 }
+    if k == 43 { return 3 }
+    if k == 40 { return 4 }
+    if k == 41 { return 5 }
+    if k == 39 { return 6 }
+    if k == 28 { return 7 }
+    if k == 29 { return 7 }
+    if k == 30 { return 8 }
+    if k == 32 { return 8 }
+    if k == 31 { return 8 }
+    if k == 33 { return 8 }
+    if k == 45 { return 9 }
+    if k == 46 { return 9 }
+    if k == 34 { return 10 }
+    if k == 35 { return 10 }
+    if k == 36 { return 11 }
+    if k == 37 { return 11 }
+    if k == 38 { return 11 }
+    return 0
+}
+
+func parse_args(src: int[], bg: Bags, cx: Cx): int {
+    if cx.failed != 0 { return -1 }
+    expect_tok(bg, cx, 17)
+    var head = -1
+    if cx.failed != 0 { return -1 }
+    if at_tok(bg, cx, 18) {
+        bump(cx)
+        return head
+    }
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            let arg = parse_expr(src, bg, cx, 1)
+            head = node(bg, 13, 0, arg, head, -1)
+            if at_tok(bg, cx, 25) {
+                bump(cx)
+                if at_tok(bg, cx, 18) {
+                    go = 0
+                }
+            } else {
+                go = 0
+            }
+        }
+    }
+    expect_tok(bg, cx, 18)
+    return head
+}
+
+func parse_array(src: int[], bg: Bags, cx: Cx): int {
+    if cx.failed != 0 { return -1 }
+    bump(cx)
+    var head = -1
+    if at_tok(bg, cx, 22) {
+        bump(cx)
+        return node(bg, 8, 0, -1, head, -1)
+    }
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            let el = parse_expr(src, bg, cx, 1)
+            head = node(bg, 13, 0, el, head, -1)
+            if at_tok(bg, cx, 25) {
+                bump(cx)
+                if at_tok(bg, cx, 22) {
+                    go = 0
+                }
+            } else {
+                go = 0
+            }
+        }
+    }
+    expect_tok(bg, cx, 22)
+    return node(bg, 8, 0, -1, head, -1)
+}
+
+func parse_struct_lit(src: int[], bg: Bags, cx: Cx, lhs: int): int {
+    if cx.failed != 0 { return -1 }
+    if lhs < 0 { fail(cx); return -1 }
+    let ns = bg.na[lhs]
+    let nl = bg.nb[lhs]
+    bump(cx)
+    var head = -1
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            if at_tok(bg, cx, 20) {
+                go = 0
+            } else {
+                if kind_of(bg, cx) == 0 {
+                    fail(cx)
+                    go = 0
+                } else {
+                    if kind_of(bg, cx) != 1 {
+                        fail(cx)
+                        go = 0
+                    } else {
+                        let fs = bg.ts[cx.pos]
+                        let fl = bg.tn[cx.pos]
+                        bump(cx)
+                        expect_tok(bg, cx, 23)
+                        let val = parse_expr(src, bg, cx, 1)
+                        let field = node(bg, 14, fs, fl, val, -1)
+                        head = node(bg, 13, 0, field, head, -1)
+                        if at_tok(bg, cx, 25) {
+                            bump(cx)
+                        } else {
+                            go = 0
+                        }
+                    }
+                }
+            }
+        }
+    }
+    expect_tok(bg, cx, 20)
+    return node(bg, 11, ns, nl, head, -1)
+}
+
+func at_struct_lit(bg: Bags, cx: Cx, lhs: int): bool {
+    if cx.no_struct != 0 { return false }
+    if lhs < 0 { return false }
+    if bg.nk[lhs] != 4 { return false }
+    if kind_of(bg, cx) != 19 { return false }
+    let n1 = peek_kind(bg, cx, 1)
+    if n1 == 20 { return true }
+    if n1 == 1 && peek_kind(bg, cx, 2) == 23 { return true }
+    return false
+}
+
+func parse_primary(src: int[], bg: Bags, cx: Cx): int {
+    if cx.failed != 0 { return -1 }
+    let k = kind_of(bg, cx)
+    if k == 2 {
+        let v = bg.tv[cx.pos]
+        bump(cx)
+        return node(bg, 1, v, -1, -1, -1)
+    }
+    if k == 3 {
+        let s = bg.ts[cx.pos]
+        let n = bg.tn[cx.pos]
+        bump(cx)
+        return node(bg, 3, s, n, -1, -1)
+    }
+    if k == 4 {
+        bump(cx)
+        return node(bg, 2, 1, -1, -1, -1)
+    }
+    if k == 5 {
+        bump(cx)
+        return node(bg, 2, 0, -1, -1, -1)
+    }
+    if k == 42 || k == 35 {
+        let op = k
+        bump(cx)
+        let inner = parse_primary(src, bg, cx)
+        return node(bg, 5, op, inner, -1, -1)
+    }
+    if k == 21 {
+        return parse_array(src, bg, cx)
+    }
+    if k == 17 {
+        bump(cx)
+        let inner = parse_expr(src, bg, cx, 1)
+        expect_tok(bg, cx, 18)
+        return inner
+    }
+    if k == 1 {
+        let s = bg.ts[cx.pos]
+        let n = bg.tn[cx.pos]
+        bump(cx)
+        return node(bg, 4, s, n, -1, -1)
+    }
+    let scoped = parse_scope_primary(src, bg, cx)
+    if scoped != -2 { return scoped }
+    fail(cx)
+    return -1
+}
+
+func parse_postfix(src: int[], bg: Bags, cx: Cx, lhs: int): int {
+    var cur = lhs
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            if at_tok(bg, cx, 26) {
+                bump(cx)
+                if kind_of(bg, cx) != 1 {
+                    fail(cx)
+                    go = 0
+                } else {
+                    let ns = bg.ts[cx.pos]
+                    let nl = bg.tn[cx.pos]
+                    bump(cx)
+                    cur = node(bg, 10, 0, cur, ns, nl)
+                }
+            } else {
+                if at_tok(bg, cx, 17) {
+                    let args = parse_args(src, bg, cx)
+                    cur = node(bg, 7, 0, cur, args, -1)
+                } else {
+                    if at_tok(bg, cx, 21) && peek_kind(bg, cx, 1) == 22 && peek_kind(bg, cx, 2) == 17 {
+                        bump(cx)
+                        bump(cx)
+                    } else {
+                        if at_tok(bg, cx, 21) {
+                            bump(cx)
+                            let idx = parse_expr(src, bg, cx, 1)
+                            expect_tok(bg, cx, 22)
+                            cur = node(bg, 9, 0, cur, idx, -1)
+                        } else {
+                            if at_struct_lit(bg, cx, cur) {
+                                cur = parse_struct_lit(src, bg, cx, cur)
+                            } else {
+                                go = 0
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return cur
+}
+
+func parse_expr(src: int[], bg: Bags, cx: Cx, min_bp: int): int {
+    if cx.failed != 0 { return -1 }
+    var lhs = parse_postfix(src, bg, cx, parse_primary(src, bg, cx))
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            let k = kind_of(bg, cx)
+            let bp = infix_bp(k)
+            if bp == 0 || bp < min_bp {
+                go = 0
+            } else {
+                bump(cx)
+                var next = bp + 1
+                if k == 27 {
+                    next = bp
+                }
+                let rhs = parse_expr(src, bg, cx, next)
+                if k == 27 {
+                    lhs = node(bg, 12, 0, lhs, rhs, -1)
+                } else {
+                    lhs = node(bg, 6, k, lhs, rhs, -1)
+                }
+            }
+        }
+    }
+    return lhs
+}
+
+func find_struct(src: int[], bg: Bags, s: int, n: int): int {
+    var i = 0
+    while i < bg.st_ns.len() {
+        if span_eq(src, bg.st_ns[i], bg.st_nl[i], s, n) { return i }
+        i = i + 1
+    }
+    return -1
+}
+
+func type_code(src: int[], bg: Bags, s: int, n: int): int {
+    if is_word(src, s, n, 3, 105, 110, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0) { return -1 }
+    if is_word(src, s, n, 4, 98, 111, 111, 108, 0, 0, 0, 0, 0, 0, 0, 0) { return -2 }
+    if is_word(src, s, n, 6, 115, 116, 114, 105, 110, 103, 0, 0, 0, 0, 0, 0) { return -3 }
+    let st = find_struct(src, bg, s, n)
+    if st >= 0 { return st + 1 }
+    return 0
+}
+
+func parse_type(src: int[], bg: Bags, cx: Cx): int {
+    if cx.failed != 0 { return 0 }
+    if at_tok(bg, cx, 39) { bump(cx) }
+    if kind_of(bg, cx) != 1 {
+        fail(cx)
+        return 0
+    }
+    let s = bg.ts[cx.pos]
+    let n = bg.tn[cx.pos]
+    let code = type_code(src, bg, s, n)
+    bump(cx)
+    if at_tok(bg, cx, 21) {
+        bump(cx)
+        expect_tok(bg, cx, 22)
+        scope_type_suffix(bg, cx)
+        return 0
+    }
+    scope_type_suffix(bg, cx)
+    return code
+}
+

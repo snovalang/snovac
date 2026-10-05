@@ -7,6 +7,7 @@
 #endif
 
 #include "native_backend.h"
+#include "native_scope.h"
 #include "driver_utils.h"
 
 #include <stdio.h>
@@ -141,7 +142,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   /* Emit Value types and Stack */
   fprintf(f, "\n");
   fprintf(f, "typedef enum { VAL_UNIT, VAL_BOOL, VAL_INT, VAL_DOUBLE, "
-             "VAL_STRING, VAL_ARRAY, VAL_OBJ, VAL_FUTURE } ValTag;\n");
+             "VAL_STRING, VAL_ARRAY, VAL_OBJ, VAL_FUTURE, VAL_NULL, VAL_VAR } ValTag;\n");
   fprintf(f, "typedef struct Val Val;\n");
   fprintf(f, "struct Val { ValTag tag; union { bool b; int64_t i; double d; "
              "char *str; void *ptr; } as; };\n\n");
@@ -193,6 +194,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "  else if (v.tag == VAL_INT) printf(\"%%lld\", (long long)v.as.i);\n");
   fprintf(f, "  else if (v.tag == VAL_DOUBLE) printf(\"%%g\", v.as.d);\n");
   fprintf(f, "  else if (v.tag == VAL_BOOL) printf(\"%%s\", v.as.b ? \"true\" : \"false\");\n");
+  fprintf(f, "  else if (v.tag == VAL_NULL) printf(\"null\");\n");
   fprintf(f, "  else if (v.tag == VAL_ARRAY) {\n");
   fprintf(f, "    SnArray *a = (SnArray *)v.as.ptr;\n");
   fprintf(f, "    fputc('[', stdout);\n");
@@ -306,7 +308,8 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "/* Pulsar platform thread multi-parallelism */\n");
   fprintf(f, "typedef struct PulsarWork {\n");
   fprintf(f, "  size_t fn_idx;\n");
-  fprintf(f, "  Val arg;\n");
+  fprintf(f, "  Val args[8];\n");
+  fprintf(f, "  uint32_t argc;\n");
   fprintf(f, "  struct PulsarWork *next;\n");
   fprintf(f, "} PulsarWork;\n\n");
 
@@ -321,6 +324,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
         f, "static pthread_cond_t g_pulsar_cond = PTHREAD_COND_INITIALIZER;\n");
   }
   fprintf(f, "static PulsarWork *g_pulsar_queue = NULL;\n");
+  fprintf(f, "static int g_pulsar_busy = 0;\n");
   fprintf(f, "static bool g_pulsar_stop = false;\n\n");
 
   fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc);\n\n");
@@ -337,9 +341,16 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    if (g_pulsar_stop && !g_pulsar_queue) { "
                "LeaveCriticalSection(&g_pulsar_mutex); break; }\n");
     fprintf(f, "    PulsarWork *work = g_pulsar_queue;\n");
-    fprintf(f, "    if (work) g_pulsar_queue = work->next;\n");
+    fprintf(f, "    if (work) { g_pulsar_queue = work->next; g_pulsar_busy = 1; }\n");
     fprintf(f, "    LeaveCriticalSection(&g_pulsar_mutex);\n");
-    fprintf(f, "    if (work) { run_function(work->fn_idx, NULL, 0); free(work); }\n");
+    fprintf(f, "    if (work) {\n");
+    fprintf(f, "      run_function(work->fn_idx, work->args, work->argc);\n");
+    fprintf(f, "      EnterCriticalSection(&g_pulsar_mutex);\n");
+    fprintf(f, "      g_pulsar_busy = 0;\n");
+    fprintf(f, "      WakeConditionVariable(&g_pulsar_cond);\n");
+    fprintf(f, "      LeaveCriticalSection(&g_pulsar_mutex);\n");
+    fprintf(f, "      free(work);\n");
+    fprintf(f, "    }\n");
     fprintf(f, "  }\n  return 0;\n}\n\n");
   } else {
     fprintf(f, "static void *pulsar_thread_proc(void *arg) {\n");
@@ -352,16 +363,23 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    if (g_pulsar_stop && !g_pulsar_queue) { "
                "pthread_mutex_unlock(&g_pulsar_mutex); break; }\n");
     fprintf(f, "    PulsarWork *work = g_pulsar_queue;\n");
-    fprintf(f, "    if (work) g_pulsar_queue = work->next;\n");
+    fprintf(f, "    if (work) { g_pulsar_queue = work->next; g_pulsar_busy = 1; }\n");
     fprintf(f, "    pthread_mutex_unlock(&g_pulsar_mutex);\n");
-    fprintf(f, "    if (work) { run_function(work->fn_idx, NULL, 0); free(work); }\n");
+    fprintf(f, "    if (work) {\n");
+    fprintf(f, "      run_function(work->fn_idx, work->args, work->argc);\n");
+    fprintf(f, "      pthread_mutex_lock(&g_pulsar_mutex);\n");
+    fprintf(f, "      g_pulsar_busy = 0;\n");
+    fprintf(f, "      pthread_cond_signal(&g_pulsar_cond);\n");
+    fprintf(f, "      pthread_mutex_unlock(&g_pulsar_mutex);\n");
+    fprintf(f, "      free(work);\n");
+    fprintf(f, "    }\n");
     fprintf(f, "  }\n  return NULL;\n}\n\n");
   }
 
   fprintf(f, "static void pulsar_spawn(size_t fn_idx) {\n");
   fprintf(f, "  PulsarWork *work = (PulsarWork*)malloc(sizeof(PulsarWork));\n");
   fprintf(f, "  if (!work) { fputs(\"error: out of memory\\n\", stderr); exit(70); }\n");
-  fprintf(f, "  work->fn_idx = fn_idx;\n  work->next = NULL;\n");
+  fprintf(f, "  work->fn_idx = fn_idx;\n  work->argc = 0;\n  work->next = NULL;\n");
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "  EnterCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "  work->next = g_pulsar_queue;\n  g_pulsar_queue = work;\n");
@@ -374,6 +392,8 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "  pthread_mutex_unlock(&g_pulsar_mutex);\n");
   }
   fprintf(f, "}\n\n");
+
+  sn_native_write_scope_support(f, target->os == SN_OS_WINDOWS);
 
   /* Emit run_function */
   fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc) {\n");
@@ -395,6 +415,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "    for (uint32_t i = 0; i < argc; i++) locals[i] = args[i];\n");
   fprintf(f, "  }\n");
   fprintf(f, "  g_ret.tag = VAL_UNIT; g_ret.as.i = 0;\n");
+  fprintf(f, "  DeferItem *defers = NULL;\n");
   fprintf(f, "  for (;;) {\n");
   fprintf(f, "    uint8_t op = *ip++;\n");
   fprintf(f, "    switch (op) {\n");
@@ -494,11 +515,13 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
           OP_NOT);
   fprintf(f,
           "    case %d: { Val b = pop(), a = pop(), r; r.tag = VAL_BOOL; "
-          "r.as.b = (a.as.i == b.as.i); push(r); break; }\n",
+          "r.as.b = (a.tag != VAL_NULL && b.tag != VAL_NULL && a.as.i == b.as.i); "
+          "push(r); break; }\n",
           OP_EQ);
   fprintf(f,
           "    case %d: { Val b = pop(), a = pop(), r; r.tag = VAL_BOOL; "
-          "r.as.b = (a.as.i != b.as.i); push(r); break; }\n",
+          "r.as.b = (a.tag == VAL_NULL || b.tag == VAL_NULL || a.as.i != b.as.i); "
+          "push(r); break; }\n",
           OP_NE);
   fprintf(f,
           "    case %d: { Val b = pop(), a = pop(), r; r.tag = VAL_BOOL; "
@@ -536,7 +559,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
           "      run_function(fni, args_tmp, argc); push(g_ret); break; }\n",
           OP_CALL);
   fprintf(f,
-          "    case %d: { g_ret = pop(); return 0; }\n",
+          "    case %d: { Val saved = pop(); run_defers(&defers); g_ret = saved; return 0; }\n",
           OP_RETURN);
   fprintf(f,
           "    case %d: { uint32_t cls = read_u32(&ip); uint32_t n = read_u32(&ip); (void)cls;\n"
@@ -599,6 +622,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
           "    case %d: { uint8_t nl = *ip++; Val v = pop(); print_val(v, nl); break; }\n",
           OP_PRINT);
   fprintf(f, "    case %d: g_ret.tag = VAL_INT; g_ret.as.i = 0; return 0;\n", OP_HALT);
+  sn_native_write_scope_ops(f, target->os == SN_OS_WINDOWS);
   fprintf(f, "    default: fprintf(stderr, \"error: unknown opcode %%u\\n\", (unsigned)op); exit(1);\n");
   fprintf(f, "    }\n  }\n}\n\n");
 

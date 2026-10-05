@@ -118,6 +118,7 @@ typedef struct {
     SnEvalValue ret;
     SnEvalFlow flow;
     int failed;
+    int async_depth;
     SnEvalMemFrame *mem;
     SnEvalDefer *defers;
 } SnEvalInterp;

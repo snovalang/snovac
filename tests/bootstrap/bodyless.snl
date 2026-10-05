@@ -1,0 +1,7 @@
+package tests.bootstrap.bodyless
+
+func declared(): int
+
+func main(): int {
+    return 4
+}

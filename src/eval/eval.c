@@ -2,6 +2,7 @@
  * Expressions, statements and string decoding live in their own files; see
  * eval_internal.h for the split. */
 #include "eval_internal.h"
+#include "async.h"
 
 void sn_rt_error(SnEvalInterp *in, int code, SnSpan span, const char *fmt, ...) {
     if (in->failed) {
@@ -426,6 +427,20 @@ SnEvalValue *sn_eval_object_field(SnEvalObject *o, const char *name) {
 
 /* ── calls ────────────────────────────────────────────────────────────────── */
 
+typedef struct {
+    SnEvalInterp *in;
+    SnEvalEnv *local;
+    SnEvalEnv *caller;
+    const SnStmt *body;
+    SnEvalValue result;
+} SnAsyncCall;
+
+static void sn_eval_async_step(SnAsyncTask *task) {
+    SnAsyncCall *job = (SnAsyncCall *)task->user_data;
+    job->result = sn_rt_finish_call(job->in, job->local, job->caller, job->body);
+    task->state = SN_TASK_COMPLETED;
+}
+
 SnEvalValue sn_eval_call_function(SnEvalInterp *in, const SnDecl *fn, SnList *args, SnEvalEnv *caller,
                     SnEvalObject *self, SnSpan span) {
     SnEvalValue out_native;
@@ -465,6 +480,25 @@ SnEvalValue sn_eval_call_function(SnEvalInterp *in, const SnDecl *fn, SnList *ar
             v = sn_eval_default_for(p->type);
         }
         sn_eval_env_define(in, local, p->name, v);
+    }
+
+    if (fn->is_async && in->async_depth == 0) {
+        SnAsyncCall job;
+        job.in = in;
+        job.local = local;
+        job.caller = caller;
+        job.body = fn->body;
+        job.result = v_unit();
+        SnAsyncLoop loop;
+        sn_async_loop_init(&loop);
+        if (sn_async_spawn(&loop, sn_eval_async_step, &job)) {
+            in->async_depth = 1;
+            sn_async_loop_run(&loop);
+            in->async_depth = 0;
+            sn_async_loop_cleanup(&loop);
+            return job.result;
+        }
+        sn_async_loop_cleanup(&loop);
     }
 
     return sn_rt_finish_call(in, local, caller, fn->body);
@@ -511,6 +545,7 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     in.ret = v_unit();
     in.flow = FLOW_NORMAL;
     in.failed = 0;
+    in.async_depth = 0;
     in.mem = NULL;
     in.defers = NULL;
     sn_rt_mem_reset(&in);

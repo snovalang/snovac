@@ -1,0 +1,10 @@
+package tests.bootstrap.match_int
+
+func main(): int {
+    let n = 2
+    return match n {
+        1 -> 10
+        2 -> 20
+        _ -> 30
+    }
+}

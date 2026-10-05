@@ -1,0 +1,272 @@
+func scope_cur(bg: Bags, which: int): int {
+    var n = bg.lp_id.len()
+    if n == 0 { return 0 }
+    if which == 0 { return bg.lp_id[n - 1] }
+    if which == 1 { return bg.lp_known[n - 1] }
+    return bg.lp_pos[n - 1]
+}
+
+func scope_loop_enter(bg: Bags, cx: Cx, pos: int, known: int): unit {
+    bg.lp_id.push(cx.seq)
+    bg.lp_known.push(known)
+    bg.lp_pos.push(pos)
+    cx.seq = cx.seq + 1
+}
+
+func scope_loop_leave(bg: Bags): unit {
+    var ids: int[] = []
+    var ks: int[] = []
+    var ps: int[] = []
+    var i = 0
+    while i + 1 < bg.lp_id.len() {
+        ids.push(bg.lp_id[i])
+        ks.push(bg.lp_known[i])
+        ps.push(bg.lp_pos[i])
+        i = i + 1
+    }
+    bg.lp_id = ids
+    bg.lp_known = ks
+    bg.lp_pos = ps
+}
+
+func scope_patch_tagged(code: int[], fat: int[], fb: int[], at: int[], lv: int[], id: int): unit {
+    var i = 0
+    while i < lv.len() {
+        if lv[i] == id { patch_at(code, fat, fb, at[i]) }
+        i = i + 1
+    }
+}
+
+func scope_patch_brk(code: int[], fat: int[], fb: int[], bg: Bags): unit {
+    scope_patch_tagged(code, fat, fb, bg.brk_at, bg.brk_lv, scope_cur(bg, 0))
+}
+
+func scope_patch_cont(code: int[], fat: int[], fb: int[], bg: Bags): unit {
+    scope_patch_tagged(code, fat, fb, bg.cont_at, bg.cont_lv, scope_cur(bg, 0))
+}
+
+func scope_emit_break(bg: Bags, cx: Cx, code: int[]): unit {
+    if bg.lp_id.len() == 0 {
+        fail(cx)
+        return
+    }
+    let at = emit_jump(code, 30)
+    bg.brk_at.push(at)
+    bg.brk_lv.push(scope_cur(bg, 0))
+}
+
+func scope_emit_continue(bg: Bags, cx: Cx, code: int[]): unit {
+    if bg.lp_id.len() == 0 {
+        fail(cx)
+        return
+    }
+    if scope_cur(bg, 1) == 1 {
+        code.push(30)
+        let at = code.len()
+        let off = scope_cur(bg, 2) - (at + 4)
+        push_u32(code, off)
+        return
+    }
+    let at = emit_jump(code, 30)
+    bg.cont_at.push(at)
+    bg.cont_lv.push(scope_cur(bg, 0))
+}
+
+func scope_find_method(src: int[], bg: Bags, owner: int, s: int, n: int): int {
+    var i = 0
+    while i < bg.fn_ns.len() {
+        if bg.fn_own[i] == owner {
+            if span_eq(src, bg.fn_ns[i], bg.fn_nl[i], s, n) { return i }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+func scope_field_index(src: int[], bg: Bags, st: int, s: int, n: int): int {
+    var i = 0
+    var seen = 0
+    var found = -1
+    while i < bg.fd_st.len() {
+        if bg.fd_st[i] == st {
+            if found < 0 {
+                if span_eq(src, bg.fd_ns[i], bg.fd_nl[i], s, n) { found = seen }
+            }
+            seen = seen + 1
+        }
+        i = i + 1
+    }
+    return found
+}
+
+func scope_field_ty(src: int[], bg: Bags, st: int, s: int, n: int): int {
+    var i = 0
+    while i < bg.fd_st.len() {
+        if bg.fd_st[i] == st {
+            if span_eq(src, bg.fd_ns[i], bg.fd_nl[i], s, n) { return bg.fd_ty[i] }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+func scope_emit_variant(src: int[], bg: Bags, code: int[], s: int, n: int): unit {
+    let si = intern_span(src, s, n, bg)
+    code.push(42)
+    push_u32(code, si)
+    push_u32(code, 0)
+}
+
+func scope_call_op(code: int[], fn: int, argc: int, async_fn: int): unit {
+    if async_fn != 0 {
+        code.push(55)
+    } else {
+        code.push(33)
+    }
+    push_u32(code, fn)
+    push_u32(code, argc)
+}
+
+func scope_arg_at(bg: Bags, c: int, k: int): int {
+    let n = cons_count(bg, c)
+    var cur = c
+    var skip = n - 1 - k
+    while skip > 0 {
+        cur = bg.nc[cur]
+        skip = skip - 1
+    }
+    return bg.nb[cur]
+}
+
+func scope_emit_ctor(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], st: int, args: int): unit {
+    var i = 0
+    var argi = 0
+    var nfields = 0
+    let argc = cons_count(bg, args)
+    while i < bg.fd_st.len() {
+        if bg.fd_st[i] == st {
+            if argi < argc {
+                emit_expr(src, bg, cx, code, fat, fb, scope_arg_at(bg, args, argi))
+                argi = argi + 1
+            } else {
+                if bg.fd_init[i] >= 0 {
+                    emit_expr(src, bg, cx, code, fat, fb, bg.fd_init[i])
+                } else {
+                    emit_default(bg, code, bg.fd_ty[i])
+                }
+            }
+            nfields = nfields + 1
+        }
+        i = i + 1
+    }
+    let si = intern_span(src, bg.st_ns[st], bg.st_nl[st], bg)
+    code.push(36)
+    push_u32(code, si)
+    push_u32(code, nfields)
+    cx.expr_ty = st + 1
+}
+
+func scope_builtin_name(src: int[], s: int, n: int): int {
+    if is_word(src, s, n, 9, 112, 114, 105, 110, 116, 108, 105, 110, 101, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 7, 112, 114, 105, 110, 116, 108, 110, 0, 0, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 5, 112, 114, 105, 110, 116, 0, 0, 0, 0, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 3, 108, 101, 110, 0, 0, 0, 0, 0, 0, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 6, 108, 101, 110, 103, 116, 104, 0, 0, 0, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 4, 112, 117, 115, 104, 0, 0, 0, 0, 0, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 3, 103, 101, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 10, 114, 101, 97, 100, 95, 98, 121, 116, 101, 115, 0, 0) { return 1 }
+    if is_word(src, s, n, 11, 119, 114, 105, 116, 101, 95, 98, 121, 116, 101, 115, 0) { return 1 }
+    return 0
+}
+
+func scope_emit_call(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], nd: int): int {
+    let callee = bg.nb[nd]
+    let args = bg.nc[nd]
+    if callee < 0 { return 0 }
+    let ck = bg.nk[callee]
+    if ck == 10 {
+        let ns = bg.nc[callee]
+        let nl = bg.nd[callee]
+        if scope_builtin_name(src, ns, nl) != 0 { return 0 }
+        let recv = bg.nb[callee]
+        if recv >= 0 && bg.nk[recv] == 4 {
+            let rs = bg.na[recv]
+            let rn = bg.nb[recv]
+            if find_local(src, bg, cx, rs, rn) < 0 {
+                let st = find_struct(src, bg, rs, rn)
+                if st >= 0 && bg.st_kind[st] != 3 {
+                    let m = scope_find_method(src, bg, st, ns, nl)
+                    if m >= 0 {
+                        emit_forward(src, bg, cx, code, fat, fb, args, 0)
+                        scope_call_op(code, m, cons_count(bg, args), bg.fn_async[m])
+                        cx.expr_ty = 0
+                        return 1
+                    }
+                }
+            } else {
+                let slot = find_local(src, bg, cx, rs, rn)
+                let ty = local_type_of(bg, cx, slot)
+                if ty > 0 {
+                    let st = ty - 1
+                    let m = scope_find_method(src, bg, st, ns, nl)
+                    if m >= 0 {
+                        emit_expr(src, bg, cx, code, fat, fb, recv)
+                        emit_forward(src, bg, cx, code, fat, fb, args, 0)
+                        scope_call_op(code, m, cons_count(bg, args) + 1, bg.fn_async[m])
+                        cx.expr_ty = 0
+                        return 1
+                    }
+                }
+            }
+        }
+        return 0
+    }
+    if ck != 4 { return 0 }
+    let ns = bg.na[callee]
+    let nl = bg.nb[callee]
+    if scope_builtin_name(src, ns, nl) != 0 { return 0 }
+    let fn = find_func(src, bg, ns, nl)
+    if fn >= 0 {
+        if bg.fn_async[fn] == 0 { return 0 }
+        emit_forward(src, bg, cx, code, fat, fb, args, 0)
+        scope_call_op(code, fn, cons_count(bg, args), 1)
+        cx.expr_ty = 0
+        return 1
+    }
+    let st = find_struct(src, bg, ns, nl)
+    if st >= 0 && bg.st_kind[st] != 3 {
+        scope_emit_ctor(src, bg, cx, code, fat, fb, st, args)
+        return 1
+    }
+    if scope_variant_en(src, bg, ns, nl) >= 0 && cons_count(bg, args) == 0 {
+        scope_emit_variant(src, bg, code, ns, nl)
+        cx.expr_ty = 0
+        return 1
+    }
+    if cx.owner >= 0 {
+        let m = scope_find_method(src, bg, cx.owner, ns, nl)
+        if m >= 0 {
+            code.push(8)
+            push_u32(code, 0)
+            emit_forward(src, bg, cx, code, fat, fb, args, 0)
+            scope_call_op(code, m, cons_count(bg, args) + 1, bg.fn_async[m])
+            cx.expr_ty = 0
+            return 1
+        }
+    }
+    return 0
+}
+
+func scope_emit_enum_member(src: int[], bg: Bags, cx: Cx, code: int[], nd: int): int {
+    if bg.nk[nd] != 10 { return 0 }
+    let lhs = bg.nb[nd]
+    if lhs < 0 || bg.nk[lhs] != 4 { return 0 }
+    if find_local(src, bg, cx, bg.na[lhs], bg.nb[lhs]) >= 0 { return 0 }
+    let st = find_struct(src, bg, bg.na[lhs], bg.nb[lhs])
+    if st < 0 { return 0 }
+    if bg.st_kind[st] != 3 { return 0 }
+    scope_emit_variant(src, bg, code, bg.nc[nd], bg.nd[nd])
+    cx.expr_ty = st + 1
+    return 1
+}
+

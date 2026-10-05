@@ -1,0 +1,9 @@
+package tests.bootstrap.async_await
+
+async func four(): int {
+    return 4
+}
+
+async func main(): int {
+    return await four()
+}

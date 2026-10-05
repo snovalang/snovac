@@ -1,0 +1,308 @@
+func scope_emit_expr(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], nd: int): int {
+    let k = bg.nk[nd]
+    if k == 15 {
+        code.push(51)
+        cx.expr_ty = 0
+        return 1
+    }
+    if k == 16 {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+        return 1
+    }
+    if k == 17 {
+        scope_emit_match(src, bg, cx, code, fat, fb, bg.nb[nd], bg.nc[nd], 1)
+        return 1
+    }
+    if k == 10 {
+        if scope_emit_enum_member(src, bg, cx, code, nd) != 0 { return 1 }
+        return 0
+    }
+    if k == 4 && cx.owner >= 0 {
+        if find_local(src, bg, cx, bg.na[nd], bg.nb[nd]) < 0 {
+            let fi = scope_field_index(src, bg, cx.owner, bg.na[nd], bg.nb[nd])
+            if fi >= 0 {
+                code.push(8)
+                push_u32(code, 0)
+                code.push(37)
+                push_u32(code, fi)
+                cx.expr_ty = scope_field_ty(src, bg, cx.owner, bg.na[nd], bg.nb[nd])
+                return 1
+            }
+        }
+    }
+    if k == 12 && cx.owner >= 0 {
+        let lhs = bg.nb[nd]
+        if lhs >= 0 && bg.nk[lhs] == 4 {
+            if find_local(src, bg, cx, bg.na[lhs], bg.nb[lhs]) < 0 {
+                let fi = scope_field_index(src, bg, cx.owner, bg.na[lhs], bg.nb[lhs])
+                if fi >= 0 {
+                    emit_expr(src, bg, cx, code, fat, fb, bg.nc[nd])
+                    code.push(8)
+                    push_u32(code, 0)
+                    code.push(38)
+                    push_u32(code, fi)
+                    return 1
+                }
+            }
+        }
+    }
+    if k == 7 {
+        if scope_emit_call(src, bg, cx, code, fat, fb, nd) != 0 { return 1 }
+    }
+    return 0
+}
+
+func scope_emit_pattern(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], subj: int, pat: int): unit {
+    code.push(8)
+    push_u32(code, subj)
+    if pat < 0 || bg.na[pat] == 1 {
+        code.push(6)
+        code.push(4)
+        code.push(1)
+        return
+    }
+    if bg.na[pat] == 3 {
+        let si = intern_span(src, bg.nb[pat], bg.nc[pat], bg)
+        code.push(43)
+        push_u32(code, si)
+        return
+    }
+    if bg.na[pat] == 2 {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[pat])
+        code.push(24)
+        return
+    }
+    code.push(6)
+    code.push(4)
+    code.push(1)
+}
+
+func scope_emit_arm_value(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], arm: int, as_value: int): unit {
+    if bg.nb[arm] >= 0 {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[arm])
+        if as_value == 0 { code.push(6) }
+        return
+    }
+    if as_value != 0 {
+        code.push(5)
+    }
+}
+
+func scope_emit_arms(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], arms: int, subj: int, as_value: int, ends: int[]): unit {
+    if arms < 0 { return }
+    scope_emit_arms(src, bg, cx, code, fat, fb, bg.nc[arms], subj, as_value, ends)
+    let arm = bg.nb[arms]
+    let pat = bg.na[arm]
+    scope_emit_pattern(src, bg, cx, code, fat, fb, subj, pat)
+    let nxt = emit_jump(code, 31)
+    if pat >= 0 && bg.na[pat] == 4 {
+        if scope_variant_en(src, bg, bg.nb[pat], bg.nc[pat]) < 0 {
+            let slot = add_local(bg, cx, bg.nb[pat], bg.nc[pat], 0)
+            code.push(8)
+            push_u32(code, subj)
+            code.push(9)
+            push_u32(code, slot)
+            code.push(6)
+        }
+    }
+    scope_emit_arm_value(src, bg, cx, code, fat, fb, arm, as_value)
+    ends.push(emit_jump(code, 30))
+    patch_at(code, fat, fb, nxt)
+}
+
+func scope_emit_match(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], sub: int, arms: int, as_value: int): unit {
+    let saved = cx.locals
+    emit_expr(src, bg, cx, code, fat, fb, sub)
+    let slot = add_local(bg, cx, 0, 0, 0)
+    code.push(9)
+    push_u32(code, slot)
+    code.push(6)
+    var ends: int[] = []
+    scope_emit_arms(src, bg, cx, code, fat, fb, arms, slot, as_value, ends)
+    if as_value != 0 {
+        code.push(52)
+        code.push(5)
+    }
+    var i = 0
+    while i < ends.len() {
+        patch_at(code, fat, fb, ends[i])
+        i = i + 1
+    }
+    cx.locals = saved
+    cx.expr_ty = 0
+}
+
+func scope_emit_for(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], nd: int): unit {
+    let saved = cx.locals
+    let is_arr = add_local(bg, cx, 0, 0, 0)
+    let iter = add_local(bg, cx, 0, 0, 0)
+    let idx = add_local(bg, cx, 0, 0, 0)
+    add_local(bg, cx, bg.na[nd], bg.nb[nd], 0)
+    let user = idx + 1
+    emit_expr(src, bg, cx, code, fat, fb, bg.nc[nd])
+    code.push(9)
+    push_u32(code, iter)
+    code.push(6)
+    code.push(8)
+    push_u32(code, iter)
+    code.push(56)
+    code.push(9)
+    push_u32(code, is_arr)
+    code.push(6)
+    code.push(1)
+    push_i64(code, 0)
+    code.push(9)
+    push_u32(code, idx)
+    code.push(6)
+    let head = code.len()
+    code.push(8)
+    push_u32(code, is_arr)
+    let to_int = emit_jump(code, 31)
+    code.push(8)
+    push_u32(code, idx)
+    code.push(8)
+    push_u32(code, iter)
+    code.push(49)
+    code.push(26)
+    let arr_exit = emit_jump(code, 31)
+    code.push(8)
+    push_u32(code, iter)
+    code.push(8)
+    push_u32(code, idx)
+    code.push(40)
+    code.push(9)
+    push_u32(code, user)
+    code.push(6)
+    let to_body = emit_jump(code, 30)
+    patch_at(code, fat, fb, to_int)
+    code.push(8)
+    push_u32(code, idx)
+    code.push(8)
+    push_u32(code, iter)
+    code.push(26)
+    let int_exit = emit_jump(code, 31)
+    code.push(8)
+    push_u32(code, idx)
+    code.push(9)
+    push_u32(code, user)
+    code.push(6)
+    patch_at(code, fat, fb, to_body)
+    scope_loop_enter(bg, cx, 0, 0)
+    if bg.nd[nd] >= 0 {
+        emit_stmt(src, bg, cx, code, fat, fb, bg.nd[nd])
+    }
+    scope_patch_cont(code, fat, fb, bg)
+    code.push(8)
+    push_u32(code, idx)
+    code.push(1)
+    push_i64(code, 1)
+    code.push(12)
+    code.push(9)
+    push_u32(code, idx)
+    code.push(6)
+    code.push(30)
+    let back_at = code.len()
+    let back = head - (back_at + 4)
+    push_u32(code, back)
+    patch_at(code, fat, fb, arr_exit)
+    patch_at(code, fat, fb, int_exit)
+    scope_patch_brk(code, fat, fb, bg)
+    scope_loop_leave(bg)
+    cx.locals = saved
+}
+
+func scope_emit_defer(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], call: int): unit {
+    if call < 0 || bg.nk[call] != 7 {
+        fail(cx)
+        return
+    }
+    let callee = bg.nb[call]
+    if callee < 0 || bg.nk[callee] != 4 {
+        fail(cx)
+        return
+    }
+    let fn = find_func(src, bg, bg.na[callee], bg.nb[callee])
+    if fn < 0 {
+        fail(cx)
+        return
+    }
+    emit_forward(src, bg, cx, code, fat, fb, bg.nc[call], 0)
+    code.push(53)
+    push_u32(code, fn)
+    push_u32(code, cons_count(bg, bg.nc[call]))
+}
+
+func scope_emit_pulsar(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], call: int): unit {
+    if call >= 0 && bg.nk[call] == 7 {
+        let callee = bg.nb[call]
+        if callee >= 0 && bg.nk[callee] == 4 {
+            let fn = find_func(src, bg, bg.na[callee], bg.nb[callee])
+            if fn >= 0 {
+                emit_forward(src, bg, cx, code, fat, fb, bg.nc[call], 0)
+                code.push(54)
+                push_u32(code, fn)
+                push_u32(code, cons_count(bg, bg.nc[call]))
+                return
+            }
+        }
+    }
+    if call >= 0 {
+        emit_expr(src, bg, cx, code, fat, fb, call)
+        code.push(6)
+    }
+}
+
+func scope_emit_stmt(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], nd: int): int {
+    let k = bg.nk[nd]
+    if k == 27 {
+        scope_emit_break(bg, cx, code)
+        return 1
+    }
+    if k == 28 {
+        scope_emit_continue(bg, cx, code)
+        return 1
+    }
+    if k == 29 {
+        scope_emit_for(src, bg, cx, code, fat, fb, nd)
+        return 1
+    }
+    if k == 30 {
+        scope_emit_match(src, bg, cx, code, fat, fb, bg.nb[nd], bg.nc[nd], 0)
+        return 1
+    }
+    if k == 31 {
+        scope_emit_defer(src, bg, cx, code, fat, fb, bg.nb[nd])
+        return 1
+    }
+    if k == 32 {
+        scope_emit_pulsar(src, bg, cx, code, fat, fb, bg.nb[nd])
+        return 1
+    }
+    return 0
+}
+
+func scope_write_fn_name(src: int[], bg: Bags, image: int[], i: int): unit {
+    if bg.fn_own[i] < 0 {
+        push_u32(image, bg.fn_nl[i])
+        var j = 0
+        while j < bg.fn_nl[i] {
+            image.push(src[bg.fn_ns[i] + j])
+            j = j + 1
+        }
+        return
+    }
+    let oi = bg.fn_own[i]
+    let ln = bg.st_nl[oi] + 1 + bg.fn_nl[i]
+    push_u32(image, ln)
+    var j = 0
+    while j < bg.st_nl[oi] {
+        image.push(src[bg.st_ns[oi] + j])
+        j = j + 1
+    }
+    image.push(46)
+    j = 0
+    while j < bg.fn_nl[i] {
+        image.push(src[bg.fn_ns[i] + j])
+        j = j + 1
+    }
+}

@@ -10,30 +10,27 @@
 #endif
 
 #include "emit_bc.h"
+#include "emit_internal.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct {
-    const char *name;
-    const char *type_name;
-    uint32_t index;
-} LocalVar;
+#define emit_unsupported eb_emit_unsupported
+#define add_local eb_add_local
+#define resolve_local eb_resolve_local
+#define resolve_func eb_resolve_func
+#define emit_byte eb_emit_byte
+#define emit_u32 eb_emit_u32
+#define emit_i64 eb_emit_i64
+#define emit_jump eb_emit_jump
+#define patch_jump eb_patch_jump
+#define compile_expr eb_compile_expr
+#define compile_stmt eb_compile_stmt
+#define emit_default_for_type eb_emit_default_for_type
+#define reject_unlowered_decl eb_reject_decl
 
-typedef struct {
-    SnArena *arena;
-    SnDiagSink *diag;
-    const SnUnit *unit;
-    SnBCUnit *bc;
-
-    SnFunctionChunk *current_fn;
-    LocalVar locals[256];
-    uint32_t local_count;
-    const char *expr_type_name;
-    int failed;
-} Compiler;
-
-static void emit_unsupported(Compiler *c, SnSpan span, const char *what) {
+void emit_unsupported(Compiler *c, SnSpan span, const char *what) {
     c->failed = 1;
     if (c->diag) {
         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_EMIT_UNSUPPORTED, span,
@@ -41,7 +38,7 @@ static void emit_unsupported(Compiler *c, SnSpan span, const char *what) {
     }
 }
 
-static uint32_t add_local(Compiler *c, const char *name, SnSpan span) {
+uint32_t add_local(Compiler *c, const char *name, SnSpan span) {
     if (c->local_count >= 256) {
         emit_unsupported(c, span, "local");
         return 0;
@@ -56,7 +53,7 @@ static uint32_t add_local(Compiler *c, const char *name, SnSpan span) {
     return idx;
 }
 
-static int resolve_local(Compiler *c, const char *name, uint32_t *out_idx) {
+int resolve_local(Compiler *c, const char *name, uint32_t *out_idx) {
     if (!name) return 0;
     for (int i = (int)c->local_count - 1; i >= 0; i--) {
         if (c->locals[i].name && strcmp(c->locals[i].name, name) == 0) {
@@ -67,7 +64,7 @@ static int resolve_local(Compiler *c, const char *name, uint32_t *out_idx) {
     return 0;
 }
 
-static int resolve_func(Compiler *c, const char *name, uint32_t *out_idx) {
+int resolve_func(Compiler *c, const char *name, uint32_t *out_idx) {
     for (size_t i = 0; i < c->bc->function_count; i++) {
         if (c->bc->functions[i]->name && strcmp(c->bc->functions[i]->name, name) == 0) {
             *out_idx = (uint32_t)i;
@@ -77,15 +74,15 @@ static int resolve_func(Compiler *c, const char *name, uint32_t *out_idx) {
     return 0;
 }
 
-static void emit_byte(Compiler *c, uint8_t b, uint32_t line) {
+void emit_byte(Compiler *c, uint8_t b, uint32_t line) {
     sn_chunk_write(&c->current_fn->chunk, b, line);
 }
 
-static void emit_u32(Compiler *c, uint32_t val, uint32_t line) {
+void emit_u32(Compiler *c, uint32_t val, uint32_t line) {
     sn_chunk_write_u32(&c->current_fn->chunk, val, line);
 }
 
-static void emit_i64(Compiler *c, int64_t val, uint32_t line) {
+void emit_i64(Compiler *c, int64_t val, uint32_t line) {
     sn_chunk_write_i64(&c->current_fn->chunk, val, line);
 }
 
@@ -93,14 +90,14 @@ static void emit_double(Compiler *c, double val, uint32_t line) {
     sn_chunk_write_double(&c->current_fn->chunk, val, line);
 }
 
-static size_t emit_jump(Compiler *c, SnOpcode op, uint32_t line) {
+size_t emit_jump(Compiler *c, SnOpcode op, uint32_t line) {
     emit_byte(c, (uint8_t)op, line);
     size_t pos = c->current_fn->chunk.count;
     emit_u32(c, 0, line); /* placeholder */
     return pos;
 }
 
-static void patch_jump(Compiler *c, size_t jump_offset_pos) {
+void patch_jump(Compiler *c, size_t jump_offset_pos) {
     int32_t offset = (int32_t)(c->current_fn->chunk.count - (jump_offset_pos + 4));
     uint8_t *p = &c->current_fn->chunk.code[jump_offset_pos];
     p[0] = (uint8_t)(offset & 0xFF);
@@ -109,8 +106,7 @@ static void patch_jump(Compiler *c, size_t jump_offset_pos) {
     p[3] = (uint8_t)((offset >> 24) & 0xFF);
 }
 
-static void compile_expr(Compiler *c, const SnExpr *e);
-static void compile_stmt(Compiler *c, const SnStmt *s);
+/* compile_expr and compile_stmt are eb_compile_expr / eb_compile_stmt. */
 
 /* `.len` / `.length`, `.push`, and `.get` are the array methods the checker
  * already types. `.get` is the same load as `xs[i]`. */
@@ -148,7 +144,8 @@ static const SnDecl *find_struct(const Compiler *c, const char *name) {
     }
     for (size_t i = 0; i < c->unit->decls.len; i++) {
         const SnDecl *d = SN_LIST_AT(c->unit->decls, SnDecl, i);
-        if (d && d->kind == SN_DECL_STRUCT && d->name && strcmp(d->name, name) == 0) {
+        if (d && (d->kind == SN_DECL_STRUCT || d->kind == SN_DECL_CLASS) &&
+            d->name && strcmp(d->name, name) == 0) {
             return d;
         }
     }
@@ -190,7 +187,7 @@ static const char *field_type_name(const SnDecl *field) {
     return NULL;
 }
 
-static void emit_default_for_type(Compiler *c, const SnType *type, uint32_t line) {
+void emit_default_for_type(Compiler *c, const SnType *type, uint32_t line) {
     const char *n = (type && type->kind == SN_TYPE_NAME && type->name) ? type->name : "";
     if (strcmp(n, "bool") == 0) {
         emit_byte(c, OP_CONST_BOOL, line);
@@ -246,7 +243,7 @@ static void emit_oror(Compiler *c, const SnExpr *e, uint32_t line) {
 /* A type declaration has no opcode. It is a dropped program only when it
  * carries code this pass does not lower: a nested routine, an initializer,
  * or an accessor projection. A field-only struct is not one of those. */
-static void reject_unlowered_decl(Compiler *c, const SnDecl *d) {
+void reject_unlowered_decl(Compiler *c, const SnDecl *d) {
     if (!d) {
         return;
     }
@@ -270,7 +267,7 @@ static void reject_unlowered_decl(Compiler *c, const SnDecl *d) {
     }
 }
 
-static void compile_expr(Compiler *c, const SnExpr *e) {
+void compile_expr(Compiler *c, const SnExpr *e) {
     const char *produced = NULL;
     if (!e) {
         emit_unsupported(c, (SnSpan){0}, "missing expression");
@@ -278,6 +275,9 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
         return;
     }
     uint32_t line = e->span.line;
+    if (eb_try_expr(c, e)) {
+        return;
+    }
 
     switch (e->kind) {
     case SN_EXPR_INT:
@@ -588,9 +588,12 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
     c->expr_type_name = produced;
 }
 
-static void compile_stmt(Compiler *c, const SnStmt *s) {
+void compile_stmt(Compiler *c, const SnStmt *s) {
     if (!s) return;
     uint32_t line = s->span.line;
+    if (eb_try_stmt(c, s)) {
+        return;
+    }
 
     switch (s->kind) {
     case SN_STMT_EXPR:
@@ -638,6 +641,7 @@ static void compile_stmt(Compiler *c, const SnStmt *s) {
     }
     case SN_STMT_WHILE: {
         size_t loop_start = c->current_fn->chunk.count;
+        eb_loop_push(c, 1, loop_start);
         compile_expr(c, s->expr);
         size_t exit_jump = emit_jump(c, OP_JUMP_IF_FALSE, line);
         compile_stmt(c, s->then_br);
@@ -645,6 +649,8 @@ static void compile_stmt(Compiler *c, const SnStmt *s) {
         int32_t loop_offset = (int32_t)(loop_start - (c->current_fn->chunk.count + 4));
         emit_u32(c, (uint32_t)loop_offset, line);
         patch_jump(c, exit_jump);
+        eb_loop_patch_breaks(c);
+        eb_loop_pop(c);
         break;
     }
     case SN_STMT_BLOCK: {
@@ -673,47 +679,15 @@ int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCU
     c.local_count = 0;
     c.expr_type_name = NULL;
     c.failed = 0;
+    c.owner = NULL;
+    c.loop_top = -1;
+    memset(c.fn_async, 0, sizeof(c.fn_async));
+    memset(c.fn_pulsar, 0, sizeof(c.fn_pulsar));
 
-    /* First pass: register function prototypes. Any other declaration is
-     * still in the program, so dropping it would publish a partial image. */
-    for (size_t i = 0; i < unit->decls.len; i++) {
-        const SnDecl *d = SN_LIST_AT(unit->decls, SnDecl, i);
-        if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
-            uint32_t fn_idx = sn_bcunit_add_function(out, d->name, (uint32_t)d->params.len);
-            if (d->name && strcmp(d->name, "main") == 0) {
-                out->main_func_idx = fn_idx;
-            }
-        } else {
-            reject_unlowered_decl(&c, d);
-        }
-    }
-
-    /* Second pass: compile function bodies */
-    for (size_t i = 0; i < unit->decls.len; i++) {
-        const SnDecl *d = SN_LIST_AT(unit->decls, SnDecl, i);
-        if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
-            uint32_t fn_idx = 0;
-            resolve_func(&c, d->name, &fn_idx);
-            c.current_fn = out->functions[fn_idx];
-            c.local_count = 0;
-
-            for (size_t pi = 0; pi < d->params.len; pi++) {
-                const SnParam *p = SN_LIST_AT(d->params, SnParam, pi);
-                uint32_t idx = add_local(&c, p->name, p->span);
-                if (p->type && p->type->kind == SN_TYPE_NAME) {
-                    c.locals[idx].type_name = p->type->name;
-                }
-            }
-
-            if (d->body) {
-                compile_stmt(&c, d->body);
-            } else {
-                emit_unsupported(&c, d->span, "function without a body");
-            }
-            emit_byte(&c, OP_CONST_UNIT, d->span.line);
-            emit_byte(&c, OP_RETURN, d->span.line);
-        }
-    }
+    /* Register every routine, then lower its body. A type with no routine
+     * is not a dropped program. A routine with no body is a declaration. */
+    eb_register_unit(&c);
+    eb_compile_unit(&c);
 
     return c.failed ? 0 : 1;
 }

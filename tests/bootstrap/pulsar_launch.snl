@@ -1,0 +1,12 @@
+package tests.bootstrap.pulsar_launch
+
+import builtin.console.Console
+
+pulsar func worker(): unit {
+    Console.printline("p")
+}
+
+func main(): int {
+    pulsar worker()
+    return 3
+}

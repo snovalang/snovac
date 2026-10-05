@@ -1,0 +1,366 @@
+// Scope lowering for the self-hosted compiler. Concatenated after compiler.snl.
+// Token kinds: 47 break, 48 continue, 49 null, 50 class, 51 enum, 52 trait,
+// 53 match, 54 async, 55 await, 56 pulsar, 57 for, 58 defer, 59 in,
+// 60 method, 61 private, 62 arrow, 63 question.
+
+func classify_scope(src: int[], s: int, n: int): int {
+    if is_word(src, s, n, 5, 98, 114, 101, 97, 107, 0, 0, 0, 0, 0, 0, 0) { return 47 }
+    if is_word(src, s, n, 8, 99, 111, 110, 116, 105, 110, 117, 101, 0, 0, 0, 0) { return 48 }
+    if is_word(src, s, n, 4, 110, 117, 108, 108, 0, 0, 0, 0, 0, 0, 0, 0) { return 49 }
+    if is_word(src, s, n, 5, 99, 108, 97, 115, 115, 0, 0, 0, 0, 0, 0, 0) { return 50 }
+    if is_word(src, s, n, 4, 101, 110, 117, 109, 0, 0, 0, 0, 0, 0, 0, 0) { return 51 }
+    if is_word(src, s, n, 5, 116, 114, 97, 105, 116, 0, 0, 0, 0, 0, 0, 0) { return 52 }
+    if is_word(src, s, n, 5, 109, 97, 116, 99, 104, 0, 0, 0, 0, 0, 0, 0) { return 53 }
+    if is_word(src, s, n, 5, 97, 115, 121, 110, 99, 0, 0, 0, 0, 0, 0, 0) { return 54 }
+    if is_word(src, s, n, 5, 97, 119, 97, 105, 116, 0, 0, 0, 0, 0, 0, 0) { return 55 }
+    if is_word(src, s, n, 6, 112, 117, 108, 115, 97, 114, 0, 0, 0, 0, 0, 0) { return 56 }
+    if is_word(src, s, n, 3, 102, 111, 114, 0, 0, 0, 0, 0, 0, 0, 0, 0) { return 57 }
+    if is_word(src, s, n, 5, 100, 101, 102, 101, 114, 0, 0, 0, 0, 0, 0, 0) { return 58 }
+    if is_word(src, s, n, 2, 105, 110, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) { return 59 }
+    if is_word(src, s, n, 6, 109, 101, 116, 104, 111, 100, 0, 0, 0, 0, 0, 0) { return 60 }
+    if is_word(src, s, n, 7, 112, 114, 105, 118, 97, 116, 101, 0, 0, 0, 0, 0) { return 61 }
+    return 1
+}
+
+func scope_type_suffix(bg: Bags, cx: Cx): unit {
+    if at_tok(bg, cx, 63) { bump(cx) }
+}
+
+func scope_mod_async(bg: Bags, cx: Cx): bool {
+    if kind_of(bg, cx) != 54 { return false }
+    let n = peek_kind(bg, cx, 1)
+    if n == 9 { return true }
+    if n == 60 { return true }
+    if n == 56 { return true }
+    return false
+}
+
+func scope_mod_pulsar(bg: Bags, cx: Cx): bool {
+    if kind_of(bg, cx) != 56 { return false }
+    let n = peek_kind(bg, cx, 1)
+    if n == 9 { return true }
+    if n == 60 { return true }
+    if n == 54 { return true }
+    return false
+}
+
+func scope_take_mods(src: int[], bg: Bags, cx: Cx): unit {
+    cx.decl_async = 0
+    cx.decl_pulsar = 0
+    cx.decl_owner = -1
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            if at_tok(bg, cx, 10) || at_tok(bg, cx, 61) {
+                bump(cx)
+            } else {
+                if scope_mod_async(bg, cx) {
+                    bump(cx)
+                    cx.decl_async = 1
+                } else {
+                    if scope_mod_pulsar(bg, cx) {
+                        bump(cx)
+                        cx.decl_pulsar = 1
+                    } else {
+                        go = 0
+                    }
+                }
+            }
+        }
+    }
+}
+
+func scope_skip_to_brace(bg: Bags, cx: Cx): unit {
+    if at_tok(bg, cx, 23) {
+        var go = 1
+        while go == 1 {
+            if cx.failed != 0 { go = 0 }
+            else {
+                if at_tok(bg, cx, 19) || kind_of(bg, cx) == 0 {
+                    go = 0
+                } else {
+                    bump(cx)
+                }
+            }
+        }
+    }
+}
+
+func scope_parse_field(src: int[], bg: Bags, cx: Cx, st: int): unit {
+    if at_tok(bg, cx, 11) || at_tok(bg, cx, 12) { bump(cx) }
+    if kind_of(bg, cx) != 1 {
+        fail(cx)
+        return
+    }
+    let fs = bg.ts[cx.pos]
+    let fl = bg.tn[cx.pos]
+    bump(cx)
+    expect_tok(bg, cx, 23)
+    let ty = parse_type(src, bg, cx)
+    var init = -1
+    if at_tok(bg, cx, 27) {
+        bump(cx)
+        init = parse_expr(src, bg, cx, 1)
+    }
+    accept_tok(bg, cx, 24)
+    accept_tok(bg, cx, 25)
+    bg.fd_st.push(st)
+    bg.fd_ns.push(fs)
+    bg.fd_nl.push(fl)
+    bg.fd_ty.push(ty)
+    bg.fd_init.push(init)
+}
+
+func scope_parse_type_body(src: int[], bg: Bags, cx: Cx, st: int): unit {
+    expect_tok(bg, cx, 19)
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            if at_tok(bg, cx, 20) || kind_of(bg, cx) == 0 {
+                go = 0
+            } else {
+                scope_take_mods(src, bg, cx)
+                cx.decl_owner = st
+                if at_tok(bg, cx, 60) || at_tok(bg, cx, 9) {
+                    parse_func(src, bg, cx)
+                } else {
+                    if at_tok(bg, cx, 11) || at_tok(bg, cx, 12) || kind_of(bg, cx) == 1 {
+                        scope_parse_field(src, bg, cx, st)
+                    } else {
+                        fail(cx)
+                        go = 0
+                    }
+                }
+            }
+        }
+    }
+    expect_tok(bg, cx, 20)
+}
+
+func scope_parse_class(src: int[], bg: Bags, cx: Cx, kind: int): unit {
+    bump(cx)
+    if kind_of(bg, cx) != 1 {
+        fail(cx)
+        return
+    }
+    let ns = bg.ts[cx.pos]
+    let nl = bg.tn[cx.pos]
+    bump(cx)
+    let st = bg.st_ns.len()
+    bg.st_ns.push(ns)
+    bg.st_nl.push(nl)
+    bg.st_kind.push(kind)
+    scope_skip_to_brace(bg, cx)
+    scope_parse_type_body(src, bg, cx, st)
+}
+
+func scope_parse_enum(src: int[], bg: Bags, cx: Cx): unit {
+    bump(cx)
+    if kind_of(bg, cx) != 1 {
+        fail(cx)
+        return
+    }
+    let ns = bg.ts[cx.pos]
+    let nl = bg.tn[cx.pos]
+    bump(cx)
+    let st = bg.st_ns.len()
+    bg.st_ns.push(ns)
+    bg.st_nl.push(nl)
+    bg.st_kind.push(3)
+    scope_skip_to_brace(bg, cx)
+    expect_tok(bg, cx, 19)
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            if at_tok(bg, cx, 20) || kind_of(bg, cx) == 0 {
+                go = 0
+            } else {
+                if at_tok(bg, cx, 60) || at_tok(bg, cx, 9) || at_tok(bg, cx, 10) || at_tok(bg, cx, 61) {
+                    scope_take_mods(src, bg, cx)
+                    cx.decl_owner = st
+                    parse_func(src, bg, cx)
+                } else {
+                    if kind_of(bg, cx) != 1 {
+                        fail(cx)
+                        go = 0
+                    } else {
+                        bg.va_ns.push(bg.ts[cx.pos])
+                        bg.va_nl.push(bg.tn[cx.pos])
+                        bg.va_en.push(st)
+                        bump(cx)
+                        accept_tok(bg, cx, 25)
+                    }
+                }
+            }
+        }
+    }
+    expect_tok(bg, cx, 20)
+}
+
+func parse_scope_decl(src: int[], bg: Bags, cx: Cx): int {
+    if at_tok(bg, cx, 50) {
+        scope_parse_class(src, bg, cx, 1)
+        return 1
+    }
+    if at_tok(bg, cx, 52) {
+        scope_parse_class(src, bg, cx, 2)
+        return 1
+    }
+    if at_tok(bg, cx, 51) {
+        scope_parse_enum(src, bg, cx)
+        return 1
+    }
+    return 0
+}
+
+func scope_variant_en(src: int[], bg: Bags, s: int, n: int): int {
+    var i = 0
+    while i < bg.va_ns.len() {
+        if span_eq(src, bg.va_ns[i], bg.va_nl[i], s, n) { return bg.va_en[i] }
+        i = i + 1
+    }
+    return -1
+}
+
+func scope_parse_pattern(src: int[], bg: Bags, cx: Cx): int {
+    if kind_of(bg, cx) == 2 {
+        let lit = parse_primary(src, bg, cx)
+        return node(bg, 33, 2, lit, -1, -1)
+    }
+    if kind_of(bg, cx) == 1 && bg.tn[cx.pos] == 1 && src[bg.ts[cx.pos]] == 95 {
+        bump(cx)
+        return node(bg, 33, 1, 0, 0, -1)
+    }
+    if kind_of(bg, cx) != 1 {
+        fail(cx)
+        return node(bg, 33, 1, 0, 0, -1)
+    }
+    var s = bg.ts[cx.pos]
+    var n = bg.tn[cx.pos]
+    bump(cx)
+    if at_tok(bg, cx, 26) {
+        bump(cx)
+        if kind_of(bg, cx) != 1 {
+            fail(cx)
+            return node(bg, 33, 1, 0, 0, -1)
+        }
+        s = bg.ts[cx.pos]
+        n = bg.tn[cx.pos]
+        bump(cx)
+        return node(bg, 33, 3, s, n, -1)
+    }
+    if scope_variant_en(src, bg, s, n) >= 0 {
+        return node(bg, 33, 3, s, n, -1)
+    }
+    return node(bg, 33, 4, s, n, -1)
+}
+
+func scope_parse_arms(src: int[], bg: Bags, cx: Cx): int {
+    expect_tok(bg, cx, 19)
+    var head = -1
+    var go = 1
+    while go == 1 {
+        if cx.failed != 0 {
+            go = 0
+        } else {
+            if at_tok(bg, cx, 20) || kind_of(bg, cx) == 0 {
+                go = 0
+            } else {
+                let pat = scope_parse_pattern(src, bg, cx)
+                expect_tok(bg, cx, 62)
+                let val = parse_expr(src, bg, cx, 1)
+                accept_tok(bg, cx, 25)
+                let arm = node(bg, 34, pat, val, -1, -1)
+                head = node(bg, 13, 0, arm, head, -1)
+            }
+        }
+    }
+    expect_tok(bg, cx, 20)
+    return head
+}
+
+func scope_parse_match(src: int[], bg: Bags, cx: Cx, as_stmt: int): int {
+    bump(cx)
+    let saved = cx.no_struct
+    cx.no_struct = 1
+    let sub = parse_expr(src, bg, cx, 1)
+    cx.no_struct = saved
+    let arms = scope_parse_arms(src, bg, cx)
+    if as_stmt == 1 {
+        return node(bg, 30, 0, sub, arms, -1)
+    }
+    return node(bg, 17, 0, sub, arms, -1)
+}
+
+func parse_scope_primary(src: int[], bg: Bags, cx: Cx): int {
+    if kind_of(bg, cx) == 49 {
+        bump(cx)
+        return node(bg, 15, 0, -1, -1, -1)
+    }
+    if kind_of(bg, cx) == 55 {
+        bump(cx)
+        let inner = parse_expr(src, bg, cx, 12)
+        return node(bg, 16, 0, inner, -1, -1)
+    }
+    if kind_of(bg, cx) == 53 {
+        return scope_parse_match(src, bg, cx, 0)
+    }
+    return -2
+}
+
+func scope_parse_for(src: int[], bg: Bags, cx: Cx): int {
+    bump(cx)
+    accept_tok(bg, cx, 11)
+    accept_tok(bg, cx, 12)
+    if kind_of(bg, cx) != 1 {
+        fail(cx)
+        return -1
+    }
+    let ns = bg.ts[cx.pos]
+    let nl = bg.tn[cx.pos]
+    bump(cx)
+    if at_tok(bg, cx, 23) {
+        bump(cx)
+        parse_type(src, bg, cx)
+    }
+    expect_tok(bg, cx, 59)
+    let iter = parse_expr(src, bg, cx, 1)
+    let body = parse_block(src, bg, cx)
+    return node(bg, 29, ns, nl, iter, body)
+}
+
+func parse_scope_stmt(src: int[], bg: Bags, cx: Cx): int {
+    let k = kind_of(bg, cx)
+    if k == 47 {
+        bump(cx)
+        accept_tok(bg, cx, 24)
+        return node(bg, 27, 0, -1, -1, -1)
+    }
+    if k == 48 {
+        bump(cx)
+        accept_tok(bg, cx, 24)
+        return node(bg, 28, 0, -1, -1, -1)
+    }
+    if k == 57 { return scope_parse_for(src, bg, cx) }
+    if k == 53 { return scope_parse_match(src, bg, cx, 1) }
+    if k == 58 {
+        bump(cx)
+        let e = parse_expr(src, bg, cx, 1)
+        accept_tok(bg, cx, 24)
+        return node(bg, 31, 0, e, -1, -1)
+    }
+    if k == 56 {
+        bump(cx)
+        let e = parse_expr(src, bg, cx, 1)
+        accept_tok(bg, cx, 24)
+        return node(bg, 32, 0, e, -1, -1)
+    }
+    return -2
+}
+

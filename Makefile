@@ -42,7 +42,7 @@ SRCS = src/driver/main.c src/driver/driver_utils.c src/driver/project.c \
        src/driver/cmd_check.c src/driver/cmd_lex_parse.c src/driver/cmd_run.c \
        src/driver/cmd_build.c src/driver/cmd_tidy.c src/driver/cmd_get.c \
        src/driver/cmd_emit_snbc.c src/driver/cmd_run_snbc.c \
-       src/native/target.c src/native/native_backend.c \
+       src/native/target.c src/native/native_backend.c src/native/native_scope.c \
        src/eval/pulsar.c src/eval/async.c \
        src/ast/dump.c src/ast/ast.c \
        src/lex/lex.c src/lex/lex_token.c src/lex/lex_literal.c \
@@ -57,7 +57,7 @@ SRCS = src/driver/main.c src/driver/driver_utils.c src/driver/project.c \
        src/sema/builtins.c src/sema/check.c src/sema/check_ptr.c \
        src/sema/borrow.c src/sema/borrow_expr.c src/sema/borrow_flow.c \
        src/sema/borrow_task.c \
-       src/bc/snbc.c src/bc/emit_bc.c
+       src/bc/snbc.c src/bc/emit_bc.c src/bc/emit_scope.c
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
 DEPS = $(OBJS:.o=.d)
 

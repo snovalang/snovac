@@ -758,29 +758,46 @@ reject_lower() {
   assert "emit-snbc: $label reports SNOVA0400" 1 "$reported"
 }
 
-printf 'package tests.bootstrap.drop_null\n\nfunc main(): int {\n    return null\n}\n' > "$SNBC_DIR/drop_null.snl"
 printf 'package tests.bootstrap.drop_break\n\nfunc main(): int {\n    break\n    return 0\n}\n' > "$SNBC_DIR/drop_break.snl"
-printf 'package tests.bootstrap.drop_body\n\nfunc main(): int\n' > "$SNBC_DIR/drop_body.snl"
-reject_lower "drop_null" "$SNBC_DIR/drop_null.snl"
 reject_lower "drop_break" "$SNBC_DIR/drop_break.snl"
-reject_lower "drop_body" "$SNBC_DIR/drop_body.snl"
-reject_lower "classes" "$DIR/compile-pass/classes.snl"
+
+agree_exec "break_while" "$DIR/bootstrap/break_while.snl" 3 "" "$SNBC_DIR"
+agree_exec "continue_while" "$DIR/bootstrap/continue_while.snl" 12 "" "$SNBC_DIR"
+agree_exec "null_print" "$DIR/bootstrap/null_print.snl" 0 "null
+" "$SNBC_DIR"
+agree_exec "bodyless" "$DIR/bootstrap/bodyless.snl" 4 "" "$SNBC_DIR"
+agree_exec "bodyless_main" "$DIR/bootstrap/bodyless_main.snl" 1 "" "$SNBC_DIR"
+agree_exec "for_int" "$DIR/bootstrap/for_int.snl" 6 "" "$SNBC_DIR"
+agree_exec "for_array" "$DIR/bootstrap/for_array.snl" 4 "" "$SNBC_DIR"
+agree_exec "match_int" "$DIR/bootstrap/match_int.snl" 20 "" "$SNBC_DIR"
+agree_exec "defer_order" "$DIR/bootstrap/defer_order.snl" 5 "first
+second
+" "$SNBC_DIR"
+agree_exec "async_await" "$DIR/bootstrap/async_await.snl" 4 "" "$SNBC_DIR"
+agree_exec "pulsar_launch" "$DIR/bootstrap/pulsar_launch.snl" 3 "p
+" "$SNBC_DIR"
+agree_exec "class_method" "$DIR/bootstrap/class_method.snl" 4 "" "$SNBC_DIR"
+agree_exec "enum_match" "$DIR/bootstrap/enum_match.snl" 1 "" "$SNBC_DIR"
+agree_exec "trait_decl" "$DIR/bootstrap/trait_decl.snl" 6 "" "$SNBC_DIR"
+agree_exec "classes" "$DIR/compile-pass/classes.snl" 0 "ok
+" "$SNBC_DIR"
 
 # Snova compiler. V0 emits it, run-snbc executes it, and the image it writes
 # matches the image V0 writes. On its own source that match is the guinea pig
 # and the first Snova generation. A second run of that image is the next
 # generation.
-COMPILER="$DIR/../bootstrap/src/compiler.snl"
 CC_ROOT="$(mktemp -d)"
+COMPILER="$CC_ROOT/compiler-unit.snl"
+sh "$DIR/../bootstrap/src/join.sh" > "$COMPILER"
 C1="$CC_ROOT/compiler.snbc"
 C1B="$CC_ROOT/compiler-b.snbc"
-assert "emit-snbc: compiler.snl succeeds" 0 \
+assert "emit-snbc: compiler unit succeeds" 0 \
   "$(rc_of "$SNL_ABS" emit-snbc "$COMPILER" -o "$C1")"
-assert "emit-snbc: compiler.snl second run succeeds" 0 \
+assert "emit-snbc: compiler unit second run succeeds" 0 \
   "$(rc_of "$SNL_ABS" emit-snbc "$COMPILER" -o "$C1B")"
 compiler_images=0
 cmp -s "$C1" "$C1B" || compiler_images=$?
-assert "emit-snbc: compiler.snl images match" 0 "$compiler_images"
+assert "emit-snbc: compiler unit images match" 0 "$compiler_images"
 
 compiler_case() {
   label="$1"
@@ -843,25 +860,19 @@ compiler_case "comment" 5 "$CC_ROOT/tiny-comment.snl"
 printf 'package p\n\nfunc main(): int {\n    let x = 1\n    return x\n}\n' > "$CC_ROOT/tiny-let.snl"
 compiler_case "let" 1 "$CC_ROOT/tiny-let.snl"
 
-printf 'package p\n\nfunc main(): int {\n    break\n    return 0\n}\n' > "$CC_ROOT/tiny-break.snl"
-BRK_WORK="$CC_ROOT/cc-break"
-mkdir -p "$BRK_WORK"
-cp "$CC_ROOT/tiny-break.snl" "$BRK_WORK/in.snl"
-if (cd "$BRK_WORK" && "$SNL_ABS" run-snbc "$C1" >"$BRK_WORK/run.out"); then
-  brk_rc=0
-else
-  brk_rc=$?
-fi
-assert "compiler: break is refused" 1 "$brk_rc"
-brk_msg=0
-grep -c 'cannot compile in.snl' "$BRK_WORK/run.out" >"$BRK_WORK/msg.count" || true
-brk_msg=$(cat "$BRK_WORK/msg.count")
-assert "compiler: break reports the refusal" 1 "$brk_msg"
-brk_present=0
-if [ -f "$BRK_WORK/out.snbc" ]; then
-  brk_present=1
-fi
-assert "compiler: break writes no image" 0 "$brk_present"
+compiler_case "break" 3 "$DIR/bootstrap/break_while.snl"
+compiler_case "continue" 12 "$DIR/bootstrap/continue_while.snl"
+compiler_case "null" 0 "$DIR/bootstrap/null_print.snl"
+compiler_case "bodyless" 4 "$DIR/bootstrap/bodyless.snl"
+compiler_case "for" 6 "$DIR/bootstrap/for_int.snl"
+compiler_case "match" 20 "$DIR/bootstrap/match_int.snl"
+compiler_case "defer" 5 "$DIR/bootstrap/defer_order.snl"
+compiler_case "async" 4 "$DIR/bootstrap/async_await.snl"
+compiler_case "pulsar" 3 "$DIR/bootstrap/pulsar_launch.snl"
+compiler_case "class" 4 "$DIR/bootstrap/class_method.snl"
+compiler_case "enum" 1 "$DIR/bootstrap/enum_match.snl"
+compiler_case "trait" 6 "$DIR/bootstrap/trait_decl.snl"
+compiler_case "classes" 0 "$DIR/compile-pass/classes.snl"
 
 # Guinea pig image, then the same image compiling its source again.
 SELF="$CC_ROOT/self"

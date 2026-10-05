@@ -1,0 +1,17 @@
+package tests.bootstrap.enum_match
+
+enum Direction {
+    North
+    East
+    South
+    West
+}
+
+func main(): int {
+    let d = Direction.North
+    return match d {
+        Direction.North -> 1
+        Direction.East -> 2
+        _ -> 0
+    }
+}

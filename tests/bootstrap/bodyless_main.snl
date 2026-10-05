@@ -1,0 +1,3 @@
+package tests.bootstrap.bodyless_main
+
+func main(): int
