@@ -248,31 +248,12 @@ void sn_resolver_build_prelude(SnResolver *r) {
 
 /* ── name resolution ──────────────────────────────────────────────────────── */
 
+#include "builtins.h"
+
 static SnTypeRep *primitive_by_name(SnResolver *r, const char *iname) {
-    SnInternTable *it = r->intern;
-    if (iname == sn_intern_cstr(it, "int")) return sn_type_int(r->types);
-    if (iname == sn_intern_cstr(it, "string")) return sn_type_string(r->types);
-    if (iname == sn_intern_cstr(it, "bool")) return sn_type_bool(r->types);
-    if (iname == sn_intern_cstr(it, "unit")) return sn_type_unit(r->types);
-    if (iname == sn_intern_cstr(it, "long")) return sn_type_long(r->types);
-    if (iname == sn_intern_cstr(it, "double")) return sn_type_double(r->types);
-    if (iname == sn_intern_cstr(it, "decimal")) return sn_type_decimal(r->types);
-    if (iname == sn_intern_cstr(it, "char")) return sn_type_char(r->types);
-    /* Also intrinsic, and also declared by no .snl file anywhere (measured
-     * the same way as the seven above): `any`, `float` and `byte` are used in
-     * builtin signatures (`func printline(value: any)`) and are on the Rust
-     * frontend's builtin-type list too — see
-     * crates/snovalang/src/native/selfcheck/static_facts.rs. Without them the
-     * checker reported SNOVA0027 for every builtin signature mentioning one. */
-    if (iname == sn_intern_cstr(it, "any")) return sn_type_any(r->types);
-    if (iname == sn_intern_cstr(it, "float")) return sn_type_float(r->types);
-    if (iname == sn_intern_cstr(it, "byte")) return sn_type_byte(r->types);
-    if (iname == sn_intern_cstr(it, "int8")) return sn_type_int8(r->types);
-    if (iname == sn_intern_cstr(it, "int16")) return sn_type_int16(r->types);
-    if (iname == sn_intern_cstr(it, "int32")) return sn_type_int32(r->types);
-    if (iname == sn_intern_cstr(it, "int64")) return sn_type_int64(r->types);
-    if (iname == sn_intern_cstr(it, "int128")) return sn_type_int128(r->types);
-    return NULL;
+    /* `iname` is interned, so it is a stable C string. The catalog is the
+     * same table the language server completes and highlights. */
+    return sn_builtin_primitive_type(r->types, iname);
 }
 
 /* `Int`/`String`/... — accepted, mapped to the primitive, and warned about.

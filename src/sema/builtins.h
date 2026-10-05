@@ -83,4 +83,16 @@ SnTypeRep *sn_builtin_index_result(SnTypeTable *t, SnInternTable *it,
 SnTypeRep *sn_builtin_static_member(SnTypeTable *t, SnInternTable *it,
                                     const SnTypeRep *recv, const char *iname);
 
+/* Intrinsic primitive spellings (`int`, `string`, `int32`, …). These are
+ * compiler types, not symbols declared in a `.snl` file. Tools (the resolver,
+ * the language server) must use this table so a new primitive cannot be
+ * accepted by `snl check` and rejected or unhighlighted by the editor. */
+size_t sn_builtin_primitive_count(void);
+const char *sn_builtin_primitive_name(size_t index);
+const char *sn_builtin_primitive_detail(size_t index);
+/* `name` is a raw C string. Returns the intrinsic type, or NULL. Does not
+ * accept the legacy capitalized spellings (`Int`, `String`). */
+SnTypeRep *sn_builtin_primitive_type(SnTypeTable *t, const char *name);
+int sn_builtin_is_primitive_name(const char *name);
+
 #endif /* SNOVAC_BUILTINS_H */
