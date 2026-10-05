@@ -96,7 +96,11 @@ jobs:
       - name: Run Test Gates (Windows)
         if: matrix.os == 'windows'
         shell: msys2 {0}
-        run: make test OS=Windows_NT EXTRA_LIBS="-lws2_32 -static"
+        run: |
+          # MinGW test binaries call mkdtemp("/tmp/..."). UCRT opens that as
+          # C:\tmp, which is not the MSYS /tmp mount.
+          mkdir -p /c/tmp
+          make test OS=Windows_NT EXTRA_LIBS="-lws2_32 -static"
 
       - name: Package release artifact
         if: matrix.os != 'windows'
