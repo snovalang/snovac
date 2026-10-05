@@ -85,7 +85,8 @@ jobs:
           ADDITIONAL_CONTEXT: ${{ steps.pr_info.outputs.context }}
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          gemini_model: "gemini-3.8-flash"
+          gcp_project_id: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          gemini_model: "gemini-3.1-pro-preview"
           workflow_name: "gemini-review"
           github_pr_number: ${{ steps.pr_info.outputs.number }}
           settings: |-

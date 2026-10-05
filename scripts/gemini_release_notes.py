@@ -25,7 +25,7 @@ from pathlib import Path
 
 MARKER = "<!-- gemini-release -->"
 NOTE_HEADINGS = ("## Features", "## Bug fixes", "## Breaking changes")
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro-preview")
 ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     + MODEL
