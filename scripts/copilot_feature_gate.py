@@ -11,8 +11,8 @@ CONTEXT = (
     "snovac: a new or changed compiler feature is unfinished until it has a "
     "fixture under tests/ (compile-pass, compile-fail, or run-pass) or an "
     "assertion in tests/test_*.c, and `make test` has exited 0 in this "
-    "session. Do not edit SNOVAC_VERSION. SemVer is chosen only by the "
-    "manual GitHub Actions workflow \"Release with Copilot semver\"."
+    "session. Do not edit SNOVAC_VERSION. The release tag is chosen only when "
+    "a person runs the manual workflow \"Release Snovac Compiler\"."
 )
 
 
