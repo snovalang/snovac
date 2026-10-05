@@ -34,6 +34,9 @@
 #define SNOVA_BAD_ACCESSOR       105
 #define SNOVA_EXPECTED_TOKEN     106
 #define SNOVA_EXPECTED_NAME      107
+/* An inner or anonymous `func` is an immediate call: `func test() { }(args)`.
+ * A top-level `func` declaration is not. */
+#define SNOVA_INNER_FUNC_CALL    148
 /* Canonical, not new: docs/snovalang-diagnostics.md already documents
  * SNOVA008 as "Unclosed `{` delimiter" — snovac just never emitted it,
  * falling back to the generic SNOVA_EXPECTED_TOKEN (106) whenever a block
@@ -205,6 +208,7 @@ SnPattern *sn_parse_pattern(P *p);
 
 /* parse_expr.c */
 SnExpr *sn_parse_expr(P *p);
+void sn_parse_call_args(P *p, SnExpr *call);
 
 /* parse_primary.c */
 SnExpr *sn_parse_primary(P *p);
