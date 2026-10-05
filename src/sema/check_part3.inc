@@ -217,7 +217,8 @@ static SnTypeRep *named_with_type_args(SnChecker *c, SnSymbol *type_sym,
     return sn_type_named(c->types, type_sym, args, (uint32_t)call->type_args.len);
 }
 
-/* Construction: `Point(3.0, 4.0)`, `Counter(0)`, `HealthCheck()`.
+/* Class construction: `Counter(0)`, `HealthCheck()`. A struct call is rejected
+ * before this runs (`SNOVA_STRUCT_BRACE_INIT`); struct values use braces.
  *
  * ast.h already records the shape ("Construction has no `new` keyword"), and
  * no fixture or builtin file declares a constructor member — the class/struct

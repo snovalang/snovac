@@ -20,10 +20,10 @@ func main(): int {
     let args = Args.count()
     let env = Env.get("PATH")
     let instant = now()
-    let path = Path()
-    let file = File()
-    let pipe = Pipe()
-    let uuid = Uuid()
+    let path = Path{}
+    let file = File{}
+    let pipe = Pipe{}
+    let uuid = Uuid{}
     Console.printline("stdlib layer 0-1 compile")
     return 0
 }

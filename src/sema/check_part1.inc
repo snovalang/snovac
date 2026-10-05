@@ -103,7 +103,7 @@ static int is_error(const SnTypeRep *t) { return t->tag == SN_T_ERROR; }
 
 /* An UNSUFFIXED numeric literal carries no committed type until context gives
  * it one: `3.0` is an equally valid `decimal` (tests/compile-pass/structs.snl
- * writes `Point(3.0, 4.0)` for two `decimal` fields), `float`
+ * writes `Point{3.0, 4.0}` for two `decimal` fields), `float`
  * (tests/compile-pass/data_class.snl) or `double`.
  *
  * This is NOT the implicit numeric promotion ratified as forbidden (plan.md §7

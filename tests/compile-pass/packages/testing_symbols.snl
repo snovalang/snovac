@@ -6,9 +6,9 @@ struct TestResult {
     func isFailed(): bool { return false }
 }
 struct Assert {
-    static method isTrue(a: bool, b: string): TestResult { return TestResult() }
-    static method equal(a: int, b: int, c: string): TestResult { return TestResult() }
-    static method notNull(a: any, b: string): TestResult { return TestResult() }
+    static method isTrue(a: bool, b: string): TestResult { return TestResult{} }
+    static method equal(a: int, b: int, c: string): TestResult { return TestResult{} }
+    static method notNull(a: any, b: string): TestResult { return TestResult{} }
 }
 struct TestSuite {
     let a: string
@@ -29,7 +29,7 @@ struct TestingSymbols {
 }
 
 func main(): int {
-    let suite = TestSuite("stdlib", 1)
+    let suite = TestSuite{"stdlib", 1}
     let result = Assert.notNull<string>("snova", "value should be present")
     let summary = report("stdlib", 1, 0, 0)
     return 0

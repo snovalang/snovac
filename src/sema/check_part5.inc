@@ -173,7 +173,13 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
             break;
         }
         if (callee_sym->kind == SN_SYM_TYPE) {
-            check_constructor_call(c, e, callee_sym, arg_tys, e->args.len);
+            if (callee_sym->decl && callee_sym->decl->kind == SN_DECL_STRUCT) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_STRUCT_BRACE_INIT, e->span,
+                            "struct `%s` takes its values in braces",
+                            callee_sym->decl->name ? callee_sym->decl->name : "<struct>");
+            } else {
+                check_constructor_call(c, e, callee_sym, arg_tys, e->args.len);
+            }
             result = named_with_type_args(c, callee_sym, e);
             break;
         }

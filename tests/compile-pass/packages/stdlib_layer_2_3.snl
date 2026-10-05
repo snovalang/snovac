@@ -18,10 +18,10 @@ struct OwnedPtr {}
 
 async func main(): Task<int> {
     let channel = makeChannel<string>(1)
-    let mutex = Mutex()
-    let request = HttpRequest()
-    let client = HttpClient()
-    let db = Db()
-    let pointer = OwnedPtr()
+    let mutex = Mutex{}
+    let request = HttpRequest{}
+    let client = HttpClient{}
+    let db = Db{}
+    let pointer = OwnedPtr{}
     return 0
 }

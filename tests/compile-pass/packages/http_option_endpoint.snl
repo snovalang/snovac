@@ -19,7 +19,7 @@ async func findUser(req: IncomingRequest): Task<HttpOption<UserDto>> {
     if req.path == "" {
         return HttpOption<UserDto>.none(404)
     }
-    return HttpOption<UserDto>.some(200, UserDto("1", "a@b.com"))
+    return HttpOption<UserDto>.some(200, UserDto{"1", "a@b.com"})
 }
 
 func main(): int {

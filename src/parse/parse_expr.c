@@ -122,11 +122,45 @@ static int try_generic_call_args(P *p, SnExpr *call) {
     return 1;
 }
 
-/* Struct literal: `UserDto { id: "1" }`, `ProductRepository {}`.
- * Only after a type-shaped expression, never in condition or scrutinee
- * position (no_struct_lit), and only when the braces have literal shape —
- * empty, or `name:` right away — so a block following an identifier cannot be
- * misread as a literal. */
+/* `{...}` after a type name is a struct literal when the interior is a value
+ * list: empty, `name: expr`, or positional exprs (`Message{"olá"}`). In
+ * condition/scrutinee position `no_struct_lit` keeps `{` as a block. */
+static int brace_holds_value_list(P *p) {
+    size_t save_pos = p->pos;
+    int save_errors = p->errors;
+    int save_panic = p->panic;
+    SnDiagSink *save_diag = p->diag;
+
+    p->diag = NULL;
+    advance_p(p); /* `{` */
+    if (!at(p, SN_TOK_RBRACE)) {
+        for (;;) {
+            size_t before = p->pos;
+            if (at_name(p) && peek_at(p, 1)->kind == SN_TOK_COLON) {
+                advance_p(p);
+                advance_p(p);
+            }
+            sn_parse_expr(p);
+            if (p->errors != save_errors || p->pos == before) {
+                break;
+            }
+            if (accept(p, SN_TOK_COMMA)) {
+                if (at(p, SN_TOK_RBRACE)) {
+                    break;
+                }
+                continue;
+            }
+            break;
+        }
+    }
+    int ok = (p->errors == save_errors) && at(p, SN_TOK_RBRACE);
+    p->diag = save_diag;
+    p->errors = save_errors;
+    p->panic = save_panic;
+    p->pos = save_pos;
+    return ok;
+}
+
 static int at_struct_lit(P *p, const SnExpr *lhs) {
     if (!at(p, SN_TOK_LBRACE) || p->no_struct_lit) {
         return 0;
@@ -134,9 +168,7 @@ static int at_struct_lit(P *p, const SnExpr *lhs) {
     if (lhs->kind != SN_EXPR_IDENT && lhs->kind != SN_EXPR_MEMBER) {
         return 0;
     }
-    SnTokKind n1 = peek_at(p, 1)->kind;
-    return n1 == SN_TOK_RBRACE ||
-           (at_name_tok(n1) && peek_at(p, 2)->kind == SN_TOK_COLON);
+    return brace_holds_value_list(p);
 }
 
 static SnExpr *parse_struct_lit(P *p, SnExpr *lhs, SnSpan span) {
@@ -145,11 +177,17 @@ static SnExpr *parse_struct_lit(P *p, SnExpr *lhs, SnSpan span) {
     SnExpr *e = new_expr(p, SN_EXPR_STRUCT_LIT, span);
     e->lhs = lhs;
     while (!at(p, SN_TOK_RBRACE) && !at_end_p(p)) {
-        const char *fname = expect_name(p);
-        expect(p, SN_TOK_COLON);
+        /* Named field `id: "1"`, or a positional value ` "olá" `. */
+        const char *fname = NULL;
+        if (at_name(p) && peek_at(p, 1)->kind == SN_TOK_COLON) {
+            fname = advance_p(p)->text;
+            advance_p(p);
+        }
         SnExpr *fval = sn_parse_expr(p);
-        sn_list_push(p->arena, &e->field_names, (void *)fname);
-        sn_list_push(p->arena, &e->args, fval);
+        if (fval) {
+            sn_list_push(p->arena, &e->field_names, (void *)fname);
+            sn_list_push(p->arena, &e->args, fval);
+        }
         if (!accept(p, SN_TOK_COMMA)) {
             break;
         }
