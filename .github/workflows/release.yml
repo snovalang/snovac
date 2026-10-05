@@ -29,7 +29,6 @@ on:
 
 permissions:
   contents: write
-  copilot-requests: write
 
 jobs:
   build:
@@ -177,24 +176,34 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "title=$TITLE" >> $GITHUB_OUTPUT
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install Copilot CLI
-        run: npm install -g @github/copilot
-
-      - name: Ask Copilot for the code review and English release notes
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          COPILOT_AUTO_UPDATE: "false"
+      - name: Prepare release notes
         run: |
           set -euo pipefail
-          DIR="$(python3 scripts/copilot_release_notes.py --version "${{ steps.meta.outputs.tag }}")"
-          NAME="$(basename "$DIR")"
-          cp "$DIR/code-review.md" "release-dist/snovac-${NAME}-code-review.md"
-          cp "$DIR/release-notes.md" "release-dist/snovac-${NAME}-release-notes.md"
+          if [ -f RELEASE_NOTES.md ]; then
+            exit 0
+          fi
+          TAG="${{ steps.meta.outputs.tag }}"
+          PREV=""
+          while IFS= read -r name; do
+            if [ "$name" != "$TAG" ]; then
+              PREV="$name"
+              break
+            fi
+          done < <(git tag -l 'v*' --sort=-v:refname)
+          {
+            echo "# snovac ${TAG}"
+            echo
+            if [ -n "$PREV" ]; then
+              echo "Changes since ${PREV}:"
+              echo
+              git log --pretty=format:'- %s' "${PREV}..HEAD"
+            else
+              echo "Changes:"
+              echo
+              git log --pretty=format:'- %s' -n 40
+            fi
+            echo
+          } > RELEASE_NOTES.md
 
       - name: Publish or Update Release
         uses: softprops/action-gh-release@v2
