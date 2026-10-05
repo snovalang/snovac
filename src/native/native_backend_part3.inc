@@ -233,8 +233,13 @@
   fprintf(f, "int main(int argc, char **argv) {\n");
   fprintf(f, "  (void)argc; (void)argv;\n");
   if (target->os == SN_OS_WINDOWS) {
+    /* Drain waits until this thread consumes the queue. Without it,
+     * OP_SPAWN sleeps forever on the condition variable. */
+    fprintf(f, "  uintptr_t pth;\n");
     fprintf(f, "  InitializeCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "  InitializeConditionVariable(&g_pulsar_cond);\n");
+    fprintf(f, "  pth = _beginthreadex(NULL, 0, pulsar_thread_proc, NULL, 0, NULL);\n");
+    fprintf(f, "  if (pth == 0) { fputs(\"error: cannot start pulsar thread\\n\", stderr); return 1; }\n");
   } else {
     fprintf(f, "  pthread_t pth;\n");
     fprintf(f, "  pthread_create(&pth, NULL, pulsar_thread_proc, NULL);\n");
@@ -246,6 +251,8 @@
     fprintf(f, "  g_pulsar_stop = true;\n");
     fprintf(f, "  WakeConditionVariable(&g_pulsar_cond);\n");
     fprintf(f, "  LeaveCriticalSection(&g_pulsar_mutex);\n");
+    fprintf(f, "  WaitForSingleObject((HANDLE)pth, INFINITE);\n");
+    fprintf(f, "  CloseHandle((HANDLE)pth);\n");
   } else {
     fprintf(f, "  pthread_mutex_lock(&g_pulsar_mutex);\n");
     fprintf(f, "  g_pulsar_stop = true;\n");
