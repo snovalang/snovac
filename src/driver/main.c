@@ -16,6 +16,7 @@
 #include "cmd_get.h"
 #include "cmd_lex_parse.h"
 #include "cmd_run.h"
+#include "cmd_run_snbc.h"
 #include "cmd_tidy.h"
 #include "driver_utils.h"
 #include "target.h"
@@ -156,6 +157,15 @@ int main(int argc, char **argv) {
             }
         }
         return sn_cmd_build(file_path, out_path, target_triple);
+    }
+
+    /* `run-snbc <file.snbc>`: load a canonical image and execute it. */
+    if (strcmp(argv[1], "run-snbc") == 0) {
+        if (argc < 3 || !argv[2] || argv[2][0] == '\0') {
+            fprintf(stderr, "error: run-snbc needs a file.snbc\n");
+            return 2;
+        }
+        return sn_cmd_run_snbc(argv[2]);
     }
 
     /* `emit-snbc <file.snl> -o <file.snbc>`: canonical image plus a .snbt listing.

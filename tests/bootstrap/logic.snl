@@ -1,0 +1,18 @@
+package tests.bootstrap.logic
+
+import builtin.console.Console
+
+func mark(): bool {
+    Console.printline(1)
+    return true
+}
+
+func main(): int {
+    if false && mark() {
+        return 2
+    }
+    if true || mark() {
+        return 0
+    }
+    return 3
+}

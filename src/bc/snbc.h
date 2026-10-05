@@ -63,7 +63,11 @@ typedef enum {
     OP_UNWRAP_VARIANT,/* [uint32_t payload_idx] */
 
     OP_PRINT,         /* [uint8_t is_newline] */
-    OP_HALT
+    OP_HALT,
+    /* Byte I/O. Args are on the stack, so images that never emit these
+     * still decode. SNBC_VERSION stays 1. */
+    OP_READ_BYTES,    /* pop path string, push int array */
+    OP_WRITE_BYTES    /* pop int array, pop path string, push unit */
 } SnOpcode;
 
 typedef struct {
@@ -113,6 +117,9 @@ void sn_write_u32_le(uint8_t *out, uint32_t v);
 /* Portable image. Integers go through sn_write_u32_le. Code bytes are copied
  * as the emitter produced them. sn_bcunit_write_file stays host-endian. */
 int sn_bcunit_write_canonical(const SnBCUnit *unit, const char *path);
+/* The image sn_bcunit_write_canonical writes. 0 on a missing file, a short
+ * file, a bad magic, or a truncated body. Not sn_bcunit_read_file. */
+int sn_bcunit_load_canonical(SnBCUnit *unit, const char *path);
 /* Deterministic text listing. One fact per line. No paths or timestamps. */
 int sn_bcunit_write_listing(const SnBCUnit *unit, const char *path);
 

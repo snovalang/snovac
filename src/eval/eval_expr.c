@@ -543,6 +543,81 @@ static int try_variant_method(SnEvalInterp *in, SnEvalEnv *env, SnEvalValue recv
     return 0;
 }
 
+static SnEvalValue eval_read_bytes(SnEvalInterp *in, SnEvalValue path, SnSpan span) {
+    if (path.kind != V_STRING || !path.as.s) {
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "read_bytes expects a string path");
+        return v_unit();
+    }
+    FILE *fp = fopen(path.as.s, "rb");
+    if (!fp) {
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "cannot read '%s'", path.as.s);
+        return v_unit();
+    }
+    ArrayVal *arr = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
+    if (!arr) {
+        fclose(fp);
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "out of memory");
+        return v_unit();
+    }
+    int ch;
+    while ((ch = fgetc(fp)) != EOF) {
+        SnEvalValue *slot = (SnEvalValue *)sn_arena_alloc(in->arena, sizeof(SnEvalValue));
+        if (!slot) {
+            fclose(fp);
+            sn_rt_error(in, SNOVA_TYPE_ERROR, span, "out of memory");
+            return v_unit();
+        }
+        *slot = v_int((long long)ch);
+        sn_list_push(in->arena, &arr->items, slot);
+    }
+    if (ferror(fp)) {
+        fclose(fp);
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "cannot read '%s'", path.as.s);
+        return v_unit();
+    }
+    fclose(fp);
+    SnEvalValue v;
+    v.kind = V_ARRAY;
+    v.iwidth = 0;
+    v.as.arr = arr;
+    return v;
+}
+
+static SnEvalValue eval_write_bytes(SnEvalInterp *in, SnEvalValue path, SnEvalValue data,
+                                    SnSpan span) {
+    if (path.kind != V_STRING || !path.as.s) {
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "write_bytes expects a string path");
+        return v_unit();
+    }
+    if (data.kind != V_ARRAY || !data.as.arr) {
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "write_bytes expects an int array");
+        return v_unit();
+    }
+    FILE *fp = fopen(path.as.s, "wb");
+    if (!fp) {
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "cannot write '%s'", path.as.s);
+        return v_unit();
+    }
+    for (size_t i = 0; i < data.as.arr->items.len; i++) {
+        const SnEvalValue *item = (const SnEvalValue *)data.as.arr->items.items[i];
+        if (!item || item->kind != V_INT) {
+            fclose(fp);
+            sn_rt_error(in, SNOVA_TYPE_ERROR, span, "write_bytes expects an int array");
+            return v_unit();
+        }
+        if (fputc((int)(item->as.i & 0xff), fp) == EOF) {
+            fclose(fp);
+            sn_rt_error(in, SNOVA_TYPE_ERROR, span, "cannot write '%s'", path.as.s);
+            return v_unit();
+        }
+    }
+    if (fclose(fp) != 0) {
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "cannot write '%s'", path.as.s);
+        return v_unit();
+    }
+    return v_unit();
+}
+
 static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
     if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && sn_eval_probe_name(e->lhs->text)) {
         return v_int(sn_eval_probe_value(e->lhs->text));
@@ -560,6 +635,29 @@ static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) 
     }
 
     if (callee->kind == SN_EXPR_IDENT && callee->text) {
+        if (strcmp(callee->text, "read_bytes") == 0) {
+            if (e->args.len != 1) {
+                sn_rt_error(in, SNOVA_TYPE_ERROR, e->span, "read_bytes expects a path");
+                return v_unit();
+            }
+            SnEvalValue path = sn_eval_expr(in, env, (const SnExpr *)e->args.items[0]);
+            if (in->failed) {
+                return v_unit();
+            }
+            return eval_read_bytes(in, path, e->span);
+        }
+        if (strcmp(callee->text, "write_bytes") == 0) {
+            if (e->args.len != 2) {
+                sn_rt_error(in, SNOVA_TYPE_ERROR, e->span, "write_bytes expects a path and an int array");
+                return v_unit();
+            }
+            SnEvalValue path = sn_eval_expr(in, env, (const SnExpr *)e->args.items[0]);
+            SnEvalValue data = sn_eval_expr(in, env, (const SnExpr *)e->args.items[1]);
+            if (in->failed) {
+                return v_unit();
+            }
+            return eval_write_bytes(in, path, data, e->span);
+        }
         if (strcmp(callee->text, "type") == 0) {
             /* type(T) expression returns type name as string */
             if (e->args.len > 0) {
