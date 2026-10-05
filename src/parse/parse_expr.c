@@ -61,7 +61,7 @@ static int at_shift(P *p, SnTokKind *op_out) {
     return 1;
 }
 
-static void parse_call_args(P *p, SnExpr *call) {
+void sn_parse_call_args(P *p, SnExpr *call) {
     PCtx ctx = ctx_clear(p);
     expect(p, SN_TOK_LPAREN);
     if (!at(p, SN_TOK_RPAREN)) {
@@ -251,7 +251,7 @@ static SnExpr *parse_postfix(P *p, SnExpr *lhs) {
         if (at(p, SN_TOK_LPAREN)) {
             SnExpr *e = new_expr(p, SN_EXPR_CALL, span);
             e->lhs = lhs;
-            parse_call_args(p, e);
+            sn_parse_call_args(p, e);
             lhs = e;
             continue;
         }
@@ -284,7 +284,7 @@ static SnExpr *parse_postfix(P *p, SnExpr *lhs) {
             e->lhs = lhs;
             if (try_generic_call_args(p, e)) {
                 if (at(p, SN_TOK_LPAREN)) {
-                    parse_call_args(p, e);
+                    sn_parse_call_args(p, e);
                     lhs = e;
                 } else {
                     /* `Array<Post>.new()` — the generic arguments belong to the

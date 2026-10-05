@@ -1,0 +1,379 @@
+static void scan_header(SnPackageGraph *g, const char *path, const char *src,
+                         size_t len) {
+    SnArena *a = g->arena;
+    char norm_path[SN_PKG_PATH_MAX];
+    sn_driver_normalize_path(path, norm_path, sizeof(norm_path));
+    SnDiagFile self = {norm_path, src, len};
+    SnDiagFile outer = sn_diag_set_file(g->diag, self);
+
+    SnTokenVec toks;
+    memset(&toks, 0, sizeof(toks));
+    sn_lex(a, g->diag, src, len, &toks); /* lexical errors reported via diag already */
+
+    size_t pos = 0;
+    int any_section = 0;
+    while (toks.data[pos].kind != SN_TOK_EOF) {
+        if (toks.data[pos].kind == SN_TOK_PACKAGE) {
+            any_section |= scan_section(g, &self, &toks, &pos);
+            continue;
+        }
+        if (toks.data[pos].kind == SN_TOK_IMPORT) {
+            /* imports with no preceding `package` in this section: still
+             * scan them (advances pos correctly) but they attach to nothing,
+             * matching parse.c which only starts recording once a package is
+             * seen. */
+            (void)scan_section(g, &self, &toks, &pos);
+            continue;
+        }
+        skip_to_next_header_token(&toks, &pos);
+    }
+
+    if (!any_section) {
+        int is_script = sn_driver_path_is_script(path);
+        if (is_script) {
+            /* .sns files are Snovalang scripts; an explicit package header is optional.
+             * They default to the implicit "main" script package. */
+            SnPackageFile *pf = (SnPackageFile *)sn_arena_calloc(a, sizeof(SnPackageFile));
+            pf->path = sn_arena_strndup(a, norm_path, strlen(norm_path));
+            pf->src = src;
+            pf->src_len = len;
+            pf->package = sn_intern_cstr(g->intern, "main");
+
+            size_t p = 0;
+            while (toks.data[p].kind != SN_TOK_EOF) {
+                if (toks.data[p].kind == SN_TOK_IMPORT) {
+                    p++;
+                    SnSpan span;
+                    const char *name = scan_qualified(a, &toks, &p, &span);
+                    if (name) {
+                        if (toks.data[p].kind == SN_TOK_SEMI) p++;
+                        sn_list_push(a, &pf->imports,
+                                     (void *)sn_intern_cstr(g->intern, canonical_import_name(name)));
+                        SnSpan *sp = (SnSpan *)sn_arena_alloc(a, sizeof(SnSpan));
+                        *sp = span;
+                        sn_list_push(a, &pf->import_spans, sp);
+                    }
+                } else {
+                    p++;
+                }
+            }
+
+            SnPackageNode *node = find_or_create(g, pf->package);
+            pf->next = node->files;
+            node->files = pf;
+            g->file_count++;
+        } else {
+            SnSpan zero;
+            memset(&zero, 0, sizeof(zero));
+            zero.line = 1;
+            zero.col = 1;
+            sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_MISSING_PACKAGE_DECL, zero,
+                         "%s: file has no `package` declaration", path);
+        }
+    }
+
+    sn_diag_set_file(g->diag, outer);
+}
+
+/* ── directory walk ───────────────────────────────────────────────────────
+ *
+ * POSIX (dirent.h/sys/stat.h): matches the project's current platform
+ * support (arm64 macOS primary, Linux backend planned — see
+ * specs/20260719/snovac-c-toolchain/llm.md fact 6/7). No Windows path exists
+ * anywhere else in snovac/ yet either. */
+
+static char *read_source_file(SnArena *a, const char *path, size_t *out_len) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    long n = ftell(f);
+    if (n < 0) {
+        fclose(f);
+        return NULL;
+    }
+    rewind(f);
+    char *buf = (char *)sn_arena_alloc(a, (size_t)n + 1u);
+    size_t got = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    buf[got] = '\0';
+    *out_len = got;
+    return buf;
+}
+
+static int has_snova_suffix(const char *path) {
+    return sn_driver_path_is_source(path) || sn_driver_path_is_script(path);
+}
+
+/* Scans exactly one file, unlike sn_pkggraph_scan_root() which recursively
+ * pulls in every `*.snl` under a directory — needed by callers (the CLI's
+ * `check` command) that want ONE file's own declarations without silently
+ * absorbing every sibling fixture in the same directory. Returns 1 if the
+ * file was read and header-scanned, 0 if it couldn't be opened. */
+int sn_pkggraph_scan_single_file(SnPackageGraph *g, const char *path) {
+    size_t len = 0;
+    char *src = read_source_file(g->arena, path, &len);
+    if (!src) {
+        return 0;
+    }
+    scan_header(g, path, src, len);
+    return 1;
+}
+
+size_t sn_pkggraph_scan_root(SnPackageGraph *g, const char *root) {
+    size_t count = 0;
+    DIR *d = opendir(root);
+    if (!d) {
+        /* A missing/unreadable root is a configuration problem for whoever
+         * assembles the root list (snova.toml, CLI args) — not this
+         * function's job to diagnose. */
+        return 0;
+    }
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
+            continue;
+        }
+
+        char path[SN_PKG_PATH_MAX];
+        int written = snprintf(path, sizeof(path), "%s/%s", root, ent->d_name);
+        if (written < 0 || (size_t)written >= sizeof(path)) {
+            continue; /* path too long to represent faithfully; skip rather
+                       * than silently scan a truncated (wrong) path */
+        }
+
+        struct stat st;
+        if (stat(path, &st) != 0) {
+            continue;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            count += sn_pkggraph_scan_root(g, path);
+            continue;
+        }
+        if (!S_ISREG(st.st_mode) || !has_snova_suffix(path)) {
+            continue;
+        }
+
+        count++;
+        size_t flen = 0;
+        char *src = read_source_file(g->arena, path, &flen);
+        if (!src) {
+            continue;
+        }
+        scan_header(g, path, src, flen);
+    }
+    closedir(d);
+    return count;
+}
+
+size_t sn_pkggraph_scan_root_fallback(SnPackageGraph *g, const char *root) {
+    size_t count = 0;
+    DIR *d = opendir(root);
+    if (!d) {
+        return 0;
+    }
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
+            continue;
+        }
+
+        char path[SN_PKG_PATH_MAX];
+        int written = snprintf(path, sizeof(path), "%s/%s", root, ent->d_name);
+        if (written < 0 || (size_t)written >= sizeof(path)) {
+            continue;
+        }
+
+        struct stat st;
+        if (stat(path, &st) != 0) {
+            continue;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            count += sn_pkggraph_scan_root_fallback(g, path);
+            continue;
+        }
+        if (!S_ISREG(st.st_mode) || !has_snova_suffix(path)) {
+            continue;
+        }
+
+        size_t flen = 0;
+        char *src = read_source_file(g->arena, path, &flen);
+        if (!src) {
+            continue;
+        }
+
+        SnTokenVec toks;
+        sn_lex(g->arena, g->diag, src, flen, &toks);
+        size_t pos = 0;
+        if (toks.len > 0 && toks.data[0].kind == SN_TOK_PACKAGE) {
+            pos++;
+            SnSpan span;
+            const char *pname = scan_qualified(g->arena, &toks, &pos, &span);
+            if (pname) {
+                const char *interned = sn_intern_cstr(g->intern, pname);
+                SnPackageNode *existing = sn_pkggraph_find(g, interned);
+                if (existing && existing->files) {
+                    if (strncmp(existing->files->path, root, strlen(root)) != 0) {
+                        continue;
+                    }
+                }
+            }
+        }
+
+        count++;
+        scan_header(g, path, src, flen);
+    }
+    closedir(d);
+    return count;
+}
+
+/* ── linking + cycle detection ────────────────────────────────────────────
+ *
+ * A cycle among files of the SAME package is legal (plan.md §4.1: "it is a
+ * single package"), so same-package imports never become edges at all — the loop
+ * below skips them before they reach the graph. */
+
+/* Resolves one import target to the package that provides it.
+ *
+ * An import names either a package outright or a SYMBOL inside one, and the
+ * corpus uses both spellings against the same graph: `builtin.console.Console`
+ * is a whole package (builtin/Console.snl declares exactly that), while
+ * `builtin.auth.Auth.OAuth2` and `stdlib.sonar.serialization.Json` name a
+ * symbol inside packages `builtin.auth.Auth` and `stdlib.sonar.serialization`.
+ * Nothing in the syntax distinguishes the two, so resolution is longest-match:
+ * try the whole dotted name, then drop trailing segments until a declared
+ * package matches. Returns NULL only when no prefix is a package at all.
+ *
+ * Getting this wrong is not cosmetic — the symbol spelling is the common one
+ * in real projects, and treating it as a missing package made SNOVA0050 fire
+ * on correct code. */
+static SnPackageNode *resolve_import_target(SnPackageGraph *g, const char *target) {
+    SnPackageNode *exact = sn_pkggraph_find(g, target);
+    if (exact) {
+        return exact;
+    }
+
+    char prefix[SN_PKG_PATH_MAX];
+    size_t n = strlen(target);
+    if (n >= sizeof(prefix)) {
+        return NULL;
+    }
+    memcpy(prefix, target, n + 1u);
+
+    for (;;) {
+        char *dot = strrchr(prefix, '.');
+        if (!dot) {
+            return NULL;
+        }
+        *dot = '\0';
+        SnPackageNode *node = sn_pkggraph_find(g, sn_intern_cstr(g->intern, prefix));
+        if (node) {
+            return node;
+        }
+    }
+}
+
+/* Namespaces whose packages may legitimately have no `.snl` file anywhere
+ * snovac can see, used only as a fallback when no native-package manifest
+ * was loaded (sn_pkggraph_load_native_manifest was never called, or found no
+ * `native-packages.list` — e.g. snovac invoked completely standalone,
+ * outside any toolchain checkout). With no manifest, this module cannot
+ * distinguish a real native-only package from a typo, so it declines to
+ * judge rather than assert either way. When a manifest IS loaded,
+ * native_package_known() below replaces this with an exact check instead. */
+static int package_is_toolchain_provided(const char *name) {
+    return strncmp(name, "builtin.", 8) == 0 || strncmp(name, "stdlib.", 7) == 0;
+}
+
+/* Whether `target` is a real, registered native package (one the toolchain
+ * ships with no `.snl` source under any scanned root — e.g. metadata/
+ * syntax packages backed directly by the Rust frontend). Prefers the exact
+ * manifest generated by `scripts/gen-packages.sh` from the single source of
+ * truth, `compiler/src/lsp/NativePackages.snl`; falls back to the old
+ * blanket prefix rule only when that manifest could not be found at all, so
+ * environments without a monorepo checkout keep their previous behavior. */
+static int native_package_known(const SnPackageGraph *g, const char *target) {
+    if (!g->native_manifest_loaded) {
+        return package_is_toolchain_provided(target);
+    }
+    for (size_t i = 0; i < g->native_manifest.len; i++) {
+        if (SN_LIST_AT(g->native_manifest, const char, i) == target) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int import_last_segment_is_extension(const char *target) {
+    const char *dot = strrchr(target, '.');
+    const char *seg = dot ? dot + 1 : target;
+    return strcmp(seg, "snl") == 0 || strcmp(seg, "sns") == 0 ||
+           strcmp(seg, "snova") == 0 || strcmp(seg, "sno") == 0;
+}
+
+void sn_pkggraph_link(SnPackageGraph *g) {
+    for (SnPackageNode *node = g->nodes; node; node = node->next) {
+        for (SnPackageFile *pf = node->files; pf; pf = pf->next) {
+            /* Import spans belong to `pf`, not to whichever file the sink
+             * happens to hold after the tree scan. */
+            SnDiagFile self = {pf->path, pf->src, pf->src_len};
+            SnDiagFile outer = sn_diag_set_file(g->diag, self);
+            for (size_t i = 0; i < pf->imports.len; i++) {
+                const char *target = SN_LIST_AT(pf->imports, const char, i);
+                if (target == node->name) {
+                    continue;
+                }
+                if (import_last_segment_is_extension(target)) {
+                    SnSpan *sp = SN_LIST_AT(pf->import_spans, SnSpan, i);
+                    sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_IMPORT_FILE_EXTENSION,
+                                 *sp,
+                                 "import `%s` must name a package or symbol, not a file "
+                                 "extension — drop the trailing `.snl`/`.sns` segment",
+                                 target);
+                    continue;
+                }
+
+                SnPackageNode *tnode = resolve_import_target(g, target);
+                if (!tnode) {
+                    if (native_package_known(g, target)) {
+                        continue;
+                    }
+                    SnSpan *sp = SN_LIST_AT(pf->import_spans, SnSpan, i);
+                    sn_diag_emit(g->diag, SN_DIAG_ERROR, SNOVA_IMPORT_NOT_FOUND,
+                                 *sp, "package `%s` was not found", target);
+                    continue;
+                }
+                /* A symbol import that resolves back to this same package is
+                 * still not an edge — the exact-name check above only catches
+                 * the whole-package spelling. */
+                if (tnode->name == node->name) {
+                    continue;
+                }
+
+                int already = 0;
+                for (size_t j = 0; j < node->edges.len; j++) {
+                    if (SN_LIST_AT(node->edges, const char, j) == tnode->name) {
+                        already = 1;
+                        break;
+                    }
+                }
+                if (!already) {
+                    sn_list_push(g->arena, &node->edges, (void *)tnode->name);
+                }
+            }
+            sn_diag_set_file(g->diag, outer);
+        }
+    }
+}
+
+typedef struct {
+    SnPackageNode **items;
+    size_t depth;
+} DfsPath;
+

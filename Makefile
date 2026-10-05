@@ -214,13 +214,13 @@ $(TEST_SNBC_BIN): tests/test_snbc.c $(BUILD)/bc/snbc.o | $(BUILD)
 $(TEST_PACKAGE_BIN): tests/test_package.c $(TEST_PACKAGE_OBJS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_package.c $(TEST_PACKAGE_OBJS)
 
-$(TEST_TYPES_BIN): tests/test_types.c $(TEST_TYPES_OBJS) | $(BUILD)
+$(TEST_TYPES_BIN): tests/test_types.c $(wildcard tests/test_types_part*.inc) $(TEST_TYPES_OBJS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_types.c $(TEST_TYPES_OBJS)
 
-$(TEST_RESOLVE_BIN): tests/test_resolve.c $(TEST_RESOLVE_OBJS) | $(BUILD)
+$(TEST_RESOLVE_BIN): tests/test_resolve.c $(wildcard tests/test_resolve_part*.inc) $(TEST_RESOLVE_OBJS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_resolve.c $(TEST_RESOLVE_OBJS)
 
-$(TEST_CHECK_BIN): tests/test_check.c $(TEST_CHECK_OBJS) | $(BUILD)
+$(TEST_CHECK_BIN): tests/test_check.c $(wildcard tests/test_check_part*.inc) $(TEST_CHECK_OBJS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_check.c $(TEST_CHECK_OBJS)
 
 # Assertions for the lexer decisions derived from the corpus, plus the

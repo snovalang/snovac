@@ -104,7 +104,17 @@ static SnExpr *parse_anon_fn(P *p, SnSpan span) {
     } else if (accept(p, SN_TOK_ARROW)) {
         e->value = sn_parse_expr(p);
     }
-    return e;
+    /* The parentheses after the body are the call. A top-level `func`
+     * declaration does not come through here, so it is not an IIFE. */
+    if (!at(p, SN_TOK_LPAREN)) {
+        error_at(p, cur(p), SNOVA_INNER_FUNC_CALL,
+                 "an inner or anonymous function must be called immediately after its body");
+        return e;
+    }
+    SnExpr *call = new_expr(p, SN_EXPR_CALL, cur(p)->span);
+    call->lhs = e;
+    sn_parse_call_args(p, call);
+    return call;
 }
 
 /* ── match ────────────────────────────────────────────────────────────────── */

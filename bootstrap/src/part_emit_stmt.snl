@@ -1,0 +1,236 @@
+func emit_expr(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], nd: int): unit {
+    if cx.failed != 0 { return }
+    if nd < 0 {
+        fail(cx)
+        return
+    }
+    let k = bg.nk[nd]
+    cx.expr_ty = 0
+    if scope_emit_expr(src, bg, cx, code, fat, fb, nd) != 0 { return }
+    if k == 1 {
+        code.push(1)
+        push_i64(code, bg.na[nd])
+        cx.expr_ty = 0
+        return
+    }
+    if k == 2 {
+        code.push(4)
+        code.push(bg.na[nd])
+        cx.expr_ty = 0
+        return
+    }
+    if k == 3 {
+        var tmp: int[] = []
+        decode_string(src, bg.na[nd], bg.nb[nd], tmp)
+        let si = intern_bytes(tmp, bg)
+        code.push(3)
+        push_u32(code, si)
+        cx.expr_ty = 0
+        return
+    }
+    if k == 4 {
+        let slot = find_local(src, bg, cx, bg.na[nd], bg.nb[nd])
+        if slot >= 0 {
+            code.push(8)
+            push_u32(code, slot)
+            cx.expr_ty = local_type_of(bg, cx, slot)
+            return
+        }
+        let fn = find_func(src, bg, bg.na[nd], bg.nb[nd])
+        if fn >= 0 {
+            code.push(1)
+            push_i64(code, fn)
+            cx.expr_ty = 0
+            return
+        }
+        fail(cx)
+        return
+    }
+    if k == 5 {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+        if bg.na[nd] == 35 {
+            code.push(17)
+        } else {
+            if bg.na[nd] == 42 {
+                code.push(18)
+            } else {
+                fail(cx)
+            }
+        }
+        cx.expr_ty = 0
+        return
+    }
+    if k == 6 {
+        if bg.na[nd] == 43 {
+            emit_and(src, bg, cx, code, fat, fb, bg.nb[nd], bg.nc[nd])
+            return
+        }
+        if bg.na[nd] == 44 {
+            emit_or(src, bg, cx, code, fat, fb, bg.nb[nd], bg.nc[nd])
+            return
+        }
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+        emit_expr(src, bg, cx, code, fat, fb, bg.nc[nd])
+        let op = bin_op(bg.na[nd])
+        if op < 0 {
+            fail(cx)
+            return
+        }
+        code.push(op)
+        cx.expr_ty = 0
+        return
+    }
+    if k == 7 {
+        emit_call(src, bg, cx, code, fat, fb, bg.nb[nd], bg.nc[nd])
+        return
+    }
+    if k == 8 {
+        emit_forward(src, bg, cx, code, fat, fb, bg.nc[nd], 0)
+        code.push(39)
+        push_u32(code, cons_count(bg, bg.nc[nd]))
+        cx.expr_ty = 0
+        return
+    }
+    if k == 9 {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+        emit_expr(src, bg, cx, code, fat, fb, bg.nc[nd])
+        code.push(40)
+        cx.expr_ty = 0
+        return
+    }
+    if k == 10 {
+        emit_member(src, bg, cx, code, fat, fb, nd)
+        return
+    }
+    if k == 11 {
+        emit_struct(src, bg, cx, code, fat, fb, nd)
+        return
+    }
+    if k == 12 {
+        emit_assign(src, bg, cx, code, fat, fb, bg.nb[nd], bg.nc[nd])
+        return
+    }
+    fail(cx)
+}
+
+func emit_stmt(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], nd: int): unit {
+    if cx.failed != 0 { return }
+    if nd < 0 {
+        fail(cx)
+        return
+    }
+    let k = bg.nk[nd]
+    if scope_emit_stmt(src, bg, cx, code, fat, fb, nd) != 0 { return }
+    if k == 20 {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+        code.push(6)
+        return
+    }
+    if k == 21 {
+        if bg.nc[nd] >= 0 {
+            emit_expr(src, bg, cx, code, fat, fb, bg.nc[nd])
+        } else {
+            code.push(5)
+            cx.expr_ty = 0
+        }
+        let ty = cx.expr_ty
+        let slot = add_local(bg, cx, bg.na[nd], bg.nb[nd], ty)
+        code.push(9)
+        push_u32(code, slot)
+        code.push(6)
+        return
+    }
+    if k == 23 {
+        if bg.nb[nd] >= 0 {
+            emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+        } else {
+            code.push(5)
+        }
+        code.push(35)
+        return
+    }
+    if k == 24 {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+        let jelse = emit_jump(code, 31)
+        emit_stmt(src, bg, cx, code, fat, fb, bg.nc[nd])
+        if bg.nd[nd] >= 0 {
+            let jend = emit_jump(code, 30)
+            patch_at(code, fat, fb, jelse)
+            emit_stmt(src, bg, cx, code, fat, fb, bg.nd[nd])
+            patch_at(code, fat, fb, jend)
+        } else {
+            patch_at(code, fat, fb, jelse)
+        }
+        return
+    }
+    if k == 25 {
+        let start = code.len()
+        scope_loop_enter(bg, cx, start, 1)
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+        let jexit = emit_jump(code, 31)
+        emit_stmt(src, bg, cx, code, fat, fb, bg.nc[nd])
+        code.push(30)
+        let at = code.len()
+        let off = start - (at + 4)
+        push_u32(code, off)
+        patch_at(code, fat, fb, jexit)
+        scope_patch_brk(code, fat, fb, bg)
+        scope_loop_leave(bg)
+        return
+    }
+    if k == 26 {
+        let saved = cx.locals
+        emit_forward(src, bg, cx, code, fat, fb, bg.nc[nd], 1)
+        cx.locals = saved
+        return
+    }
+    fail(cx)
+}
+
+func emit_func(src: int[], bg: Bags, cx: Cx, fi: int): unit {
+    cx.locals = 0
+    cx.water = 0
+    cx.loc_base = bg.loc_slot.len()
+    cx.expr_ty = 0
+    cx.owner = bg.fn_own[fi]
+    if bg.fn_own[fi] >= 0 {
+        add_local(bg, cx, 0, 0, bg.fn_own[fi] + 1)
+    }
+    var i = 0
+    while i < bg.par_fn.len() {
+        if bg.par_fn[i] == fi {
+            add_local(bg, cx, bg.par_ns[i], bg.par_nl[i], bg.par_ty[i])
+        }
+        i = i + 1
+    }
+    var code: int[] = []
+    var fat: int[] = []
+    var fb: int[] = []
+    if bg.fn_body[fi] < 0 {
+        code.push(52)
+    } else {
+        emit_stmt(src, bg, cx, code, fat, fb, bg.fn_body[fi])
+    }
+    code.push(5)
+    code.push(35)
+    cx.owner = -1
+    let off = bg.allc.len()
+    var j = 0
+    while j < code.len() {
+        bg.allc.push(byte_at(code, fat, fb, j))
+        j = j + 1
+    }
+    bg.fn_off.push(off)
+    bg.fn_len.push(code.len())
+    bg.fn_loc.push(cx.water)
+}
+
+func emit_unit(src: int[], bg: Bags, cx: Cx): unit {
+    var fi = 0
+    while fi < bg.fn_ns.len() {
+        if cx.failed != 0 { return }
+        emit_func(src, bg, cx, fi)
+        fi = fi + 1
+    }
+}
+
