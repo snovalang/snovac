@@ -4,3 +4,10 @@ build/
 *.d
 compile_commands.json
 .copilot-feature-verified
+
+# gemini-cli settings and artifacts
+.gemini/
+gemini-artifacts/
+
+# GitHub App credentials
+gha-creds-*.json
