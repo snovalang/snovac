@@ -22,16 +22,12 @@
  *    callers can report it. As of 2026-07-25 this affects exactly one
  *    fixture.
  *
- * 2. Primitive types (`int`, `string`, `bool`, `unit`, `long`, `double`,
- *    `decimal`) are NOT registered as symbols. Contrary to plan.md's fact 2
- *    ("primitives are declared in builtin.types"), no `.snl` file anywhere
- *    in this repository actually declares them (measured 2026-07-25 — zero
- *    `class`/`struct`/`typealias` declarations for any of the seven names).
- *    types.c already models them as compiler-intrinsic tags with no `decl`.
- *    sn_resolve_type_name() special-cases these seven names directly against
- *    types.c's singletons, before any scope lookup — confirmed with the user
- *    before implementing (this is a resolver design choice, not silently
- *    inferred).
+ * 2. Primitive types are NOT registered as symbols. No `.snl` file
+ *    declares them. types.c models them as compiler-intrinsic tags with no
+ *    `decl`. sn_resolve_type_name() accepts exactly the names in
+ *    sn_builtin_primitive_name() — `int`, `string`, `bool`, `unit`, `long`,
+ *    `double`, `decimal`, `char`, `any`, `float`, `byte`, and the signed
+ *    ladder `int8` through `int128` — before any scope lookup.
  *
  * 3. `Option`/`Result` come from one specific, hardcoded package name:
  *    `builtin.types.Types` (matches the `package builtin.<lower(Stem)>.<Stem>`

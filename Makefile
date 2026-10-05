@@ -104,18 +104,18 @@ TEST_PACKAGE_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/diag.o $(BUILD)/base/int
                      $(BUILD)/driver/driver_utils.o
 TEST_TYPES_BIN = $(BUILD)/test_types$(EXE)
 TEST_TYPES_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/intern.o $(BUILD)/sema/symbol.o \
-                   $(BUILD)/sema/types.o
+                   $(BUILD)/sema/types.o $(BUILD)/sema/builtins.o
 TEST_RESOLVE_BIN = $(BUILD)/test_resolve$(EXE)
 TEST_RESOLVE_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/diag.o $(BUILD)/base/intern.o \
                      $(BUILD)/sema/symbol.o $(BUILD)/sema/package.o $(BUILD)/sema/types.o \
-                     $(BUILD)/sema/resolve.o $(BUILD)/ast/ast.o \
+                     $(BUILD)/sema/builtins.o $(BUILD)/sema/resolve.o $(BUILD)/ast/ast.o \
                      $(BUILD)/lex/lex.o $(BUILD)/lex/lex_token.o $(BUILD)/lex/lex_literal.o \
                      $(BUILD)/parse/parse.o $(BUILD)/parse/parse_type.o $(BUILD)/parse/parse_expr.o \
                      $(BUILD)/parse/parse_primary.o $(BUILD)/parse/parse_stmt.o \
                      $(BUILD)/parse/parse_decl.o $(BUILD)/parse/parse_decl_parts.o \
                      $(BUILD)/parse/parse_ptr.o $(BUILD)/driver/driver_utils.o
 TEST_CHECK_BIN = $(BUILD)/test_check$(EXE)
-TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/sema/builtins.o $(BUILD)/sema/check.o \
+TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/sema/check.o \
                   $(BUILD)/sema/check_ptr.o $(BUILD)/sema/borrow.o $(BUILD)/sema/borrow_expr.o \
                   $(BUILD)/sema/borrow_flow.o $(BUILD)/sema/borrow_task.o
 

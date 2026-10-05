@@ -134,6 +134,48 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
     c->type_params = NULL;
 }
 
+static void bind_signature_type_params(SnChecker *c, SnScope *scope, const SnDecl *decl) {
+    sn_scope_init(scope, c->arena, NULL);
+    if (c->enclosing_type) {
+        define_type_params(c, scope, c->enclosing_type);
+    }
+    if (decl) {
+        define_type_params(c, scope, decl);
+    }
+    c->type_params = scope;
+}
+
+void sn_check_field_type(SnChecker *c, const SnDecl *field) {
+    if (!c || !field || !field->type || field->init) {
+        return;
+    }
+    SnScope type_params_scope;
+    bind_signature_type_params(c, &type_params_scope, NULL);
+    sn_check_resolve_type(c, field->type);
+    c->type_params = NULL;
+}
+
+void sn_check_decl_signature(SnChecker *c, const SnDecl *decl) {
+    if (!c || !decl || decl->body) {
+        return;
+    }
+    if (decl->kind != SN_DECL_FUNC && decl->kind != SN_DECL_METHOD) {
+        return;
+    }
+    SnScope type_params_scope;
+    bind_signature_type_params(c, &type_params_scope, decl);
+    for (size_t i = 0; i < decl->params.len; i++) {
+        SnParam *p = SN_LIST_AT(decl->params, SnParam, i);
+        if (p && p->type) {
+            sn_check_resolve_type(c, p->type);
+        }
+    }
+    if (decl->ret) {
+        sn_check_resolve_type(c, decl->ret);
+    }
+    c->type_params = NULL;
+}
+
 void sn_check_field_initializer(SnChecker *c, SnScope *local, const SnDecl *field) {
     if (!c || !field || !field->init || !field->type) {
         return;

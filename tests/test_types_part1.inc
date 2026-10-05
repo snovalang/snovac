@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 #include "arena.h"
+#include "builtins.h"
 #include "intern.h"
 #include "symbol.h"
 #include "types.h"
@@ -67,6 +68,28 @@ static void test_primitives(SnTypeTable *t) {
               sn_type_integer_signed(sn_type_int(t)) &&
               !sn_type_integer_signed(sn_type_byte(t)) &&
               sn_type_integer_width(sn_type_char(t)) == 0);
+    CHECK("catalog: every primitive name resolves to its singleton",
+          sn_builtin_primitive_count() >= 16 &&
+              sn_builtin_primitive_type(t, "int") == sn_type_int(t) &&
+              sn_builtin_primitive_type(t, "string") == sn_type_string(t) &&
+              sn_builtin_primitive_type(t, "bool") == sn_type_bool(t) &&
+              sn_builtin_primitive_type(t, "float") == sn_type_float(t) &&
+              sn_builtin_primitive_type(t, "any") == sn_type_any(t) &&
+              sn_builtin_primitive_type(t, "int8") == sn_type_int8(t) &&
+              sn_builtin_primitive_type(t, "int16") == sn_type_int16(t) &&
+              sn_builtin_primitive_type(t, "int32") == sn_type_int32(t) &&
+              sn_builtin_primitive_type(t, "int64") == sn_type_int64(t) &&
+              sn_builtin_primitive_type(t, "int128") == sn_type_int128(t) &&
+              sn_builtin_primitive_type(t, "byte") == sn_type_byte(t) &&
+              sn_builtin_primitive_type(t, "char") == sn_type_char(t) &&
+              sn_builtin_primitive_type(t, "unit") == sn_type_unit(t) &&
+              sn_builtin_primitive_type(t, "long") == sn_type_long(t) &&
+              sn_builtin_primitive_type(t, "double") == sn_type_double(t) &&
+              sn_builtin_primitive_type(t, "decimal") == sn_type_decimal(t));
+    CHECK("catalog: a type name is not a primitive",
+          !sn_builtin_is_primitive_name("Message") &&
+              sn_builtin_primitive_type(t, "Int") == NULL &&
+              sn_builtin_primitive_type(t, "Nope") == NULL);
 }
 
 static void test_named_generics(SnTypeTable *t, SnScope *scope, SnInternTable *it) {

@@ -204,4 +204,13 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl);
 /* Checks one field initializer against the field's declared type. */
 void sn_check_field_initializer(SnChecker *c, SnScope *local, const SnDecl *field);
 
+/* Resolves a field's declared type when the field has no initializer.
+ * `c->enclosing_type`, `c->current_package`, and `c->current_imports` must
+ * already be set. A primitive name resolves; an unknown name is diagnosed. */
+void sn_check_field_type(SnChecker *c, const SnDecl *field);
+
+/* Resolves the parameter and return types of a bodyless function or method.
+ * The same context as sn_check_decl_body must already be set. */
+void sn_check_decl_signature(SnChecker *c, const SnDecl *decl);
+
 #endif /* SNOVAC_CHECK_H */

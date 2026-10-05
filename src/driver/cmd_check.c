@@ -38,13 +38,17 @@ void sn_cmd_check_all_bodies(SnChecker *c, SnResolver *resolver, SnPackageGraph 
             for (SnSymbol *sym = pe->scope->buckets[i]; sym; sym = sym->next) {
                 for (SnSymbol *ov = sym; ov; ov = ov->overloads) {
                     if ((ov->kind == SN_SYM_FUNC || ov->kind == SN_SYM_METHOD) &&
-                        ov->decl && ov->decl->body &&
+                        ov->decl &&
                         path_is_own(scope, ov->origin ? ov->origin->path : NULL)) {
                         c->current_package = pe->package_name;
                         c->current_imports = &imports;
                         c->enclosing_type = NULL;
                         SnDiagFile outer = sn_cmd_begin_symbol_file(c->diag, ov);
-                        sn_check_decl_body(c, ov->decl);
+                        if (ov->decl->body) {
+                            sn_check_decl_body(c, ov->decl);
+                        } else {
+                            sn_check_decl_signature(c, ov->decl);
+                        }
                         sn_diag_set_file(c->diag, outer);
                     }
                 }
@@ -68,24 +72,32 @@ void sn_cmd_check_all_bodies(SnChecker *c, SnResolver *resolver, SnPackageGraph 
         for (size_t bi = 0; bi < te->member_scope->nbuckets; bi++) {
             for (SnSymbol *sym = te->member_scope->buckets[bi]; sym; sym = sym->next) {
                 for (SnSymbol *ov = sym; ov; ov = ov->overloads) {
-                    if (ov->kind == SN_SYM_FIELD && ov->decl && ov->decl->init &&
+                    if (ov->kind == SN_SYM_FIELD && ov->decl && ov->decl->type &&
                         path_is_own(scope, ov->origin ? ov->origin->path : NULL)) {
                         c->current_package = owner_pkg;
                         c->current_imports = &imports;
                         c->enclosing_type = te->type_decl;
                         SnDiagFile outer = sn_cmd_begin_symbol_file(c->diag, ov);
-                        SnScope field_scope;
-                        sn_scope_init(&field_scope, arena, NULL);
-                        sn_check_field_initializer(c, &field_scope, ov->decl);
+                        if (ov->decl->init) {
+                            SnScope field_scope;
+                            sn_scope_init(&field_scope, arena, NULL);
+                            sn_check_field_initializer(c, &field_scope, ov->decl);
+                        } else {
+                            sn_check_field_type(c, ov->decl);
+                        }
                         sn_diag_set_file(c->diag, outer);
                     }
-                    if (ov->kind == SN_SYM_METHOD && ov->decl && ov->decl->body &&
+                    if (ov->kind == SN_SYM_METHOD && ov->decl &&
                         path_is_own(scope, ov->origin ? ov->origin->path : NULL)) {
                         c->current_package = owner_pkg;
                         c->current_imports = &imports;
                         c->enclosing_type = te->type_decl;
                         SnDiagFile outer = sn_cmd_begin_symbol_file(c->diag, ov);
-                        sn_check_decl_body(c, ov->decl);
+                        if (ov->decl->body) {
+                            sn_check_decl_body(c, ov->decl);
+                        } else {
+                            sn_check_decl_signature(c, ov->decl);
+                        }
                         sn_diag_set_file(c->diag, outer);
                     }
                 }
