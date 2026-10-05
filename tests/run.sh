@@ -766,8 +766,10 @@ reject_lower "drop_break" "$SNBC_DIR/drop_break.snl"
 reject_lower "drop_body" "$SNBC_DIR/drop_body.snl"
 reject_lower "classes" "$DIR/compile-pass/classes.snl"
 
-# Smallest Snova compiler. V0 emits it, run-snbc executes it, and the image
-# it writes for its grammar matches the image V0 writes for the same file.
+# Snova compiler. V0 emits it, run-snbc executes it, and the image it writes
+# matches the image V0 writes. On its own source that match is the guinea pig
+# and the first Snova generation. A second run of that image is the next
+# generation.
 COMPILER="$DIR/../bootstrap/src/compiler.snl"
 CC_ROOT="$(mktemp -d)"
 C1="$CC_ROOT/compiler.snbc"
@@ -839,24 +841,53 @@ compiler_case "div" 2 "$CC_ROOT/tiny-div.snl"
 compiler_case "comment" 5 "$CC_ROOT/tiny-comment.snl"
 
 printf 'package p\n\nfunc main(): int {\n    let x = 1\n    return x\n}\n' > "$CC_ROOT/tiny-let.snl"
-LET_WORK="$CC_ROOT/cc-let"
-mkdir -p "$LET_WORK"
-cp "$CC_ROOT/tiny-let.snl" "$LET_WORK/in.snl"
-if (cd "$LET_WORK" && "$SNL_ABS" run "$COMPILER" >"$LET_WORK/run.out"); then
-  let_rc=0
+compiler_case "let" 1 "$CC_ROOT/tiny-let.snl"
+
+printf 'package p\n\nfunc main(): int {\n    break\n    return 0\n}\n' > "$CC_ROOT/tiny-break.snl"
+BRK_WORK="$CC_ROOT/cc-break"
+mkdir -p "$BRK_WORK"
+cp "$CC_ROOT/tiny-break.snl" "$BRK_WORK/in.snl"
+if (cd "$BRK_WORK" && "$SNL_ABS" run-snbc "$C1" >"$BRK_WORK/run.out"); then
+  brk_rc=0
 else
-  let_rc=$?
+  brk_rc=$?
 fi
-assert "compiler: let is refused" 1 "$let_rc"
-let_msg=0
-grep -c 'cannot compile in.snl' "$LET_WORK/run.out" >"$LET_WORK/msg.count" || true
-let_msg=$(cat "$LET_WORK/msg.count")
-assert "compiler: let reports the refusal" 1 "$let_msg"
-let_present=0
-if [ -f "$LET_WORK/out.snbc" ]; then
-  let_present=1
+assert "compiler: break is refused" 1 "$brk_rc"
+brk_msg=0
+grep -c 'cannot compile in.snl' "$BRK_WORK/run.out" >"$BRK_WORK/msg.count" || true
+brk_msg=$(cat "$BRK_WORK/msg.count")
+assert "compiler: break reports the refusal" 1 "$brk_msg"
+brk_present=0
+if [ -f "$BRK_WORK/out.snbc" ]; then
+  brk_present=1
 fi
-assert "compiler: let writes no image" 0 "$let_present"
+assert "compiler: break writes no image" 0 "$brk_present"
+
+# Guinea pig image, then the same image compiling its source again.
+SELF="$CC_ROOT/self"
+mkdir -p "$SELF"
+cp "$COMPILER" "$SELF/in.snl"
+cp "$C1" "$SELF/v0.snbc"
+if (cd "$SELF" && "$SNL_ABS" run-snbc "$SELF/v0.snbc" >"$SELF/gen.out"); then
+  gen_rc=0
+else
+  gen_rc=$?
+fi
+assert "compiler: first generation exits 0" 0 "$gen_rc"
+self_cmp=0
+cmp -s "$SELF/v0.snbc" "$SELF/out.snbc" || self_cmp=$?
+assert "compiler: first generation matches v0" 0 "$self_cmp"
+cp "$SELF/out.snbc" "$SELF/gen1.snbc"
+rm -f "$SELF/out.snbc"
+if (cd "$SELF" && "$SNL_ABS" run-snbc "$SELF/gen1.snbc" >"$SELF/gen2.out"); then
+  gen2_rc=0
+else
+  gen2_rc=$?
+fi
+assert "compiler: second generation exits 0" 0 "$gen2_rc"
+self2=0
+cmp -s "$SELF/gen1.snbc" "$SELF/out.snbc" || self2=$?
+assert "compiler: second generation matches" 0 "$self2"
 
 rm -rf "$SNBC_DIR" "$CC_ROOT"
 
