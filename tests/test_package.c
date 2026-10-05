@@ -303,14 +303,27 @@ static void report_real_corpus(SnInternTable *it, SnArena *a) {
     }
 }
 
+static int scratch_dir(char *buf, size_t n, const char *leaf) {
+#if defined(_WIN32)
+    const char *root = getenv("TEMP");
+    if (root == NULL || root[0] == '\0') root = getenv("TMP");
+    if (root == NULL || root[0] == '\0') root = ".";
+    int wrote = snprintf(buf, n, "%s\\%s", root, leaf);
+#else
+    int wrote = snprintf(buf, n, "/tmp/%s", leaf);
+#endif
+    if (wrote < 0 || (size_t)wrote >= n) return 0;
+    return mkdtemp(buf) != NULL;
+}
+
 int main(void) {
     SnArena arena;
     sn_arena_init(&arena, 0);
     SnInternTable it;
     sn_intern_init(&it, &arena);
 
-    char tmp[] = "/tmp/snovac_pkg_test_XXXXXX";
-    if (!mkdtemp(tmp)) {
+    char tmp[1024];
+    if (!scratch_dir(tmp, sizeof(tmp), "snovac_pkg_test_XXXXXX")) {
         printf("FAIL setup: mkdtemp failed\n");
         return 1;
     }

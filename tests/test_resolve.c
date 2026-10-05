@@ -447,9 +447,22 @@ static void test_member_path_package_prefix(const char *tmp) {
     sn_arena_free(&w.arena);
 }
 
+static int scratch_dir(char *buf, size_t n, const char *leaf) {
+#if defined(_WIN32)
+    const char *root = getenv("TEMP");
+    if (root == NULL || root[0] == '\0') root = getenv("TMP");
+    if (root == NULL || root[0] == '\0') root = ".";
+    int wrote = snprintf(buf, n, "%s\\%s", root, leaf);
+#else
+    int wrote = snprintf(buf, n, "/tmp/%s", leaf);
+#endif
+    if (wrote < 0 || (size_t)wrote >= n) return 0;
+    return mkdtemp(buf) != NULL;
+}
+
 int main(void) {
-    char tmp[] = "/tmp/snovac_resolve_test_XXXXXX";
-    if (!mkdtemp(tmp)) {
+    char tmp[1024];
+    if (!scratch_dir(tmp, sizeof(tmp), "snovac_resolve_test_XXXXXX")) {
         printf("FAIL setup: mkdtemp failed\n");
         return 1;
     }
