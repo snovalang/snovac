@@ -1,13 +1,13 @@
 name: Release with Copilot semver
 
 # Manual only. Copilot reads the commits since the last v* tag and prints the
-# next MAJOR.MINOR.PATCH. Gemini then reviews the diff and writes the English
+# next MAJOR.MINOR.PATCH. Copilot then reviews the diff and writes the English
 # release notes (features, bug fixes, breaking changes). This workflow tags
 # that commit and dispatches Release Snovac
 # Compiler, which attaches the binaries. Organization repos need the policy
 # "Allow use of Copilot CLI billed to the organization". A tag push made with
 # GITHUB_TOKEN does not start other workflows, so this file dispatches the
-# release workflow itself. Gemini reads the GEMINI_API_KEY Actions secret.
+# release workflow itself.
 
 on:
   workflow_dispatch:
@@ -93,7 +93,7 @@ jobs:
           - The new triple must be strictly greater than the current core.
           - Use only digits and two dots. No v prefix, no pre-release suffix.
           - Base the choice on the commits and diff stat below, not on the hint alone.
-          - Do not write release notes. Gemini writes those after this step.
+          - Do not write release notes. A later Copilot step writes those.
 
           Maintainer hint: ${RELEASE_HINT:-none}
 
@@ -109,12 +109,13 @@ jobs:
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "Copilot chose $VER" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Ask Gemini for the code review and English release notes
+      - name: Ask Copilot for the code review and English release notes
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_AUTO_UPDATE: "false"
         run: |
-          python3 scripts/gemini_release_notes.py --version "v${{ steps.semver.outputs.version }}"
-          echo "### Gemini" >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/copilot_release_notes.py --version "v${{ steps.semver.outputs.version }}"
+          echo "### Copilot release notes" >> "$GITHUB_STEP_SUMMARY"
           cat RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit the version and tag it

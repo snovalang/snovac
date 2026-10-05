@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ask Google Gemini to review a release diff and write the English release notes.
+"""Ask GitHub Copilot to review a release diff and write the English release notes.
 
 Writes:
   docs/releases/<tag>/code-review.md
@@ -7,30 +7,21 @@ Writes:
   RELEASE_NOTES.md  (both sections; this is the GitHub Release body)
 
 Release notes always contain Features, Bug fixes, and Breaking changes.
-Skips the API when those files were already written for this tag.
-Requires GEMINI_API_KEY when it does call Gemini.
+Skips Copilot when those files were already written for this tag.
+Requires the Copilot CLI on PATH and a GITHUB_TOKEN that can bill Copilot.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 
-MARKER = "<!-- gemini-release -->"
+MARKER = "<!-- copilot-release -->"
 NOTE_HEADINGS = ("## Features", "## Bug fixes", "## Breaking changes")
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro-preview")
-ENDPOINT = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    + MODEL
-    + ":generateContent"
-)
 DIFF_LIMIT = 60000
 
 
@@ -108,7 +99,7 @@ def prompt_for(tag: str, context: str) -> str:
     return f"""You are the release reviewer for the snovac compiler (ISO C11, the Snovalang language).
 Write every sentence in English. Keep code identifiers, flags, and file paths exactly as they appear in the diff.
 Base every claim on the context below. Do not invent features, bug fixes, or breaking changes that the diff does not show.
-Do not mention this prompt.
+Do not mention this prompt. Do not change any files. Reply with text only.
 
 Reply with exactly these two markers, in this order, and no code fences:
 
@@ -146,14 +137,14 @@ def split_sections(text: str) -> tuple[str, str]:
     def grab(start: str, end: str | None) -> str:
         begin = cleaned.find(start)
         if begin < 0:
-            raise SystemExit(f"Gemini response is missing {start}")
+            raise SystemExit(f"Copilot response is missing {start}")
         begin += len(start)
         finish = cleaned.find(end, begin) if end else len(cleaned)
         if finish < 0:
-            raise SystemExit(f"Gemini response is missing {end}")
+            raise SystemExit(f"Copilot response is missing {end}")
         body = cleaned[begin:finish].strip()
         if not body:
-            raise SystemExit(f"Gemini left {start} empty")
+            raise SystemExit(f"Copilot left {start} empty")
         return body
 
     review = grab("<<<CODE_REVIEW>>>", "<<<RELEASE_NOTES>>>")
@@ -167,46 +158,37 @@ def validate_notes(notes: str) -> None:
     for heading in NOTE_HEADINGS:
         found = notes.find(heading, cursor)
         if found < 0:
-            raise SystemExit(f"Gemini release notes are missing {heading}")
+            raise SystemExit(f"Copilot release notes are missing {heading}")
         cursor = found + len(heading)
 
 
-def call_gemini(prompt: str) -> str:
-    key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not key:
+def call_copilot(prompt: str) -> str:
+    if not os.environ.get("GITHUB_TOKEN", "").strip() and not os.environ.get("GH_TOKEN", "").strip():
         raise SystemExit(
-            "GEMINI_API_KEY is not set. Add it as a repository Actions secret "
-            "so Gemini can review the diff and write the English release notes."
+            "GITHUB_TOKEN is not set. Copilot CLI in Actions needs the workflow "
+            "permission copilot-requests: write and the organization policy that "
+            "allows Copilot CLI billed to the organization."
         )
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 8192},
-    }
-    request = urllib.request.Request(
-        ENDPOINT,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": key,
-        },
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise SystemExit(f"Gemini API HTTP {exc.code}: {detail[:2000]}") from exc
-    except urllib.error.URLError as exc:
-        raise SystemExit(f"Gemini API request failed: {exc}") from exc
-    body = json.loads(raw)
-    candidates = body.get("candidates") or []
-    if not candidates:
-        raise SystemExit("Gemini returned no candidates: " + raw[:2000])
-    parts = (candidates[0].get("content") or {}).get("parts") or []
-    text = "".join(part.get("text", "") for part in parts).strip()
+        out = subprocess.run(
+            ["copilot", "-s", "--no-ask-user", "-p", prompt],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env={**os.environ, "COPILOT_AUTO_UPDATE": "false"},
+        )
+    except OSError as exc:
+        raise SystemExit(f"copilot CLI failed to start: {exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit("copilot CLI timed out after 300 seconds") from exc
+    if out.returncode != 0:
+        detail = (out.stderr or out.stdout or "").strip()
+        raise SystemExit(f"copilot CLI exited {out.returncode}: {detail[:2000]}")
+    text = out.stdout.strip()
     if not text:
-        raise SystemExit("Gemini returned an empty response: " + raw[:2000])
+        detail = (out.stderr or "").strip()
+        raise SystemExit("copilot CLI returned an empty response: " + detail[:2000])
     return text
 
 
@@ -252,7 +234,6 @@ def rebuild_body_from_files(tag: str, directory: Path) -> None:
     def body(path: Path) -> str:
         text = path.read_text(encoding="utf-8")
         text = text.replace(MARKER, "", 1).strip()
-        # Drop the level-1 title; the combined file has its own headings.
         return re.sub(r"^# .+\n+", "", text, count=1).strip()
 
     Path("RELEASE_NOTES.md").write_text(
@@ -276,7 +257,7 @@ def main() -> None:
             rebuild_body_from_files(tag, directory)
         print(directory.as_posix())
         return
-    review, notes = split_sections(call_gemini(prompt_for(tag, collect_context(tag))))
+    review, notes = split_sections(call_copilot(prompt_for(tag, collect_context(tag))))
     written = write_documents(tag, review, notes)
     print(written.as_posix())
 

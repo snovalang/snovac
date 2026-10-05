@@ -3,7 +3,7 @@
 
 Copilot's stdout must contain one line `VERSION: MAJOR.MINOR.PATCH`.
 The number must be greater than the core of SNOVAC_VERSION in driver_utils.h.
-Release prose is written later by Gemini, not by this script.
+Release prose is written later by Copilot, not by this script.
 """
 
 import re
