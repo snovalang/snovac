@@ -1,0 +1,9 @@
+package tests.bootstrap.null_print
+
+import builtin.console.Console
+
+func main(): int {
+    var p: &int? = null
+    Console.printline(p)
+    return 0
+}

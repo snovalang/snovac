@@ -71,7 +71,15 @@ typedef enum {
     /* Array length and append. Images that never emit these still decode.
      * SNBC_VERSION stays 1. */
     OP_ARRAY_LEN,     /* pop array, push int length */
-    OP_ARRAY_PUSH     /* pop value, pop array, append, push new length */
+    OP_ARRAY_PUSH,    /* pop value, pop array, append, push new length */
+    /* Later slice. Images that never emit these still decode.
+     * SNBC_VERSION stays 1. */
+    OP_CONST_NULL,    /* null reference */
+    OP_TRAP,          /* bodyless routine: not a successful return */
+    OP_DEFER,         /* [uint32_t fn_idx, uint32_t argc]; args already pushed */
+    OP_SPAWN,         /* [uint32_t fn_idx, uint32_t argc]; pulsar launch */
+    OP_CALL_ASYNC,    /* [uint32_t fn_idx, uint32_t argc] */
+    OP_IS_ARRAY       /* pop value, push bool */
 } SnOpcode;
 
 typedef struct {

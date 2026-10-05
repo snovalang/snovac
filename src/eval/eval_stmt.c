@@ -1,5 +1,19 @@
 /* eval_stmt.c — statement execution and control flow. */
 #include "eval_internal.h"
+#include "pulsar.h"
+
+typedef struct {
+    SnEvalInterp *in;
+    SnEvalEnv *env;
+    const SnExpr *expr;
+} SnPulsarJob;
+
+static void sn_eval_pulsar_job(void *arg) {
+    SnPulsarJob *job = (SnPulsarJob *)arg;
+    if (job->expr) {
+        sn_eval_expr(job->in, job->env, job->expr);
+    }
+}
 
 /* A runaway loop in a smoke-path interpreter should report, not hang. */
 #define SN_LOOP_GUARD 100000000
@@ -222,12 +236,26 @@ SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
     case SN_STMT_BREAK:    return FLOW_BREAK;
     case SN_STMT_CONTINUE: return FLOW_CONTINUE;
 
-    case SN_STMT_PULSAR:
-        if (s->expr) {
-            sn_eval_expr(in, env, s->expr);
+    case SN_STMT_PULSAR: {
+        SnPulsarPool *pool = sn_pulsar_pool_create(1);
+        SnPulsarJob job;
+        job.in = in;
+        job.env = env;
+        job.expr = s->expr;
+        if (pool && sn_pulsar_pool_submit(pool, sn_eval_pulsar_job, &job)) {
+            sn_pulsar_pool_wait(pool);
+            sn_pulsar_pool_destroy(pool);
+        } else {
+            if (pool) {
+                sn_pulsar_pool_destroy(pool);
+            }
+            if (s->expr) {
+                sn_eval_expr(in, env, s->expr);
+            }
         }
         return in->flow == FLOW_THROW ? FLOW_THROW
              : in->failed ? FLOW_RETURN : FLOW_NORMAL;
+    }
 
     case SN_STMT_DEFER:
         sn_rt_defer_schedule(in, env, s->expr);

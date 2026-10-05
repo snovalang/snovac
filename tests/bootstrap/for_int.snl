@@ -1,0 +1,9 @@
+package tests.bootstrap.for_int
+
+func main(): int {
+    var s = 0
+    for i in 4 {
+        s = s + i
+    }
+    return s
+}

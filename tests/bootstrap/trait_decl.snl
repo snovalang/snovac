@@ -1,0 +1,9 @@
+package tests.bootstrap.trait_decl
+
+trait Greeter {
+    method hello(): int
+}
+
+func main(): int {
+    return 6
+}

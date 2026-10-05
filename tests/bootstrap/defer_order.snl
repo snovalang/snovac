@@ -1,0 +1,13 @@
+package tests.bootstrap.defer_order
+
+import builtin.console.Console
+
+func line(s: string): unit {
+    Console.printline(s)
+}
+
+func main(): int {
+    defer line("second")
+    defer line("first")
+    return 5
+}

@@ -242,9 +242,15 @@ static const OpInfo OP_INFO[] = {
     {"OP_WRITE_BYTES", OP_OPERAND_NONE},
     {"OP_ARRAY_LEN", OP_OPERAND_NONE},
     {"OP_ARRAY_PUSH", OP_OPERAND_NONE},
+    {"OP_CONST_NULL", OP_OPERAND_NONE},
+    {"OP_TRAP", OP_OPERAND_NONE},
+    {"OP_DEFER", OP_OPERAND_U32_U32},
+    {"OP_SPAWN", OP_OPERAND_U32_U32},
+    {"OP_CALL_ASYNC", OP_OPERAND_U32_U32},
+    {"OP_IS_ARRAY", OP_OPERAND_NONE},
 };
 
-_Static_assert(sizeof(OP_INFO) / sizeof(OP_INFO[0]) == (size_t)OP_ARRAY_PUSH + 1,
+_Static_assert(sizeof(OP_INFO) / sizeof(OP_INFO[0]) == (size_t)OP_IS_ARRAY + 1,
                "every SnOpcode is named");
 
 static int fits_u32(size_t n) {
