@@ -112,6 +112,36 @@ static void patch_jump(Compiler *c, size_t jump_offset_pos) {
 static void compile_expr(Compiler *c, const SnExpr *e);
 static void compile_stmt(Compiler *c, const SnStmt *s);
 
+/* `.len` / `.length`, `.push`, and `.get` are the array methods the checker
+ * already types. `.get` is the same load as `xs[i]`. */
+static int emit_array_method(Compiler *c, const SnExpr *e, uint32_t line,
+                             const char **produced) {
+    if (!e->lhs || e->lhs->kind != SN_EXPR_MEMBER || !e->lhs->text || !e->lhs->lhs) {
+        return 0;
+    }
+    const char *m = e->lhs->text;
+    if ((strcmp(m, "len") == 0 || strcmp(m, "length") == 0) && e->args.len == 0) {
+        compile_expr(c, e->lhs->lhs);
+        emit_byte(c, OP_ARRAY_LEN, line);
+        *produced = "int";
+        return 1;
+    }
+    if (strcmp(m, "push") == 0 && e->args.len == 1) {
+        compile_expr(c, e->lhs->lhs);
+        compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
+        emit_byte(c, OP_ARRAY_PUSH, line);
+        *produced = "int";
+        return 1;
+    }
+    if (strcmp(m, "get") == 0 && e->args.len == 1) {
+        compile_expr(c, e->lhs->lhs);
+        compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
+        emit_byte(c, OP_GET_INDEX, line);
+        return 1;
+    }
+    return 0;
+}
+
 static const SnDecl *find_struct(const Compiler *c, const char *name) {
     if (!c || !c->unit || !name) {
         return NULL;
@@ -444,6 +474,9 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
             compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
             compile_expr(c, SN_LIST_AT(e->args, SnExpr, 1));
             emit_byte(c, OP_WRITE_BYTES, line);
+            break;
+        }
+        if (emit_array_method(c, e, line, &produced)) {
             break;
         }
 

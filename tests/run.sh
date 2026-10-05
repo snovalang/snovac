@@ -654,6 +654,7 @@ agree_exec "call" "$DIR/bootstrap/call.snl" 42 "" "$SNBC_DIR"
 agree_exec "bits" "$DIR/bootstrap/bits.snl" 4 "" "$SNBC_DIR"
 agree_exec "array" "$DIR/bootstrap/array.snl" 40 "" "$SNBC_DIR"
 agree_exec "struct_field" "$DIR/bootstrap/struct_field.snl" 7 "" "$SNBC_DIR"
+agree_exec "array_buf" "$DIR/bootstrap/array_buf.snl" 12 "" "$SNBC_DIR"
 BYTES_DIR="$SNBC_DIR/bytes-work"
 mkdir -p "$BYTES_DIR"
 agree_exec "bytes" "$DIR/bootstrap/bytes.snl" 0 "65
@@ -764,7 +765,100 @@ reject_lower "drop_null" "$SNBC_DIR/drop_null.snl"
 reject_lower "drop_break" "$SNBC_DIR/drop_break.snl"
 reject_lower "drop_body" "$SNBC_DIR/drop_body.snl"
 reject_lower "classes" "$DIR/compile-pass/classes.snl"
-rm -rf "$SNBC_DIR"
+
+# Smallest Snova compiler. V0 emits it, run-snbc executes it, and the image
+# it writes for its grammar matches the image V0 writes for the same file.
+COMPILER="$DIR/../bootstrap/src/compiler.snl"
+CC_ROOT="$(mktemp -d)"
+C1="$CC_ROOT/compiler.snbc"
+C1B="$CC_ROOT/compiler-b.snbc"
+assert "emit-snbc: compiler.snl succeeds" 0 \
+  "$(rc_of "$SNL_ABS" emit-snbc "$COMPILER" -o "$C1")"
+assert "emit-snbc: compiler.snl second run succeeds" 0 \
+  "$(rc_of "$SNL_ABS" emit-snbc "$COMPILER" -o "$C1B")"
+compiler_images=0
+cmp -s "$C1" "$C1B" || compiler_images=$?
+assert "emit-snbc: compiler.snl images match" 0 "$compiler_images"
+
+compiler_case() {
+  label="$1"
+  expect_rc="$2"
+  src="$3"
+  work="$CC_ROOT/cc-$label"
+  mkdir -p "$work/by-run" "$work/by-bc"
+  cp "$src" "$work/by-run/in.snl"
+  cp "$src" "$work/by-bc/in.snl"
+  if (cd "$work/by-run" && "$SNL_ABS" run "$COMPILER" >"$work/run.out"); then
+    run_rc=0
+  else
+    run_rc=$?
+  fi
+  if (cd "$work/by-bc" && "$SNL_ABS" run-snbc "$C1" >"$work/bc.out"); then
+    bc_rc=0
+  else
+    bc_rc=$?
+  fi
+  assert "compiler: $label snl run exits 0" 0 "$run_rc"
+  assert "compiler: $label run-snbc exits 0" 0 "$bc_rc"
+  same=0
+  cmp -s "$work/run.out" "$work/bc.out" || same=$?
+  assert "compiler: $label stdout matches" 0 "$same"
+  img=0
+  cmp -s "$work/by-run/out.snbc" "$work/by-bc/out.snbc" || img=$?
+  assert "compiler: $label images match across executors" 0 "$img"
+  assert "compiler: $label v0 emit succeeds" 0 \
+    "$(rc_of "$SNL_ABS" emit-snbc "$work/by-run/in.snl" -o "$work/v0.snbc")"
+  v0=0
+  cmp -s "$work/by-run/out.snbc" "$work/v0.snbc" || v0=$?
+  assert "compiler: $label image matches v0" 0 "$v0"
+  if "$SNL_ABS" run-snbc "$work/by-run/out.snbc" >/dev/null 2>&1; then
+    prod_rc=0
+  else
+    prod_rc=$?
+  fi
+  assert "compiler: $label program exit" "$expect_rc" "$prod_rc"
+  if "$SNL_ABS" run "$work/by-run/in.snl" >/dev/null 2>&1; then
+    host_rc=0
+  else
+    host_rc=$?
+  fi
+  assert "compiler: $label matches snl run" "$host_rc" "$prod_rc"
+}
+
+printf 'package p\n\nfunc main(): int {\n    return 0\n}\n' > "$CC_ROOT/tiny-zero.snl"
+printf 'package p\n\nfunc main(): int {\n    return 1 + 2 * 3\n}\n' > "$CC_ROOT/tiny-prec.snl"
+printf 'package p\n\nfunc main(): int {\n    return (1 + 2) * 3\n}\n' > "$CC_ROOT/tiny-paren.snl"
+printf 'package p\n\nfunc main(): int {\n    return -4 + 10\n}\n' > "$CC_ROOT/tiny-neg.snl"
+printf 'package p\n\nfunc main(): int {\n    return 20 / 4 %% 3\n}\n' > "$CC_ROOT/tiny-div.snl"
+printf 'package p.q\n\n// kept\nfunc main(): int {\n    return 8 - 3\n}\n' > "$CC_ROOT/tiny-comment.snl"
+compiler_case "zero" 0 "$CC_ROOT/tiny-zero.snl"
+compiler_case "prec" 7 "$CC_ROOT/tiny-prec.snl"
+compiler_case "paren" 9 "$CC_ROOT/tiny-paren.snl"
+compiler_case "neg" 6 "$CC_ROOT/tiny-neg.snl"
+compiler_case "div" 2 "$CC_ROOT/tiny-div.snl"
+compiler_case "comment" 5 "$CC_ROOT/tiny-comment.snl"
+
+printf 'package p\n\nfunc main(): int {\n    let x = 1\n    return x\n}\n' > "$CC_ROOT/tiny-let.snl"
+LET_WORK="$CC_ROOT/cc-let"
+mkdir -p "$LET_WORK"
+cp "$CC_ROOT/tiny-let.snl" "$LET_WORK/in.snl"
+if (cd "$LET_WORK" && "$SNL_ABS" run "$COMPILER" >"$LET_WORK/run.out"); then
+  let_rc=0
+else
+  let_rc=$?
+fi
+assert "compiler: let is refused" 1 "$let_rc"
+let_msg=0
+grep -c 'cannot compile in.snl' "$LET_WORK/run.out" >"$LET_WORK/msg.count" || true
+let_msg=$(cat "$LET_WORK/msg.count")
+assert "compiler: let reports the refusal" 1 "$let_msg"
+let_present=0
+if [ -f "$LET_WORK/out.snbc" ]; then
+  let_present=1
+fi
+assert "compiler: let writes no image" 0 "$let_present"
+
+rm -rf "$SNBC_DIR" "$CC_ROOT"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

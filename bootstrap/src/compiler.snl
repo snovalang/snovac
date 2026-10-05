@@ -1,0 +1,459 @@
+package snova.compiler
+
+import builtin.console.Console
+
+// Smallest Snova compiler this guinea pig can emit and run.
+//
+// It reads in.snl and writes out.snbc. The input grammar is one function:
+//
+//   package dotted.Name
+//   func main(): int { return <expr> }
+//
+// <expr> is an integer literal of at most 18 digits, parentheses, unary
+// minus, and + - * / % with the usual precedence. Line comments count as
+// whitespace. The image is canonical SnBC: magic SNBC, version 1, one
+// main function. run-snbc can execute it.
+//
+// It does not compile let, var, if, while, calls, extra functions, strings,
+// arrays, structs, bool, comparisons, bitwise operators, shifts, block
+// comments, or more than one statement. A program outside that grammar
+// returns 1 and writes no image.
+
+struct State {
+    public var pos: int
+    public var kind: int
+    public var value: int
+    public var start: int
+    public var len: int
+    public var failed: int
+}
+
+func tk_eof(): int { return 0 }
+func tk_ident(): int { return 1 }
+func tk_int(): int { return 2 }
+func tk_package(): int { return 3 }
+func tk_func(): int { return 4 }
+func tk_return(): int { return 5 }
+func tk_kw_int(): int { return 6 }
+func tk_lparen(): int { return 7 }
+func tk_rparen(): int { return 8 }
+func tk_lbrace(): int { return 9 }
+func tk_rbrace(): int { return 10 }
+func tk_colon(): int { return 11 }
+func tk_plus(): int { return 12 }
+func tk_minus(): int { return 13 }
+func tk_star(): int { return 14 }
+func tk_slash(): int { return 15 }
+func tk_percent(): int { return 16 }
+func tk_dot(): int { return 17 }
+
+func op_const_int(): int { return 1 }
+func op_const_unit(): int { return 5 }
+func op_add(): int { return 12 }
+func op_sub(): int { return 13 }
+func op_mul(): int { return 14 }
+func op_div(): int { return 15 }
+func op_mod(): int { return 16 }
+func op_neg(): int { return 17 }
+func op_return(): int { return 35 }
+
+func is_space(c: int): bool {
+    if c == 32 { return true }
+    if c == 9 { return true }
+    if c == 10 { return true }
+    if c == 13 { return true }
+    return false
+}
+
+func is_digit(c: int): bool {
+    if c >= 48 && c <= 57 {
+        return true
+    }
+    return false
+}
+
+func is_ident_start(c: int): bool {
+    if c >= 65 && c <= 90 { return true }
+    if c >= 97 && c <= 122 { return true }
+    if c == 95 { return true }
+    return false
+}
+
+func is_ident_cont(c: int): bool {
+    if is_ident_start(c) { return true }
+    if is_digit(c) { return true }
+    return false
+}
+
+func fail(st: State): unit {
+    st.failed = 1
+    st.kind = tk_eof()
+}
+
+func take(st: State, kind: int): unit {
+    st.kind = kind
+    st.value = 0
+    st.len = 0
+    st.pos = st.pos + 1
+}
+
+func skip(src: int[], st: State): unit {
+    var skipping = 1
+    while skipping == 1 {
+        if st.pos >= src.len() {
+            skipping = 0
+        } else {
+            let c = src[st.pos]
+            if is_space(c) {
+                st.pos = st.pos + 1
+            } else {
+                if c == 47 && st.pos + 1 < src.len() && src[st.pos + 1] == 47 {
+                    st.pos = st.pos + 2
+                    var eating = 1
+                    while eating == 1 {
+                        if st.pos >= src.len() {
+                            eating = 0
+                        } else {
+                            let d = src[st.pos]
+                            st.pos = st.pos + 1
+                            if d == 10 {
+                                eating = 0
+                            }
+                        }
+                    }
+                } else {
+                    skipping = 0
+                }
+            }
+        }
+    }
+}
+
+func scan_number(src: int[], st: State): unit {
+    st.kind = tk_int()
+    st.value = 0
+    st.len = 0
+    var digits = 0
+    var reading = 1
+    while reading == 1 {
+        if st.failed != 0 {
+            reading = 0
+        } else {
+            if st.pos >= src.len() {
+                reading = 0
+            } else {
+                if is_digit(src[st.pos]) {
+                    if digits == 18 {
+                        fail(st)
+                        reading = 0
+                    } else {
+                        let d = src[st.pos] - 48
+                        st.value = st.value * 10 + d
+                        st.pos = st.pos + 1
+                        digits = digits + 1
+                    }
+                } else {
+                    reading = 0
+                }
+            }
+        }
+    }
+}
+
+func keyword_at(src: int[], start: int, n: int, b0: int, b1: int, b2: int, b3: int, b4: int, b5: int, b6: int): bool {
+    if n > 0 && src[start] != b0 { return false }
+    if n > 1 && src[start + 1] != b1 { return false }
+    if n > 2 && src[start + 2] != b2 { return false }
+    if n > 3 && src[start + 3] != b3 { return false }
+    if n > 4 && src[start + 4] != b4 { return false }
+    if n > 5 && src[start + 5] != b5 { return false }
+    if n > 6 && src[start + 6] != b6 { return false }
+    return true
+}
+
+func classify(src: int[], st: State): unit {
+    if st.len == 7 && keyword_at(src, st.start, 7, 112, 97, 99, 107, 97, 103, 101) {
+        st.kind = tk_package()
+        return
+    }
+    if st.len == 6 && keyword_at(src, st.start, 6, 114, 101, 116, 117, 114, 110, 0) {
+        st.kind = tk_return()
+        return
+    }
+    if st.len == 4 && keyword_at(src, st.start, 4, 102, 117, 110, 99, 0, 0, 0) {
+        st.kind = tk_func()
+        return
+    }
+    if st.len == 3 && keyword_at(src, st.start, 3, 105, 110, 116, 0, 0, 0, 0) {
+        st.kind = tk_kw_int()
+        return
+    }
+    st.kind = tk_ident()
+}
+
+func scan_ident(src: int[], st: State): unit {
+    st.start = st.pos
+    st.value = 0
+    st.pos = st.pos + 1
+    var reading = 1
+    while reading == 1 {
+        if st.pos >= src.len() {
+            reading = 0
+        } else {
+            if is_ident_cont(src[st.pos]) {
+                st.pos = st.pos + 1
+            } else {
+                reading = 0
+            }
+        }
+    }
+    st.len = st.pos - st.start
+    classify(src, st)
+}
+
+func next(src: int[], st: State): unit {
+    if st.failed != 0 {
+        return
+    }
+    skip(src, st)
+    if st.pos >= src.len() {
+        st.kind = tk_eof()
+        st.value = 0
+        st.len = 0
+        return
+    }
+    let c = src[st.pos]
+    if is_digit(c) {
+        scan_number(src, st)
+        return
+    }
+    if is_ident_start(c) {
+        scan_ident(src, st)
+        return
+    }
+    if c == 40 { take(st, tk_lparen()); return }
+    if c == 41 { take(st, tk_rparen()); return }
+    if c == 123 { take(st, tk_lbrace()); return }
+    if c == 125 { take(st, tk_rbrace()); return }
+    if c == 58 { take(st, tk_colon()); return }
+    if c == 43 { take(st, tk_plus()); return }
+    if c == 45 { take(st, tk_minus()); return }
+    if c == 42 { take(st, tk_star()); return }
+    if c == 47 { take(st, tk_slash()); return }
+    if c == 37 { take(st, tk_percent()); return }
+    if c == 46 { take(st, tk_dot()); return }
+    fail(st)
+}
+
+func bump(src: int[], st: State): unit {
+    if st.failed != 0 {
+        return
+    }
+    next(src, st)
+}
+
+func expect(src: int[], st: State, kind: int): unit {
+    if st.failed != 0 {
+        return
+    }
+    if st.kind != kind {
+        fail(st)
+        return
+    }
+    bump(src, st)
+}
+
+func is_main(src: int[], st: State): bool {
+    if st.kind != tk_ident() { return false }
+    if st.len != 4 { return false }
+    if src[st.start] != 109 { return false }
+    if src[st.start + 1] != 97 { return false }
+    if src[st.start + 2] != 105 { return false }
+    if src[st.start + 3] != 110 { return false }
+    return true
+}
+
+func parse_package(src: int[], st: State): unit {
+    expect(src, st, tk_package())
+    expect(src, st, tk_ident())
+    while st.failed == 0 && st.kind == tk_dot() {
+        bump(src, st)
+        if st.failed != 0 {
+            return
+        }
+        if st.kind != tk_ident() {
+            fail(st)
+            return
+        }
+        bump(src, st)
+    }
+}
+
+func push_i64(code: int[], n: int): unit {
+    var x = n
+    var i = 0
+    while i < 8 {
+        code.push(x & 255)
+        x = x >> 8
+        i = i + 1
+    }
+}
+
+func push_u32(buf: int[], n: int): unit {
+    var x = n
+    var i = 0
+    while i < 4 {
+        buf.push(x & 255)
+        x = x >> 8
+        i = i + 1
+    }
+}
+
+func emit_const(code: int[], n: int): unit {
+    code.push(op_const_int())
+    push_i64(code, n)
+}
+
+func parse_primary(src: int[], st: State, code: int[]): unit {
+    if st.failed != 0 {
+        return
+    }
+    if st.kind == tk_int() {
+        emit_const(code, st.value)
+        bump(src, st)
+        return
+    }
+    if st.kind == tk_lparen() {
+        bump(src, st)
+        parse_expr(src, st, code)
+        expect(src, st, tk_rparen())
+        return
+    }
+    fail(st)
+}
+
+func parse_unary(src: int[], st: State, code: int[]): unit {
+    if st.failed != 0 {
+        return
+    }
+    if st.kind == tk_minus() {
+        bump(src, st)
+        parse_unary(src, st, code)
+        if st.failed == 0 {
+            code.push(op_neg())
+        }
+        return
+    }
+    parse_primary(src, st, code)
+}
+
+func parse_term(src: int[], st: State, code: int[]): unit {
+    parse_unary(src, st, code)
+    while st.failed == 0 && (st.kind == tk_star() || st.kind == tk_slash() || st.kind == tk_percent()) {
+        let op = st.kind
+        bump(src, st)
+        parse_unary(src, st, code)
+        if st.failed == 0 {
+            if op == tk_star() {
+                code.push(op_mul())
+            } else {
+                if op == tk_slash() {
+                    code.push(op_div())
+                } else {
+                    code.push(op_mod())
+                }
+            }
+        }
+    }
+}
+
+func parse_expr(src: int[], st: State, code: int[]): unit {
+    parse_term(src, st, code)
+    while st.failed == 0 && (st.kind == tk_plus() || st.kind == tk_minus()) {
+        let op = st.kind
+        bump(src, st)
+        parse_term(src, st, code)
+        if st.failed == 0 {
+            if op == tk_plus() {
+                code.push(op_add())
+            } else {
+                code.push(op_sub())
+            }
+        }
+    }
+}
+
+func parse_main(src: int[], st: State, code: int[]): unit {
+    expect(src, st, tk_func())
+    if st.failed != 0 { return }
+    if is_main(src, st) {
+        bump(src, st)
+    } else {
+        fail(st)
+        return
+    }
+    expect(src, st, tk_lparen())
+    expect(src, st, tk_rparen())
+    expect(src, st, tk_colon())
+    expect(src, st, tk_kw_int())
+    expect(src, st, tk_lbrace())
+    expect(src, st, tk_return())
+    parse_expr(src, st, code)
+    expect(src, st, tk_rbrace())
+    if st.failed != 0 { return }
+    if st.kind != tk_eof() {
+        fail(st)
+        return
+    }
+    code.push(op_return())
+    code.push(op_const_unit())
+    code.push(op_return())
+}
+
+func compile_source(src: int[], code: int[]): int {
+    var st = State { pos: 0, kind: 0, value: 0, start: 0, len: 0, failed: 0 }
+    bump(src, st)
+    parse_package(src, st)
+    parse_main(src, st, code)
+    if st.failed != 0 {
+        return 1
+    }
+    return 0
+}
+
+func wrap_image(image: int[], code: int[]): unit {
+    image.push(83)
+    image.push(78)
+    image.push(66)
+    image.push(67)
+    push_u32(image, 1)
+    push_u32(image, 0)
+    push_u32(image, 0)
+    push_u32(image, 1)
+    push_u32(image, 4)
+    image.push(109)
+    image.push(97)
+    image.push(105)
+    image.push(110)
+    push_u32(image, 0)
+    push_u32(image, 0)
+    push_u32(image, code.len())
+    var i = 0
+    while i < code.len() {
+        image.push(code[i])
+        i = i + 1
+    }
+}
+
+func main(): int {
+    let src = read_bytes("in.snl")
+    var code: int[] = []
+    if compile_source(src, code) != 0 {
+        Console.printline("cannot compile in.snl")
+        return 1
+    }
+    var image: int[] = []
+    wrap_image(image, code)
+    write_bytes("out.snbc", image)
+    return 0
+}
