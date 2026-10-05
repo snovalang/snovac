@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  apache-2.0:
+  apache-2-0:
     name: Apache License 2.0
     runs-on: ubuntu-latest
     steps:

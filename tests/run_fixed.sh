@@ -36,7 +36,7 @@ agree_exec() {
   if [ -n "$expect_out" ]; then
     printf '%s' "$expect_out" > "$SNBC_DIR/$label.expect"
     got_match=0
-    same_bytes "$SNBC_DIR/$label.expect" "$run_out" || got_match=$?
+    same_text "$SNBC_DIR/$label.expect" "$run_out" || got_match=$?
     assert "run: $label stdout" 0 "$got_match"
   else
     assert "run: $label stdout empty" 0 "$(wc -c < "$run_out" | tr -d '[:space:]')"

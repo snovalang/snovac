@@ -50,6 +50,22 @@ sys.exit(0 if left == right else 1)' "$1" "$2" && return 0
   return $?
 }
 
+# Text compare. MinGW opens stdout in text mode, so a captured print is CR LF.
+# The expected strings in these scripts are LF. Image checks stay on same_bytes.
+same_text() {
+  if [ ! -f "$1" ] || [ ! -f "$2" ]; then
+    return 2
+  fi
+  left=$(mktemp)
+  right=$(mktemp)
+  tr -d '\r' < "$1" > "$left"
+  tr -d '\r' < "$2" > "$right"
+  rc=0
+  same_bytes "$left" "$right" || rc=$?
+  rm -f "$left" "$right"
+  return "$rc"
+}
+
 
 . "$DIR/run_front.sh"
 . "$DIR/run_deps.sh"
