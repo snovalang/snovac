@@ -29,6 +29,27 @@ rc_of() {
   if "$@" >/dev/null 2>&1; then echo 0; else echo $?; fi
 }
 
+# Byte compare. A minimal MSYS install has no diffutils, so `cmp` exits 127
+# and every image check looks like a mismatch. Use cmp when it exists.
+same_bytes() {
+  if command -v cmp >/dev/null 2>&1; then
+    cmp -s "$1" "$2" && return 0
+    return $?
+  fi
+  if [ ! -f "$1" ] || [ ! -f "$2" ]; then
+    return 2
+  fi
+  python3 -c 'import pathlib, sys
+a, b = sys.argv[1:]
+try:
+    left = pathlib.Path(a).read_bytes()
+    right = pathlib.Path(b).read_bytes()
+except OSError:
+    sys.exit(2)
+sys.exit(0 if left == right else 1)' "$1" "$2" && return 0
+  return $?
+}
+
 # `Task<Result<unit, DataError>>` must close as two separate `>` tokens.
 # Snovalang has no shift operators; every `>>` in the corpus is a generic close.
 assert "generics: no >> token" 2 "$(toks generics.snl | grep -c '^ *[0-9]*:[0-9]* *> *$')"
@@ -570,15 +591,15 @@ assert "emit-snbc: return_zero.snl succeeds" 0 \
 assert "emit-snbc: second run succeeds" 0 \
   "$(rc_of "$SNOVAC" emit-snbc "$SRC_SNL" -o "$B")"
 images_match=0
-cmp -s "$A" "$B" || images_match=$?
+same_bytes "$A" "$B" || images_match=$?
 assert "emit-snbc: images are byte-identical" 0 "$images_match"
 listings_match=0
-cmp -s "$A.snbt" "$B.snbt" || listings_match=$?
+same_bytes "$A.snbt" "$B.snbt" || listings_match=$?
 assert "emit-snbc: listings are byte-identical" 0 "$listings_match"
 dd if="$A" of="$SNBC_DIR/head4" bs=1 count=4 >/dev/null 2>&1 || true
 printf 'SNBC' > "$SNBC_DIR/magic"
 magic_match=0
-cmp -s "$SNBC_DIR/head4" "$SNBC_DIR/magic" || magic_match=$?
+same_bytes "$SNBC_DIR/head4" "$SNBC_DIR/magic" || magic_match=$?
 assert "emit-snbc: magic is 53 4e 42 43" 0 "$magic_match"
 image_size="$(wc -c < "$A" | tr -d '[:space:]')"
 assert "emit-snbc: image is the return_zero container" 52 "$image_size"
@@ -617,10 +638,10 @@ agree_exec() {
   assert "emit-snbc: $label second run succeeds" 0 \
     "$(rc_of "$SNL_ABS" emit-snbc "$src" -o "$out2")"
   images_match=0
-  cmp -s "$out" "$out2" || images_match=$?
+  same_bytes "$out" "$out2" || images_match=$?
   assert "emit-snbc: $label images match" 0 "$images_match"
   listings_match=0
-  cmp -s "$out.snbt" "$out2.snbt" || listings_match=$?
+  same_bytes "$out.snbt" "$out2.snbt" || listings_match=$?
   assert "emit-snbc: $label listings match" 0 "$listings_match"
   run_out="$SNBC_DIR/$label.run.out"
   bc_out="$SNBC_DIR/$label.bc.out"
@@ -637,12 +658,12 @@ agree_exec() {
   assert "run: $label exit" "$expect_rc" "$run_rc"
   assert "run-snbc: $label exit matches snl run" "$run_rc" "$bc_rc"
   same=0
-  cmp -s "$run_out" "$bc_out" || same=$?
+  same_bytes "$run_out" "$bc_out" || same=$?
   assert "run-snbc: $label stdout matches snl run" 0 "$same"
   if [ -n "$expect_out" ]; then
     printf '%s' "$expect_out" > "$SNBC_DIR/$label.expect"
     got_match=0
-    cmp -s "$SNBC_DIR/$label.expect" "$run_out" || got_match=$?
+    same_bytes "$SNBC_DIR/$label.expect" "$run_out" || got_match=$?
     assert "run: $label stdout" 0 "$got_match"
   else
     assert "run: $label stdout empty" 0 "$(wc -c < "$run_out" | tr -d '[:space:]')"
@@ -796,7 +817,7 @@ assert "emit-snbc: compiler unit succeeds" 0 \
 assert "emit-snbc: compiler unit second run succeeds" 0 \
   "$(rc_of "$SNL_ABS" emit-snbc "$COMPILER" -o "$C1B")"
 compiler_images=0
-cmp -s "$C1" "$C1B" || compiler_images=$?
+same_bytes "$C1" "$C1B" || compiler_images=$?
 assert "emit-snbc: compiler unit images match" 0 "$compiler_images"
 
 compiler_case() {
@@ -820,15 +841,15 @@ compiler_case() {
   assert "compiler: $label snl run exits 0" 0 "$run_rc"
   assert "compiler: $label run-snbc exits 0" 0 "$bc_rc"
   same=0
-  cmp -s "$work/run.out" "$work/bc.out" || same=$?
+  same_bytes "$work/run.out" "$work/bc.out" || same=$?
   assert "compiler: $label stdout matches" 0 "$same"
   img=0
-  cmp -s "$work/by-run/out.snbc" "$work/by-bc/out.snbc" || img=$?
+  same_bytes "$work/by-run/out.snbc" "$work/by-bc/out.snbc" || img=$?
   assert "compiler: $label images match across executors" 0 "$img"
   assert "compiler: $label v0 emit succeeds" 0 \
     "$(rc_of "$SNL_ABS" emit-snbc "$work/by-run/in.snl" -o "$work/v0.snbc")"
   v0=0
-  cmp -s "$work/by-run/out.snbc" "$work/v0.snbc" || v0=$?
+  same_bytes "$work/by-run/out.snbc" "$work/v0.snbc" || v0=$?
   assert "compiler: $label image matches v0" 0 "$v0"
   if "$SNL_ABS" run-snbc "$work/by-run/out.snbc" >/dev/null 2>&1; then
     prod_rc=0
@@ -886,7 +907,7 @@ else
 fi
 assert "compiler: first generation exits 0" 0 "$gen_rc"
 self_cmp=0
-cmp -s "$SELF/v0.snbc" "$SELF/out.snbc" || self_cmp=$?
+same_bytes "$SELF/v0.snbc" "$SELF/out.snbc" || self_cmp=$?
 assert "compiler: first generation matches v0" 0 "$self_cmp"
 cp "$SELF/out.snbc" "$SELF/gen1.snbc"
 rm -f "$SELF/out.snbc"
@@ -897,7 +918,7 @@ else
 fi
 assert "compiler: second generation exits 0" 0 "$gen2_rc"
 self2=0
-cmp -s "$SELF/gen1.snbc" "$SELF/out.snbc" || self2=$?
+same_bytes "$SELF/gen1.snbc" "$SELF/out.snbc" || self2=$?
 assert "compiler: second generation matches" 0 "$self2"
 
 rm -rf "$SNBC_DIR" "$CC_ROOT"
