@@ -37,6 +37,47 @@ check_once() { # file -> path to its captured stderr
   printf '%s' "$out"
 }
 
+# sn_driver_normalize_path prints an MSYS path `/d/a/...` as `D:/a/...`.
+# find still returns the MSYS form. Compare those as the same path.
+winpath() {
+  p=$(printf '%s' "$1" | tr '\\' '/')
+  rest=${p#/}
+  drive=${rest%%/*}
+  tail=${rest#*/}
+  if [ "$rest" != "$p" ] && [ "${#drive}" -eq 1 ]; then
+    case "$drive" in
+      [a-zA-Z])
+        up=$(printf '%s' "$drive" | tr '[:lower:]' '[:upper:]')
+        printf '%s:/%s' "$up" "$tail"
+        return
+        ;;
+    esac
+  fi
+  case "$p" in
+    [a-zA-Z]:*)
+      up=$(printf '%s' "$p" | cut -c1 | tr '[:lower:]' '[:upper:]')
+      printf '%s%s' "$up" "$(printf '%s' "$p" | cut -c2-)"
+      ;;
+    *)
+      printf '%s' "$p"
+      ;;
+  esac
+}
+
+# The `-->` path, with backslashes folded to slashes. Empty when this line
+# is not a location.
+awk_loc='
+  function locpath(line,    i, loc) {
+    gsub(/\r/, "", line)
+    gsub(/\\/, "/", line)
+    i = index(line, " --> ")
+    if (!i) return ""
+    loc = substr(line, i + 5)
+    if (match(loc, /:[0-9]+:[0-9]+$/)) return substr(loc, 1, RSTART - 1)
+    return ""
+  }
+'
+
 # Errors reported against $1 itself, ignoring everything from builtin/ etc.
 #
 # Severity matters: a compile-pass fixture is allowed to emit WARNINGS (several
@@ -45,10 +86,10 @@ check_once() { # file -> path to its captured stderr
 # `error[...]` lines are a verdict, so the severity of the diagnostic heading
 # is carried down to its `-->` location line before counting.
 own_errors() { # file -> count
-  awk -v f="$1" '
+  awk -v f="$(winpath "$1")" "$awk_loc"'
         /^error\[/   { sev = "error"; next }
         /^warning\[/ { sev = "warning"; next }
-        $0 ~ " --> " f ":" && sev == "error" { n++; sev = "" }
+        sev == "error" && locpath($0) == f { n++; sev = "" }
         END { print n + 0 }' "$(check_once "$1")"
 }
 
@@ -62,10 +103,10 @@ expected_code() { # file -> code or ""
 }
 
 own_codes() { # file -> newline-separated ERROR codes reported against it
-  awk -v f="$1" '
+  awk -v f="$(winpath "$1")" "$awk_loc"'
         /^error\[SNOVA/   { split($0, m, /SNOVA0*/); split(m[2], n, /\]/); code = n[1]; next }
         /^warning\[SNOVA/ { code = ""; next }
-        $0 ~ " --> " f ":" && code != "" { print code + 0; code = "" }' "$(check_once "$1")"
+        code != "" && locpath($0) == f { print code + 0; code = "" }' "$(check_once "$1")"
 }
 
 ALLOW="$ROOT/battery.allow"
