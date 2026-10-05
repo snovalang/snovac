@@ -18,8 +18,7 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
 
   fprintf(f, "/* Auto-generated standalone binary with embedded Snovalang "
              "runtime */\n");
-  fprintf(f, "#define _POSIX_C_SOURCE 200809L\n");
-  fprintf(f, "#define _DEFAULT_SOURCE\n");
+  sn_native_write_host_features(f, target->os);
   fprintf(f, "#include <stdio.h>\n");
   fprintf(f, "#include <stdlib.h>\n");
   fprintf(f, "#include <string.h>\n");

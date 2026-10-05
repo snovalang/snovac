@@ -31,6 +31,20 @@ static int append_ws_args(char *storage, char **argv, int *argc, int max_argc) {
   return 1;
 }
 
+/* Feature-test macros for the C the backend asks the host compiler to
+ * build. #ifndef keeps these from clashing with the same -D in cflags. */
+static void sn_native_write_host_features(FILE *f, SnTargetOS os) {
+  if (os == SN_OS_WINDOWS) {
+    fputs("#ifndef WIN32_LEAN_AND_MEAN\n#define WIN32_LEAN_AND_MEAN\n#endif\n", f);
+    fputs("#ifndef _WIN32_WINNT\n#define _WIN32_WINNT 0x0601\n#endif\n", f);
+  } else if (os == SN_OS_DARWIN) {
+    fputs("#ifndef _DARWIN_C_SOURCE\n#define _DARWIN_C_SOURCE\n#endif\n", f);
+  } else {
+    fputs("#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n", f);
+    fputs("#ifndef _DEFAULT_SOURCE\n#define _DEFAULT_SOURCE\n#endif\n", f);
+  }
+}
+
 static int sn_native_spawn_cc(const SnTargetInfo *target, const char *output_path,
                               const char *c_source_path, const char *inc_dir,
                               const char *lib_path) {

@@ -132,7 +132,8 @@ function Install-FromSource([string]$Dir) {
         # -s hides the cc recipe lines. OS=Windows_NT still wins if MSYS
         # make stripped the OS environment variable, and -lws2_32 resolves
         # the Winsock imports in socket_abi.c.
-        & make -s OS=Windows_NT EXTRA_LIBS="-lws2_32" build/snl.exe build/libsnovart.a
+        # Windows feature-test macros. Do not pass Darwin or glibc -D flags.
+        & make -s OS=Windows_NT EXTRA_LIBS="-lws2_32" CPPFLAGS="-DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0601" build/snl.exe build/libsnovart.a
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Building snl failed."
         }
@@ -179,12 +180,12 @@ try {
 
     $Installed = $false
     # 2. Try downloading pre-built zip release
-    Write-Host "==> Checking release package $ZipName..." -ForegroundColor Cyan
     $ZipPath = Join-Path $TempDir $ZipName
     try {
+        # A missing asset throws. Swallow it here so a 404 is not a warning.
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
         Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath -UseBasicParsing -ErrorAction Stop
-        Write-Host "[OK] Downloaded release archive." -ForegroundColor Green
+        Write-Host "==> Downloaded $ZipName." -ForegroundColor Green
         Expand-Archive -Path $ZipPath -DestinationPath (Join-Path $TempDir "extracted") -Force
 
         $candidates = @(
@@ -200,7 +201,7 @@ try {
             $Installed = $true
         }
     } catch {
-        Write-Host "Release archive not yet published on GitHub Releases. Falling back to a source build..." -ForegroundColor Yellow
+        Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue
     }
 
     # 3. Source build fallback. An update clones the latest tree instead of

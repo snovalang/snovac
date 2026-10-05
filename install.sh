@@ -116,7 +116,7 @@ case "$OS" in
                 exit $?
             fi
         fi
-        echo "${YELLOW}PowerShell cannot be started from this shell. Continuing with the shell installer.${RESET}"
+        echo "${BOLD}==>${RESET} PowerShell is not available in this shell. Continuing here."
         ;;
     *)
         echo "${RED}Error: Unsupported Operating System: $OS${RESET}" >&2
@@ -143,8 +143,23 @@ else
 fi
 DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${ARCHIVE}"
 
+# Feature-test macros for the host that compiles snl. A missing release
+# builds from source, and these flags override the Makefile default so a
+# Darwin host does not compile as Linux, and Windows does not inherit
+# Darwin macros.
+case "$PLATFORM" in
+    darwin)
+        BUILD_CPPFLAGS='-D_DARWIN_C_SOURCE'
+        ;;
+    linux)
+        BUILD_CPPFLAGS='-D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE'
+        ;;
+    windows)
+        BUILD_CPPFLAGS='-DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0601'
+        ;;
+esac
+
 echo "${BOLD}==>${RESET} Detected target: ${GREEN}${PLATFORM}-${ARCH_NAME}${RESET}"
-echo "${BOLD}==>${RESET} Downloading ${CYAN}${ARCHIVE}${RESET} from ${REPO}..."
 
 TMP_DIR="$(mktemp -d)"
 cleanup() {
@@ -153,17 +168,20 @@ cleanup() {
 trap cleanup EXIT
 
 compile_from_source() {
-    echo "${YELLOW}Release archive not found yet on latest release. Building snl...${RESET}"
+    echo "${BOLD}==>${RESET} Building ${GREEN}snl${RESET} from source."
     if ! command -v git >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then
         return 1
     fi
     git clone --depth 1 --quiet "https://github.com/${REPO}.git" "$TMP_DIR/snovac-src" || return 1
     # Quiet recipes. On Windows, force the Winsock link even when MSYS make
-    # has cleared the OS environment variable.
+    # has cleared the OS environment variable. CPPFLAGS selects the host
+    # feature-test macros (Darwin, Linux, or Windows).
     if [ "$PLATFORM" = "windows" ]; then
-        make -s -C "$TMP_DIR/snovac-src" OS=Windows_NT EXTRA_LIBS="-lws2_32" build/snl.exe build/libsnovart.a || return 1
+        make -s -C "$TMP_DIR/snovac-src" OS=Windows_NT EXTRA_LIBS="-lws2_32" \
+            CPPFLAGS="$BUILD_CPPFLAGS" build/snl.exe build/libsnovart.a || return 1
     else
-        make -s -C "$TMP_DIR/snovac-src" build/snl build/libsnovart.a || return 1
+        make -s -C "$TMP_DIR/snovac-src" CPPFLAGS="$BUILD_CPPFLAGS" \
+            build/snl build/libsnovart.a || return 1
     fi
     mkdir -p "$TMP_DIR/extracted"
     if [ -f "$TMP_DIR/snovac-src/build/snl.exe" ]; then
@@ -175,26 +193,31 @@ compile_from_source() {
     fi
 }
 
-# 3. Download release binary. curl and wget both fall back to a source build.
+# 3. Download the release archive when it exists. A missing asset is not
+# an error: curl and wget stay quiet, and the script builds from source.
+# `-fsSL` would still print the 404 because `-S` is `--show-error`.
+fetched=0
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE" || {
-        rm -f "$TMP_DIR/$ARCHIVE"
-        compile_from_source
-    } || {
-        echo "${RED}Failed to download binary from $DOWNLOAD_URL${RESET}" >&2
-        exit 1
-    }
+    if curl -fsL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE" 2>/dev/null; then
+        fetched=1
+    fi
 elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$TMP_DIR/$ARCHIVE" "$DOWNLOAD_URL" || {
-        rm -f "$TMP_DIR/$ARCHIVE"
-        compile_from_source
-    } || {
-        echo "${RED}Failed to download binary using wget${RESET}" >&2
-        exit 1
-    }
+    if wget -qO "$TMP_DIR/$ARCHIVE" "$DOWNLOAD_URL" 2>/dev/null; then
+        fetched=1
+    fi
 else
     echo "${RED}Error: curl or wget is required to install snl.${RESET}" >&2
     exit 1
+fi
+
+if [ "$fetched" -eq 1 ]; then
+    echo "${BOLD}==>${RESET} Downloaded ${CYAN}${ARCHIVE}${RESET}."
+else
+    rm -f "$TMP_DIR/$ARCHIVE"
+    compile_from_source || {
+        echo "${RED}Failed to install snl for ${PLATFORM}-${ARCH_NAME}.${RESET}" >&2
+        exit 1
+    }
 fi
 
 if [ -f "$TMP_DIR/$ARCHIVE" ]; then

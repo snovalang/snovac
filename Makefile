@@ -13,11 +13,11 @@
 #   src/driver   sn_driver_  sn_project_  sn_cmd_
 #
 # `make compdb` writes compile_commands.json for clangd from the flags below.
-# compile_flags.txt mirrors those flags for a checkout that has not been built.
+# compile_flags.txt is the Darwin fallback used before `make compdb`.
+# CPPFLAGS itself is chosen from the host: Windows, Darwin, or Linux.
 
 CC      ?= cc
 CFLAGS  ?= -std=c11 -O2 -g -pthread
-CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
            -Wmissing-prototypes -Wconversion -Wno-sign-conversion \
            -Wno-format-truncation
@@ -53,9 +53,18 @@ endif
 ifeq ($(WINDOWS_HOST),1)
   EXE := .exe
   EXTRA_LIBS := -lws2_32
+  # Vista+ Win32 API. Do not define Darwin or glibc feature macros here.
+  CPPFLAGS ?= -DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0601
+else ifeq ($(UNAME_S),Darwin)
+  EXE :=
+  EXTRA_LIBS := -lpthread
+  # Full Darwin namespace. _POSIX_C_SOURCE alone hides Apple prototypes.
+  CPPFLAGS ?= -D_DARWIN_C_SOURCE
 else
   EXE :=
   EXTRA_LIBS := -lpthread
+  # POSIX.1-2008 plus the glibc default feature set (Linux and the BSDs).
+  CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
 endif
 
 BIN      = $(BUILD)/snl$(EXE)
