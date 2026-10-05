@@ -16,6 +16,7 @@
 
 typedef struct {
     const char *name;
+    const char *type_name;
     uint32_t index;
 } LocalVar;
 
@@ -28,6 +29,7 @@ typedef struct {
     SnFunctionChunk *current_fn;
     LocalVar locals[256];
     uint32_t local_count;
+    const char *expr_type_name;
     int failed;
 } Compiler;
 
@@ -46,6 +48,7 @@ static uint32_t add_local(Compiler *c, const char *name, SnSpan span) {
     }
     uint32_t idx = c->local_count++;
     c->locals[idx].name = name;
+    c->locals[idx].type_name = NULL;
     c->locals[idx].index = idx;
     if (c->local_count > c->current_fn->local_count) {
         c->current_fn->local_count = c->local_count;
@@ -109,6 +112,107 @@ static void patch_jump(Compiler *c, size_t jump_offset_pos) {
 static void compile_expr(Compiler *c, const SnExpr *e);
 static void compile_stmt(Compiler *c, const SnStmt *s);
 
+static const SnDecl *find_struct(const Compiler *c, const char *name) {
+    if (!c || !c->unit || !name) {
+        return NULL;
+    }
+    for (size_t i = 0; i < c->unit->decls.len; i++) {
+        const SnDecl *d = SN_LIST_AT(c->unit->decls, SnDecl, i);
+        if (d && d->kind == SN_DECL_STRUCT && d->name && strcmp(d->name, name) == 0) {
+            return d;
+        }
+    }
+    return NULL;
+}
+
+static int struct_field_at(const SnDecl *st, const char *name, uint32_t *out_idx,
+                           const SnDecl **out_field) {
+    if (!st || !name) {
+        return 0;
+    }
+    uint32_t idx = 0;
+    for (size_t i = 0; i < st->members.len; i++) {
+        const SnDecl *m = SN_LIST_AT(st->members, SnDecl, i);
+        if (!m || m->kind != SN_DECL_FIELD) {
+            continue;
+        }
+        if (m->name && strcmp(m->name, name) == 0) {
+            if (out_idx) {
+                *out_idx = idx;
+            }
+            if (out_field) {
+                *out_field = m;
+            }
+            return 1;
+        }
+        if (idx == UINT32_MAX) {
+            return 0;
+        }
+        idx++;
+    }
+    return 0;
+}
+
+static const char *field_type_name(const SnDecl *field) {
+    if (field && field->type && field->type->kind == SN_TYPE_NAME && field->type->name) {
+        return field->type->name;
+    }
+    return NULL;
+}
+
+static void emit_default_for_type(Compiler *c, const SnType *type, uint32_t line) {
+    const char *n = (type && type->kind == SN_TYPE_NAME && type->name) ? type->name : "";
+    if (strcmp(n, "bool") == 0) {
+        emit_byte(c, OP_CONST_BOOL, line);
+        emit_byte(c, 0, line);
+        return;
+    }
+    if (strcmp(n, "string") == 0) {
+        uint32_t s_idx = sn_bcunit_add_string(c->bc, "");
+        emit_byte(c, OP_CONST_STRING, line);
+        emit_u32(c, s_idx, line);
+        return;
+    }
+    if (strcmp(n, "double") == 0 || strcmp(n, "decimal") == 0) {
+        emit_byte(c, OP_CONST_DOUBLE, line);
+        emit_double(c, 0.0, line);
+        return;
+    }
+    emit_byte(c, OP_CONST_INT, line);
+    emit_i64(c, 0, line);
+}
+
+static void emit_bool_const(Compiler *c, int value, uint32_t line) {
+    emit_byte(c, OP_CONST_BOOL, line);
+    emit_byte(c, value ? 1 : 0, line);
+}
+
+static void emit_andand(Compiler *c, const SnExpr *e, uint32_t line) {
+    compile_expr(c, e->lhs);
+    size_t to_false = emit_jump(c, OP_JUMP_IF_FALSE, line);
+    compile_expr(c, e->rhs);
+    size_t rhs_false = emit_jump(c, OP_JUMP_IF_FALSE, line);
+    emit_bool_const(c, 1, line);
+    size_t to_end = emit_jump(c, OP_JUMP, line);
+    patch_jump(c, to_false);
+    patch_jump(c, rhs_false);
+    emit_bool_const(c, 0, line);
+    patch_jump(c, to_end);
+}
+
+static void emit_oror(Compiler *c, const SnExpr *e, uint32_t line) {
+    compile_expr(c, e->lhs);
+    size_t to_true = emit_jump(c, OP_JUMP_IF_TRUE, line);
+    compile_expr(c, e->rhs);
+    size_t rhs_true = emit_jump(c, OP_JUMP_IF_TRUE, line);
+    emit_bool_const(c, 0, line);
+    size_t to_end = emit_jump(c, OP_JUMP, line);
+    patch_jump(c, to_true);
+    patch_jump(c, rhs_true);
+    emit_bool_const(c, 1, line);
+    patch_jump(c, to_end);
+}
+
 /* A type declaration has no opcode. It is a dropped program only when it
  * carries code this pass does not lower: a nested routine, an initializer,
  * or an accessor projection. A field-only struct is not one of those. */
@@ -137,8 +241,10 @@ static void reject_unlowered_decl(Compiler *c, const SnDecl *d) {
 }
 
 static void compile_expr(Compiler *c, const SnExpr *e) {
+    const char *produced = NULL;
     if (!e) {
         emit_unsupported(c, (SnSpan){0}, "missing expression");
+        c->expr_type_name = NULL;
         return;
     }
     uint32_t line = e->span.line;
@@ -162,7 +268,7 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
     case SN_EXPR_CHAR: {
         if (e->interpolated) {
             emit_unsupported(c, e->span, "interpolated string");
-            return;
+            break;
         }
         const char *raw = e->text ? e->text : "";
         char buf[8192];
@@ -206,6 +312,7 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
         if (resolve_local(c, e->text, &loc_idx)) {
             emit_byte(c, OP_GET_LOCAL, line);
             emit_u32(c, loc_idx, line);
+            produced = c->locals[loc_idx].type_name;
         } else {
             uint32_t fn_idx;
             if (resolve_func(c, e->text, &fn_idx)) {
@@ -218,13 +325,31 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
         break;
     }
     case SN_EXPR_ASSIGN: {
+        if (e->op != SN_TOK_ASSIGN) {
+            emit_unsupported(c, e->span, "assignment");
+            break;
+        }
         compile_expr(c, e->rhs);
+        const char *rhs_ty = c->expr_type_name;
         int stored = 0;
-        if (e->op == SN_TOK_ASSIGN && e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
             uint32_t loc_idx;
             if (resolve_local(c, e->lhs->text, &loc_idx)) {
                 emit_byte(c, OP_SET_LOCAL, line);
                 emit_u32(c, loc_idx, line);
+                c->locals[loc_idx].type_name = rhs_ty;
+                produced = rhs_ty;
+                stored = 1;
+            }
+        } else if (e->lhs && e->lhs->kind == SN_EXPR_MEMBER && e->lhs->lhs) {
+            compile_expr(c, e->lhs->lhs);
+            const char *recv_ty = c->expr_type_name;
+            uint32_t field_idx = 0;
+            const SnDecl *field = NULL;
+            if (struct_field_at(find_struct(c, recv_ty), e->lhs->text, &field_idx, &field)) {
+                emit_byte(c, OP_SET_FIELD, line);
+                emit_u32(c, field_idx, line);
+                produced = field_type_name(field);
                 stored = 1;
             }
         }
@@ -234,6 +359,14 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
         break;
     }
     case SN_EXPR_BINARY:
+        if (e->op == SN_TOK_ANDAND) {
+            emit_andand(c, e, line);
+            break;
+        }
+        if (e->op == SN_TOK_OROR) {
+            emit_oror(c, e, line);
+            break;
+        }
         compile_expr(c, e->lhs);
         compile_expr(c, e->rhs);
         switch (e->op) {
@@ -242,6 +375,11 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
         case SN_TOK_STAR:    emit_byte(c, OP_MUL, line); break;
         case SN_TOK_SLASH:   emit_byte(c, OP_DIV, line); break;
         case SN_TOK_PERCENT: emit_byte(c, OP_MOD, line); break;
+        case SN_TOK_AMP:     emit_byte(c, OP_BIT_AND, line); break;
+        case SN_TOK_PIPE:    emit_byte(c, OP_BIT_OR, line); break;
+        case SN_TOK_CARET:   emit_byte(c, OP_BIT_XOR, line); break;
+        case SN_TOK_SHL:     emit_byte(c, OP_SHL, line); break;
+        case SN_TOK_SHR:     emit_byte(c, OP_SHR, line); break;
         case SN_TOK_EQ:      emit_byte(c, OP_EQ, line); break;
         case SN_TOK_NE:      emit_byte(c, OP_NE, line); break;
         case SN_TOK_LT:      emit_byte(c, OP_LT, line); break;
@@ -295,6 +433,20 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
             break;
         }
 
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && e->lhs->text &&
+            strcmp(e->lhs->text, "read_bytes") == 0 && e->args.len == 1) {
+            compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
+            emit_byte(c, OP_READ_BYTES, line);
+            break;
+        }
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && e->lhs->text &&
+            strcmp(e->lhs->text, "write_bytes") == 0 && e->args.len == 2) {
+            compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
+            compile_expr(c, SN_LIST_AT(e->args, SnExpr, 1));
+            emit_byte(c, OP_WRITE_BYTES, line);
+            break;
+        }
+
         uint32_t fn_idx = 0;
         int found = 0;
         if (e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
@@ -326,10 +478,81 @@ static void compile_expr(Compiler *c, const SnExpr *e) {
         emit_byte(c, OP_GET_INDEX, line);
         break;
     }
+    case SN_EXPR_STRUCT_LIT: {
+        const char *tname = (e->lhs && e->lhs->kind == SN_EXPR_IDENT) ? e->lhs->text : NULL;
+        const SnDecl *st = find_struct(c, tname);
+        if (!st) {
+            emit_unsupported(c, e->span, "struct literal");
+            break;
+        }
+        for (size_t j = 0; j < e->field_names.len; j++) {
+            const char *fname = (const char *)e->field_names.items[j];
+            if (!struct_field_at(st, fname, NULL, NULL)) {
+                emit_unsupported(c, e->span, "struct field");
+                break;
+            }
+        }
+        if (c->failed) {
+            break;
+        }
+        uint32_t nfields = 0;
+        for (size_t i = 0; i < st->members.len; i++) {
+            const SnDecl *m = SN_LIST_AT(st->members, SnDecl, i);
+            if (!m || m->kind != SN_DECL_FIELD) {
+                continue;
+            }
+            const SnExpr *val = NULL;
+            for (size_t j = 0; j < e->field_names.len; j++) {
+                const char *fname = (const char *)e->field_names.items[j];
+                if (m->name && fname && strcmp(fname, m->name) == 0) {
+                    val = SN_LIST_AT(e->args, SnExpr, j);
+                    break;
+                }
+            }
+            if (val) {
+                compile_expr(c, val);
+            } else {
+                emit_default_for_type(c, m->type, line);
+            }
+            if (nfields == UINT32_MAX) {
+                emit_unsupported(c, e->span, "struct literal");
+                break;
+            }
+            nfields++;
+        }
+        if (c->failed) {
+            break;
+        }
+        uint32_t class_idx = sn_bcunit_add_string(c->bc, tname ? tname : "");
+        emit_byte(c, OP_NEW_OBJ, line);
+        emit_u32(c, class_idx, line);
+        emit_u32(c, nfields, line);
+        produced = tname;
+        break;
+    }
+    case SN_EXPR_MEMBER: {
+        if (!e->lhs) {
+            emit_unsupported(c, e->span, "field");
+            break;
+        }
+        compile_expr(c, e->lhs);
+        const char *recv_ty = c->expr_type_name;
+        uint32_t field_idx = 0;
+        const SnDecl *field = NULL;
+        if (!struct_field_at(find_struct(c, recv_ty), e->text, &field_idx, &field)) {
+            emit_unsupported(c, e->span, "field");
+            break;
+        }
+        emit_byte(c, OP_GET_FIELD, line);
+        emit_u32(c, field_idx, line);
+        produced = field_type_name(field);
+        break;
+    }
     default:
         emit_unsupported(c, e->span, "expression");
         break;
     }
+    c->expr_type_name = produced;
 }
 
 static void compile_stmt(Compiler *c, const SnStmt *s) {
@@ -347,8 +570,11 @@ static void compile_stmt(Compiler *c, const SnStmt *s) {
             compile_expr(c, s->expr);
         } else {
             emit_byte(c, OP_CONST_UNIT, line);
+            c->expr_type_name = NULL;
         }
+        const char *ty = c->expr_type_name;
         uint32_t idx = add_local(c, s->name, s->span);
+        c->locals[idx].type_name = ty;
         emit_byte(c, OP_SET_LOCAL, line);
         emit_u32(c, idx, line);
         emit_byte(c, OP_POP, line);
@@ -412,6 +638,7 @@ int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCU
     c.bc = out;
     c.current_fn = NULL;
     c.local_count = 0;
+    c.expr_type_name = NULL;
     c.failed = 0;
 
     /* First pass: register function prototypes. Any other declaration is
@@ -439,7 +666,10 @@ int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCU
 
             for (size_t pi = 0; pi < d->params.len; pi++) {
                 const SnParam *p = SN_LIST_AT(d->params, SnParam, pi);
-                add_local(&c, p->name, p->span);
+                uint32_t idx = add_local(&c, p->name, p->span);
+                if (p->type && p->type->kind == SN_TYPE_NAME) {
+                    c.locals[idx].type_name = p->type->name;
+                }
             }
 
             if (d->body) {

@@ -1,0 +1,6 @@
+package tests.bootstrap.array
+
+func main(): int {
+    let xs = [10, 20, 30]
+    return xs[0] + xs[2]
+}

@@ -124,10 +124,67 @@ static void test_listing_escapes(void) {
     sn_bcunit_free(&unit);
 }
 
+static void test_load_canonical(void) {
+    SnBCUnit unit;
+    sn_bcunit_init(&unit);
+    uint32_t sidx = sn_bcunit_add_string(&unit, "hi");
+    uint32_t fn_idx = sn_bcunit_add_function(&unit, "main", 1);
+    unit.main_func_idx = fn_idx;
+    unit.functions[0]->local_count = 2;
+    SnChunk *chunk = &unit.functions[0]->chunk;
+    sn_chunk_write(chunk, (uint8_t)OP_CONST_INT, 1);
+    sn_chunk_write_i64(chunk, 7, 1);
+    sn_chunk_write(chunk, (uint8_t)OP_RETURN, 1);
+    (void)sidx;
+
+    const char *path = "build/test_snbc_load.snbc";
+    CHECK("load fixture writes", sn_bcunit_write_canonical(&unit, path));
+
+    SnBCUnit loaded;
+    CHECK("canonical image loads", sn_bcunit_load_canonical(&loaded, path));
+    CHECK("loaded main index", loaded.main_func_idx == unit.main_func_idx);
+    CHECK("loaded string",
+          loaded.string_pool.count == 1 && loaded.string_pool.strings[0] &&
+              strcmp(loaded.string_pool.strings[0], "hi") == 0);
+    CHECK("loaded function",
+          loaded.function_count == 1 && loaded.functions[0]->name &&
+              strcmp(loaded.functions[0]->name, "main") == 0 &&
+              loaded.functions[0]->arity == 1 &&
+              loaded.functions[0]->local_count == 2 &&
+              loaded.functions[0]->chunk.count == chunk->count &&
+              memcmp(loaded.functions[0]->chunk.code, chunk->code, chunk->count) == 0);
+
+    FILE *bad = fopen("build/test_snbc_bad.snbc", "wb");
+    CHECK("bad magic file opens", bad != NULL);
+    if (bad) {
+        fputs("XXXX", bad);
+        fclose(bad);
+    }
+    SnBCUnit rejected;
+    CHECK("bad magic is rejected",
+          !sn_bcunit_load_canonical(&rejected, "build/test_snbc_bad.snbc"));
+    FILE *tiny = fopen("build/test_snbc_short.snbc", "wb");
+    if (tiny) {
+        fputs("SN", tiny);
+        fclose(tiny);
+    }
+    CHECK("short file is rejected",
+          !sn_bcunit_load_canonical(&rejected, "build/test_snbc_short.snbc"));
+    CHECK("missing file is rejected",
+          !sn_bcunit_load_canonical(&rejected, "build/test_snbc_missing.snbc"));
+
+    remove(path);
+    remove("build/test_snbc_bad.snbc");
+    remove("build/test_snbc_short.snbc");
+    sn_bcunit_free(&unit);
+    sn_bcunit_free(&loaded);
+}
+
 int main(void) {
     test_write_u32_le();
     test_canonical_image();
     test_listing_escapes();
+    test_load_canonical();
 
     printf("\n%d passed, %d failed\n", pass, fail);
     return fail == 0 ? 0 : 1;

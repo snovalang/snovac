@@ -596,6 +596,102 @@ assert "emit-snbc: .snl still parses" 0 \
   "$(rc_of "$SNOVAC" --check-parse "$SRC_SNL")"
 assert "emit-snbc: .snl still runs" 0 \
   "$(rc_of "$SNOVAC" run "$SRC_SNL")"
+assert "run-snbc: return_zero exits 0" 0 \
+  "$(rc_of "$SNOVAC" run-snbc "$A")"
+
+case "$SNOVAC" in
+  /*) SNL_ABS="$SNOVAC" ;;
+  *) SNL_ABS="$(pwd)/$SNOVAC" ;;
+esac
+
+agree_exec() {
+  label="$1"
+  src="$2"
+  expect_rc="$3"
+  expect_out="$4"
+  work="$5"
+  out="$SNBC_DIR/$label.snbc"
+  out2="$SNBC_DIR/$label-b.snbc"
+  assert "emit-snbc: $label succeeds" 0 \
+    "$(rc_of "$SNL_ABS" emit-snbc "$src" -o "$out")"
+  assert "emit-snbc: $label second run succeeds" 0 \
+    "$(rc_of "$SNL_ABS" emit-snbc "$src" -o "$out2")"
+  images_match=0
+  cmp -s "$out" "$out2" || images_match=$?
+  assert "emit-snbc: $label images match" 0 "$images_match"
+  listings_match=0
+  cmp -s "$out.snbt" "$out2.snbt" || listings_match=$?
+  assert "emit-snbc: $label listings match" 0 "$listings_match"
+  run_out="$SNBC_DIR/$label.run.out"
+  bc_out="$SNBC_DIR/$label.bc.out"
+  if (cd "$work" && "$SNL_ABS" run "$src" >"$run_out"); then
+    run_rc=0
+  else
+    run_rc=$?
+  fi
+  if (cd "$work" && "$SNL_ABS" run-snbc "$out" >"$bc_out"); then
+    bc_rc=0
+  else
+    bc_rc=$?
+  fi
+  assert "run: $label exit" "$expect_rc" "$run_rc"
+  assert "run-snbc: $label exit matches snl run" "$run_rc" "$bc_rc"
+  same=0
+  cmp -s "$run_out" "$bc_out" || same=$?
+  assert "run-snbc: $label stdout matches snl run" 0 "$same"
+  if [ -n "$expect_out" ]; then
+    printf '%s' "$expect_out" > "$SNBC_DIR/$label.expect"
+    got_match=0
+    cmp -s "$SNBC_DIR/$label.expect" "$run_out" || got_match=$?
+    assert "run: $label stdout" 0 "$got_match"
+  else
+    assert "run: $label stdout empty" 0 "$(wc -c < "$run_out" | tr -d '[:space:]')"
+  fi
+}
+
+agree_exec "logic" "$DIR/bootstrap/logic.snl" 0 "" "$SNBC_DIR"
+agree_exec "call" "$DIR/bootstrap/call.snl" 42 "" "$SNBC_DIR"
+agree_exec "bits" "$DIR/bootstrap/bits.snl" 4 "" "$SNBC_DIR"
+agree_exec "array" "$DIR/bootstrap/array.snl" 40 "" "$SNBC_DIR"
+agree_exec "struct_field" "$DIR/bootstrap/struct_field.snl" 7 "" "$SNBC_DIR"
+BYTES_DIR="$SNBC_DIR/bytes-work"
+mkdir -p "$BYTES_DIR"
+agree_exec "bytes" "$DIR/bootstrap/bytes.snl" 0 "65
+66
+67
+" "$BYTES_DIR"
+
+printf 'SN' > "$SNBC_DIR/short.snbc"
+assert "run-snbc: short image exits non-zero" 1 \
+  "$(rc_of "$SNOVAC" run-snbc "$SNBC_DIR/short.snbc" | grep -c '[^0]')"
+printf 'XXXX' > "$SNBC_DIR/badmagic.snbc"
+assert "run-snbc: bad magic exits non-zero" 1 \
+  "$(rc_of "$SNOVAC" run-snbc "$SNBC_DIR/badmagic.snbc" | grep -c '[^0]')"
+assert "run-snbc: missing file exits non-zero" 1 \
+  "$(rc_of "$SNOVAC" run-snbc "$SNBC_DIR/missing.snbc" | grep -c '[^0]')"
+python3 - "$SNBC_DIR/badop.snbc" <<'PY'
+import struct, sys
+def u32(n):
+    return struct.pack("<I", n)
+name = b"main"
+code = bytes([0xFE])
+blob = b"".join([
+    u32(0x43424E53),
+    u32(1),
+    u32(0),
+    u32(0),
+    u32(1),
+    u32(len(name)),
+    name,
+    u32(0),
+    u32(0),
+    u32(len(code)),
+    code,
+])
+open(sys.argv[1], "wb").write(blob)
+PY
+assert "run-snbc: unknown opcode exits non-zero" 1 \
+  "$(rc_of "$SNOVAC" run-snbc "$SNBC_DIR/badop.snbc" | grep -c '[^0]')"
 
 reject_sns() {
   label="$1"
@@ -663,11 +759,9 @@ reject_lower() {
 
 printf 'package tests.bootstrap.drop_null\n\nfunc main(): int {\n    return null\n}\n' > "$SNBC_DIR/drop_null.snl"
 printf 'package tests.bootstrap.drop_break\n\nfunc main(): int {\n    break\n    return 0\n}\n' > "$SNBC_DIR/drop_break.snl"
-printf 'package tests.bootstrap.drop_and\n\nfunc main(): int {\n    return true && false\n}\n' > "$SNBC_DIR/drop_and.snl"
 printf 'package tests.bootstrap.drop_body\n\nfunc main(): int\n' > "$SNBC_DIR/drop_body.snl"
 reject_lower "drop_null" "$SNBC_DIR/drop_null.snl"
 reject_lower "drop_break" "$SNBC_DIR/drop_break.snl"
-reject_lower "drop_and" "$SNBC_DIR/drop_and.snl"
 reject_lower "drop_body" "$SNBC_DIR/drop_body.snl"
 reject_lower "classes" "$DIR/compile-pass/classes.snl"
 rm -rf "$SNBC_DIR"

@@ -1185,6 +1185,48 @@ static SnSymbol *select_overload(SnChecker *c, SnExpr *call, SnTypeRep **arg_tys
     return best;
 }
 
+/* read_bytes and write_bytes are ordinary calls. They are not tokens and
+ * they are not declared in the program. The tree walk and the native runner
+ * both implement them. */
+static int check_byte_io_call(SnChecker *c, SnScope *local, SnExpr *e, SnTypeRep **out) {
+    if (!e->lhs || e->lhs->kind != SN_EXPR_IDENT || !e->lhs->text) {
+        return 0;
+    }
+    int reading = strcmp(e->lhs->text, "read_bytes") == 0;
+    int writing = strcmp(e->lhs->text, "write_bytes") == 0;
+    if (!reading && !writing) {
+        return 0;
+    }
+    c->in_pulsar_launch = 0;
+    size_t need = reading ? 1u : 2u;
+    SnTypeRep **arg_tys = NULL;
+    if (e->args.len > 0) {
+        arg_tys = (SnTypeRep **)sn_arena_alloc(c->arena, e->args.len * sizeof(SnTypeRep *));
+    }
+    for (size_t i = 0; i < e->args.len; i++) {
+        SnExpr *arg = SN_LIST_AT(e->args, SnExpr, i);
+        arg_tys[i] = sn_check_expr(c, local, arg);
+    }
+    if (e->args.len != need) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARITY_MISMATCH, e->span,
+                    "expected %zu argument(s), found %zu", need, e->args.len);
+        *out = sn_type_error(c->types);
+        return 1;
+    }
+    SnTypeRep *string_ty = sn_type_string(c->types);
+    SnTypeRep *bytes_ty = sn_type_array(c->types, sn_type_int(c->types));
+    if (arg_tys && types_clash(c, arg_tys[0], string_ty)) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, e->span,
+                    "%s path must be a string", e->lhs->text);
+    }
+    if (writing && arg_tys && types_clash(c, arg_tys[1], bytes_ty)) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, e->span,
+                    "write_bytes data must be an int array");
+    }
+    *out = reading ? bytes_ty : sn_type_unit(c->types);
+    return 1;
+}
+
 SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     SnTypeRep *result;
 
@@ -1243,6 +1285,9 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     case SN_EXPR_CALL: {
         if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && sn_rt_probe_name(e->lhs->text)) {
             result = sn_type_int(c->types);
+            break;
+        }
+        if (check_byte_io_call(c, local, e, &result)) {
             break;
         }
         /* `Partial<User>(name: "Ada", age: 36)` — construction of an

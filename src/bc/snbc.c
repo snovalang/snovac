@@ -78,6 +78,7 @@ void sn_bcunit_free(SnBCUnit *unit) {
     free(unit->string_pool.strings);
     for (size_t i = 0; i < unit->function_count; i++) {
         sn_chunk_free(&unit->functions[i]->chunk);
+        free((void *)unit->functions[i]->name);
         free(unit->functions[i]);
     }
     free(unit->functions);
@@ -237,9 +238,11 @@ static const OpInfo OP_INFO[] = {
     {"OP_UNWRAP_VARIANT", OP_OPERAND_U32},
     {"OP_PRINT", OP_OPERAND_U8},
     {"OP_HALT", OP_OPERAND_NONE},
+    {"OP_READ_BYTES", OP_OPERAND_NONE},
+    {"OP_WRITE_BYTES", OP_OPERAND_NONE},
 };
 
-_Static_assert(sizeof(OP_INFO) / sizeof(OP_INFO[0]) == (size_t)OP_HALT + 1,
+_Static_assert(sizeof(OP_INFO) / sizeof(OP_INFO[0]) == (size_t)OP_WRITE_BYTES + 1,
                "every SnOpcode is named");
 
 static int fits_u32(size_t n) {
@@ -414,13 +417,185 @@ int sn_bcunit_write_canonical(const SnBCUnit *unit, const char *path) {
     return finish_file(f, path, ok);
 }
 
+static int take_u32(const uint8_t *buf, size_t n, size_t *at, uint32_t *out) {
+    if (*at > n || n - *at < 4) {
+        return 0;
+    }
+    *out = read_u32_le(buf + *at);
+    *at += 4;
+    return 1;
+}
+
+static int take_bytes(const uint8_t *buf, size_t n, size_t *at, uint32_t len,
+                      const uint8_t **out) {
+    if (*at > n || (size_t)len > n - *at) {
+        return 0;
+    }
+    *out = buf + *at;
+    *at += len;
+    return 1;
+}
+
+static char *copy_text(const uint8_t *bytes, uint32_t len) {
+    if ((size_t)len == SIZE_MAX) {
+        return NULL;
+    }
+    char *text = (char *)malloc((size_t)len + 1u);
+    if (!text) {
+        return NULL;
+    }
+    if (len > 0) {
+        memcpy(text, bytes, len);
+    }
+    text[len] = '\0';
+    return text;
+}
+
+int sn_bcunit_load_canonical(SnBCUnit *unit, const char *path) {
+    if (!unit || !path) {
+        return 0;
+    }
+    sn_bcunit_init(unit);
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return 0;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return 0;
+    }
+    long sz = ftell(f);
+    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return 0;
+    }
+    size_t nbytes = (size_t)sz;
+    uint8_t *buf = NULL;
+    if (nbytes > 0) {
+        buf = (uint8_t *)malloc(nbytes);
+        if (!buf || fread(buf, 1, nbytes, f) != nbytes) {
+            free(buf);
+            fclose(f);
+            return 0;
+        }
+    }
+    fclose(f);
+
+    size_t at = 0;
+    uint32_t magic = 0;
+    uint32_t version = 0;
+    uint32_t main_idx = 0;
+    uint32_t str_count = 0;
+    int ok = take_u32(buf, nbytes, &at, &magic)
+          && magic == SNBC_MAGIC
+          && take_u32(buf, nbytes, &at, &version)
+          && version == SNBC_VERSION
+          && take_u32(buf, nbytes, &at, &main_idx)
+          && take_u32(buf, nbytes, &at, &str_count);
+    unit->main_func_idx = main_idx;
+
+    for (uint32_t i = 0; ok && i < str_count; i++) {
+        uint32_t slen = 0;
+        const uint8_t *bytes = NULL;
+        ok = take_u32(buf, nbytes, &at, &slen) && take_bytes(buf, nbytes, &at, slen, &bytes);
+        char *text = ok ? copy_text(bytes, slen) : NULL;
+        if (!ok || !text) {
+            ok = 0;
+            break;
+        }
+        if (unit->string_pool.capacity < unit->string_pool.count + 1) {
+            size_t old_cap = unit->string_pool.capacity;
+            size_t cap = old_cap < 8 ? 8 : old_cap * 2;
+            char **grown = (char **)realloc(unit->string_pool.strings, cap * sizeof(char *));
+            if (!grown) {
+                free(text);
+                ok = 0;
+                break;
+            }
+            unit->string_pool.strings = grown;
+            unit->string_pool.capacity = cap;
+        }
+        unit->string_pool.strings[unit->string_pool.count++] = text;
+    }
+
+    uint32_t fn_count = 0;
+    ok = ok && take_u32(buf, nbytes, &at, &fn_count);
+    for (uint32_t i = 0; ok && i < fn_count; i++) {
+        uint32_t nlen = 0;
+        uint32_t arity = 0;
+        uint32_t locals = 0;
+        uint32_t code_len = 0;
+        const uint8_t *name_bytes = NULL;
+        const uint8_t *code = NULL;
+        ok = take_u32(buf, nbytes, &at, &nlen)
+          && take_bytes(buf, nbytes, &at, nlen, &name_bytes)
+          && take_u32(buf, nbytes, &at, &arity)
+          && take_u32(buf, nbytes, &at, &locals)
+          && take_u32(buf, nbytes, &at, &code_len)
+          && take_bytes(buf, nbytes, &at, code_len, &code);
+        if (!ok) {
+            break;
+        }
+        char *name = copy_text(name_bytes, nlen);
+        SnFunctionChunk *fn = name ? (SnFunctionChunk *)malloc(sizeof(SnFunctionChunk)) : NULL;
+        uint8_t *code_copy = NULL;
+        if (fn && code_len > 0) {
+            code_copy = (uint8_t *)malloc(code_len);
+        }
+        if (!name || !fn || (code_len > 0 && !code_copy)) {
+            free(name);
+            free(fn);
+            free(code_copy);
+            ok = 0;
+            break;
+        }
+        sn_chunk_init(&fn->chunk);
+        fn->name = name;
+        fn->arity = arity;
+        fn->local_count = locals;
+        fn->chunk.count = code_len;
+        fn->chunk.capacity = code_len;
+        fn->chunk.code = code_copy;
+        if (code_len > 0) {
+            memcpy(fn->chunk.code, code, code_len);
+        }
+        if (unit->function_capacity < unit->function_count + 1) {
+            size_t old_cap = unit->function_capacity;
+            size_t cap = old_cap < 8 ? 8 : old_cap * 2;
+            SnFunctionChunk **grown = (SnFunctionChunk **)realloc(
+                unit->functions, cap * sizeof(SnFunctionChunk *));
+            if (!grown) {
+                sn_chunk_free(&fn->chunk);
+                free(name);
+                free(fn);
+                ok = 0;
+                break;
+            }
+            unit->functions = grown;
+            unit->function_capacity = cap;
+        }
+        unit->functions[unit->function_count++] = fn;
+    }
+
+    if (ok && at != nbytes) {
+        ok = 0;
+    }
+    free(buf);
+    if (!ok) {
+        sn_bcunit_free(unit);
+        return 0;
+    }
+    return 1;
+}
+
 static int write_instruction(FILE *f, const uint8_t *code, size_t count, size_t *offset) {
     size_t off = *offset;
     if (off >= count) {
         return 0;
     }
     uint8_t op = code[off];
-    if (op > OP_HALT) {
+    if ((size_t)op >= sizeof(OP_INFO) / sizeof(OP_INFO[0])) {
         return 0;
     }
     const OpInfo *info = &OP_INFO[op];

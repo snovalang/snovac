@@ -41,7 +41,7 @@ BIN      = $(BUILD)/snl$(EXE)
 SRCS = src/driver/main.c src/driver/driver_utils.c src/driver/project.c \
        src/driver/cmd_check.c src/driver/cmd_lex_parse.c src/driver/cmd_run.c \
        src/driver/cmd_build.c src/driver/cmd_tidy.c src/driver/cmd_get.c \
-       src/driver/cmd_emit_snbc.c \
+       src/driver/cmd_emit_snbc.c src/driver/cmd_run_snbc.c \
        src/native/target.c src/native/native_backend.c \
        src/eval/pulsar.c src/eval/async.c \
        src/ast/dump.c src/ast/ast.c \

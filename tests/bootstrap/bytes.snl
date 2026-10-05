@@ -1,0 +1,16 @@
+package tests.bootstrap.bytes
+
+import builtin.console.Console
+
+func main(): int {
+    let data = [65, 66, 67]
+    write_bytes("snbc-bytes.bin", data)
+    let back = read_bytes("snbc-bytes.bin")
+    Console.printline(back[0])
+    Console.printline(back[1])
+    Console.printline(back[2])
+    if back[0] == 65 && back[1] == 66 && back[2] == 67 {
+        return 0
+    }
+    return 1
+}

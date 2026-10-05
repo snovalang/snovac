@@ -1,0 +1,12 @@
+package tests.bootstrap.struct_field
+
+struct Point {
+    public var x: int
+    public var y: int
+}
+
+func main(): int {
+    var p = Point { x: 3, y: 4 }
+    p.x = p.x + p.y
+    return p.x
+}

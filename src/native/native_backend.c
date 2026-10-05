@@ -141,7 +141,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   /* Emit Value types and Stack */
   fprintf(f, "\n");
   fprintf(f, "typedef enum { VAL_UNIT, VAL_BOOL, VAL_INT, VAL_DOUBLE, "
-             "VAL_STRING, VAL_ARRAY, VAL_FUTURE } ValTag;\n");
+             "VAL_STRING, VAL_ARRAY, VAL_OBJ, VAL_FUTURE } ValTag;\n");
   fprintf(f, "typedef struct Val Val;\n");
   fprintf(f, "struct Val { ValTag tag; union { bool b; int64_t i; double d; "
              "char *str; void *ptr; } as; };\n\n");
@@ -181,6 +181,96 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
              "(i * 8));\n");
   fprintf(f, "  *ip += 8;\n  return cvt.d;\n}\n\n");
 
+  fprintf(f, "typedef struct SnArray { Val *items; uint32_t count; } SnArray;\n");
+  fprintf(f, "typedef struct SnObj { Val *fields; uint32_t count; } SnObj;\n\n");
+  fprintf(f, "static int val_truthy(Val cond) {\n");
+  fprintf(f, "  if (cond.tag == VAL_BOOL) return cond.as.b != 0;\n");
+  fprintf(f, "  if (cond.tag == VAL_INT) return cond.as.i != 0;\n");
+  fprintf(f, "  return 0;\n}\n\n");
+  fprintf(f, "static Val g_ret;\n\n");
+  fprintf(f, "static void print_val(Val v, int nl) {\n");
+  fprintf(f, "  if (v.tag == VAL_STRING) printf(\"%%s\", v.as.str ? v.as.str : \"\");\n");
+  fprintf(f, "  else if (v.tag == VAL_INT) printf(\"%%lld\", (long long)v.as.i);\n");
+  fprintf(f, "  else if (v.tag == VAL_DOUBLE) printf(\"%%g\", v.as.d);\n");
+  fprintf(f, "  else if (v.tag == VAL_BOOL) printf(\"%%s\", v.as.b ? \"true\" : \"false\");\n");
+  fprintf(f, "  else if (v.tag == VAL_ARRAY) {\n");
+  fprintf(f, "    SnArray *a = (SnArray *)v.as.ptr;\n");
+  fprintf(f, "    fputc('[', stdout);\n");
+  fprintf(f, "    if (a && a->items) {\n");
+  fprintf(f, "      for (uint32_t i = 0; i < a->count; i++) {\n");
+  fprintf(f, "        if (i) printf(\", \");\n");
+  fprintf(f, "        print_val(a->items[i], 0);\n");
+  fprintf(f, "      }\n");
+  fprintf(f, "    }\n");
+  fprintf(f, "    fputc(']', stdout);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  if (nl) printf(\"\\n\");\n");
+  fprintf(f, "}\n\n");
+  fprintf(f, "static Val sn_read_bytes(const char *path) {\n");
+  fprintf(f, "  FILE *fp = fopen(path ? path : \"\", \"rb\");\n");
+  fprintf(f, "  if (!fp) {\n");
+  fprintf(f, "    fprintf(stderr, \"error: cannot read '%%s'\\n\", path ? path : \"\");\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  size_t cap = 64, n = 0;\n");
+  fprintf(f, "  unsigned char *buf = (unsigned char *)malloc(cap);\n");
+  fprintf(f, "  if (!buf) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
+  fprintf(f, "  int ch;\n");
+  fprintf(f, "  while ((ch = fgetc(fp)) != EOF) {\n");
+  fprintf(f, "    if (n == cap) {\n");
+  fprintf(f, "      if (cap > (SIZE_MAX / 2)) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
+  fprintf(f, "      cap *= 2;\n");
+  fprintf(f, "      unsigned char *grown = (unsigned char *)realloc(buf, cap);\n");
+  fprintf(f, "      if (!grown) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
+  fprintf(f, "      buf = grown;\n");
+  fprintf(f, "    }\n");
+  fprintf(f, "    buf[n++] = (unsigned char)ch;\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  if (ferror(fp)) {\n");
+  fprintf(f, "    fprintf(stderr, \"error: cannot read '%%s'\\n\", path ? path : \"\");\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  fclose(fp);\n");
+  fprintf(f, "  if (n > UINT32_MAX) { fputs(\"error: file is too large\\n\", stderr); exit(1); }\n");
+  fprintf(f, "  SnArray *a = (SnArray *)calloc(1, sizeof(SnArray));\n");
+  fprintf(f, "  if (!a) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
+  fprintf(f, "  a->count = (uint32_t)n;\n");
+  fprintf(f, "  a->items = (Val *)calloc(n ? n : 1, sizeof(Val));\n");
+  fprintf(f, "  if (!a->items) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
+  fprintf(f, "  for (size_t i = 0; i < n; i++) {\n");
+  fprintf(f, "    a->items[i].tag = VAL_INT;\n");
+  fprintf(f, "    a->items[i].as.i = buf[i];\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  free(buf);\n");
+  fprintf(f, "  Val v; memset(&v, 0, sizeof(v)); v.tag = VAL_ARRAY; v.as.ptr = a;\n");
+  fprintf(f, "  return v;\n");
+  fprintf(f, "}\n\n");
+  fprintf(f, "static Val sn_write_bytes(const char *path, Val data) {\n");
+  fprintf(f, "  if (!path || data.tag != VAL_ARRAY || !data.as.ptr) {\n");
+  fprintf(f, "    fputs(\"error: write_bytes expects a path and an int array\\n\", stderr);\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  SnArray *a = (SnArray *)data.as.ptr;\n");
+  fprintf(f, "  FILE *fp = fopen(path, \"wb\");\n");
+  fprintf(f, "  if (!fp) {\n");
+  fprintf(f, "    fprintf(stderr, \"error: cannot write '%%s'\\n\", path);\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  for (uint32_t i = 0; i < a->count; i++) {\n");
+  fprintf(f, "    long long nbyte = a->items[i].as.i;\n");
+  fprintf(f, "    if (fputc((int)(nbyte & 0xff), fp) == EOF) {\n");
+  fprintf(f, "      fprintf(stderr, \"error: cannot write '%%s'\\n\", path);\n");
+  fprintf(f, "      exit(1);\n");
+  fprintf(f, "    }\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  if (fclose(fp) != 0) {\n");
+  fprintf(f, "    fprintf(stderr, \"error: cannot write '%%s'\\n\", path);\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  Val u; memset(&u, 0, sizeof(u)); u.tag = VAL_UNIT;\n");
+  fprintf(f, "  return u;\n");
+  fprintf(f, "}\n\n");
+
   /* Emit Pulsar Multi-parallelism Runtime */
   fprintf(f, "/* Pulsar platform thread multi-parallelism */\n");
   fprintf(f, "typedef struct PulsarWork {\n");
@@ -202,7 +292,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "static PulsarWork *g_pulsar_queue = NULL;\n");
   fprintf(f, "static bool g_pulsar_stop = false;\n\n");
 
-  fprintf(f, "static int run_function(size_t fn_idx);\n\n");
+  fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc);\n\n");
 
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "static unsigned __stdcall pulsar_thread_proc(void *arg) {\n");
@@ -218,7 +308,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    PulsarWork *work = g_pulsar_queue;\n");
     fprintf(f, "    if (work) g_pulsar_queue = work->next;\n");
     fprintf(f, "    LeaveCriticalSection(&g_pulsar_mutex);\n");
-    fprintf(f, "    if (work) { run_function(work->fn_idx); free(work); }\n");
+    fprintf(f, "    if (work) { run_function(work->fn_idx, NULL, 0); free(work); }\n");
     fprintf(f, "  }\n  return 0;\n}\n\n");
   } else {
     fprintf(f, "static void *pulsar_thread_proc(void *arg) {\n");
@@ -233,7 +323,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    PulsarWork *work = g_pulsar_queue;\n");
     fprintf(f, "    if (work) g_pulsar_queue = work->next;\n");
     fprintf(f, "    pthread_mutex_unlock(&g_pulsar_mutex);\n");
-    fprintf(f, "    if (work) { run_function(work->fn_idx); free(work); }\n");
+    fprintf(f, "    if (work) { run_function(work->fn_idx, NULL, 0); free(work); }\n");
     fprintf(f, "  }\n  return NULL;\n}\n\n");
   }
 
@@ -255,14 +345,25 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "}\n\n");
 
   /* Emit run_function */
-  fprintf(f, "static int run_function(size_t fn_idx) {\n");
+  fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc) {\n");
   fprintf(f, "  const uint8_t *code = NULL;\n");
   for (size_t i = 0; i < bc->function_count; i++) {
     fprintf(f, "  if (fn_idx == %zu) code = g_fn_code_%zu;\n", i, i);
   }
-  fprintf(f, "  if (!code) return 0;\n");
+  fprintf(f, "  if (!code) {\n");
+  fprintf(f, "    fputs(\"error: unknown function\\n\", stderr);\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
   fprintf(f, "  const uint8_t *ip = code;\n");
   fprintf(f, "  Val locals[256]; memset(locals, 0, sizeof(locals));\n");
+  fprintf(f, "  if (argc > 256) {\n");
+  fprintf(f, "    fputs(\"error: too many arguments\\n\", stderr);\n");
+  fprintf(f, "    exit(1);\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  if (args) {\n");
+  fprintf(f, "    for (uint32_t i = 0; i < argc; i++) locals[i] = args[i];\n");
+  fprintf(f, "  }\n");
+  fprintf(f, "  g_ret.tag = VAL_UNIT; g_ret.as.i = 0;\n");
   fprintf(f, "  for (;;) {\n");
   fprintf(f, "    uint8_t op = *ip++;\n");
   fprintf(f, "    switch (op) {\n");
@@ -336,8 +437,29 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
           "push(r); break; }\n",
           OP_NEG);
   fprintf(f,
-          "    case %d: { Val a = pop(), r; r.tag = VAL_BOOL; r.as.b = "
-          "!a.as.b; push(r); break; }\n",
+          "    case %d: { Val b = pop(), a = pop(), r; memset(&r, 0, sizeof(r)); "
+          "r.tag = VAL_INT; r.as.i = a.as.i & b.as.i; push(r); break; }\n",
+          OP_BIT_AND);
+  fprintf(f,
+          "    case %d: { Val b = pop(), a = pop(), r; memset(&r, 0, sizeof(r)); "
+          "r.tag = VAL_INT; r.as.i = a.as.i | b.as.i; push(r); break; }\n",
+          OP_BIT_OR);
+  fprintf(f,
+          "    case %d: { Val b = pop(), a = pop(), r; memset(&r, 0, sizeof(r)); "
+          "r.tag = VAL_INT; r.as.i = a.as.i ^ b.as.i; push(r); break; }\n",
+          OP_BIT_XOR);
+  fprintf(f,
+          "    case %d: { Val b = pop(), a = pop(), r; memset(&r, 0, sizeof(r)); "
+          "r.tag = VAL_INT; r.as.i = (int64_t)((uint64_t)a.as.i << (b.as.i & 63)); "
+          "push(r); break; }\n",
+          OP_SHL);
+  fprintf(f,
+          "    case %d: { Val b = pop(), a = pop(), r; memset(&r, 0, sizeof(r)); "
+          "r.tag = VAL_INT; r.as.i = a.as.i >> (b.as.i & 63); push(r); break; }\n",
+          OP_SHR);
+  fprintf(f,
+          "    case %d: { Val a = pop(), r; memset(&r, 0, sizeof(r)); r.tag = VAL_BOOL; "
+          "r.as.b = !val_truthy(a); push(r); break; }\n",
           OP_NOT);
   fprintf(f,
           "    case %d: { Val b = pop(), a = pop(), r; r.tag = VAL_BOOL; "
@@ -368,32 +490,78 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
           "break; }\n",
           OP_JUMP);
   fprintf(f,
-          "    case %d: { int32_t off = (int32_t)read_u32(&ip); Val c = pop(); "
-          "if (!c.as.b) ip += off; break; }\n",
+          "    case %d: { int32_t off = (int32_t)read_u32(&ip); Val cond = pop(); "
+          "if (!val_truthy(cond)) ip += off; break; }\n",
           OP_JUMP_IF_FALSE);
   fprintf(f,
-          "    case %d: { int32_t off = (int32_t)read_u32(&ip); Val c = pop(); "
-          "if (c.as.b) ip += off; break; }\n",
+          "    case %d: { int32_t off = (int32_t)read_u32(&ip); Val cond = pop(); "
+          "if (val_truthy(cond)) ip += off; break; }\n",
           OP_JUMP_IF_TRUE);
   fprintf(f,
-          "    case %d: { uint32_t f = read_u32(&ip); read_u32(&ip); "
-          "run_function(f); break; }\n",
+          "    case %d: { uint32_t fni = read_u32(&ip); uint32_t argc = read_u32(&ip);\n"
+          "      if (argc > 256) { fputs(\"error: too many arguments\\n\", stderr); exit(1); }\n"
+          "      Val args_tmp[256]; memset(args_tmp, 0, sizeof(args_tmp));\n"
+          "      for (uint32_t ai = argc; ai > 0; ai--) args_tmp[ai - 1] = pop();\n"
+          "      run_function(fni, args_tmp, argc); push(g_ret); break; }\n",
           OP_CALL);
   fprintf(f,
-          "    case %d: { Val r = pop(); return (r.tag == VAL_INT ? "
-          "(int)r.as.i : 0); }\n",
+          "    case %d: { g_ret = pop(); return 0; }\n",
           OP_RETURN);
   fprintf(f,
-          "    case %d: { uint8_t nl = *ip++; Val v = pop();\n"
-          "      if (v.tag == VAL_STRING) printf(\"%%s\", v.as.str);\n"
-          "      else if (v.tag == VAL_INT) printf(\"%%ld\", (long)v.as.i);\n"
-          "      else if (v.tag == VAL_DOUBLE) printf(\"%%g\", v.as.d);\n"
-          "      else if (v.tag == VAL_BOOL) printf(\"%%s\", v.as.b ? \"true\" "
-          ": \"false\");\n"
-          "      if (nl) printf(\"\\n\");\n      break;\n    }\n",
+          "    case %d: { uint32_t cls = read_u32(&ip); uint32_t n = read_u32(&ip); (void)cls;\n"
+          "      SnObj *o = (SnObj *)calloc(1, sizeof(SnObj));\n"
+          "      if (!o) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n"
+          "      o->count = n;\n"
+          "      o->fields = (Val *)calloc(n ? n : 1, sizeof(Val));\n"
+          "      if (!o->fields) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n"
+          "      for (uint32_t i = n; i > 0; i--) o->fields[i - 1] = pop();\n"
+          "      Val v; memset(&v, 0, sizeof(v)); v.tag = VAL_OBJ; v.as.ptr = o; push(v); break; }\n",
+          OP_NEW_OBJ);
+  fprintf(f,
+          "    case %d: { uint32_t idx = read_u32(&ip); Val obj = pop();\n"
+          "      SnObj *o = (obj.tag == VAL_OBJ) ? (SnObj *)obj.as.ptr : NULL;\n"
+          "      if (!o || idx >= o->count) { fputs(\"error: field index out of bounds\\n\", stderr); exit(1); }\n"
+          "      push(o->fields[idx]); break; }\n",
+          OP_GET_FIELD);
+  fprintf(f,
+          "    case %d: { uint32_t idx = read_u32(&ip); Val obj = pop(); Val v = peek(0);\n"
+          "      SnObj *o = (obj.tag == VAL_OBJ) ? (SnObj *)obj.as.ptr : NULL;\n"
+          "      if (!o || idx >= o->count) { fputs(\"error: field index out of bounds\\n\", stderr); exit(1); }\n"
+          "      o->fields[idx] = v; break; }\n",
+          OP_SET_FIELD);
+  fprintf(f,
+          "    case %d: { uint32_t n = read_u32(&ip);\n"
+          "      SnArray *a = (SnArray *)calloc(1, sizeof(SnArray));\n"
+          "      if (!a) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n"
+          "      a->count = n;\n"
+          "      a->items = (Val *)calloc(n ? n : 1, sizeof(Val));\n"
+          "      if (!a->items) { fputs(\"error: out of memory\\n\", stderr); exit(1); }\n"
+          "      for (uint32_t i = n; i > 0; i--) a->items[i - 1] = pop();\n"
+          "      Val v; memset(&v, 0, sizeof(v)); v.tag = VAL_ARRAY; v.as.ptr = a; push(v); break; }\n",
+          OP_NEW_ARRAY);
+  fprintf(f,
+          "    case %d: { Val idx = pop(); Val arr = pop();\n"
+          "      SnArray *a = (arr.tag == VAL_ARRAY) ? (SnArray *)arr.as.ptr : NULL;\n"
+          "      if (!a || idx.tag != VAL_INT || idx.as.i < 0 || (uint64_t)idx.as.i >= a->count) {\n"
+          "        fputs(\"error: array index out of bounds\\n\", stderr); exit(1);\n"
+          "      }\n"
+          "      push(a->items[(uint32_t)idx.as.i]); break; }\n",
+          OP_GET_INDEX);
+  fprintf(f,
+          "    case %d: { Val path = pop();\n"
+          "      if (path.tag != VAL_STRING) { fputs(\"error: read_bytes expects a string path\\n\", stderr); exit(1); }\n"
+          "      push(sn_read_bytes(path.as.str)); break; }\n",
+          OP_READ_BYTES);
+  fprintf(f,
+          "    case %d: { Val data = pop(); Val path = pop();\n"
+          "      if (path.tag != VAL_STRING) { fputs(\"error: write_bytes expects a string path\\n\", stderr); exit(1); }\n"
+          "      push(sn_write_bytes(path.as.str, data)); break; }\n",
+          OP_WRITE_BYTES);
+  fprintf(f,
+          "    case %d: { uint8_t nl = *ip++; Val v = pop(); print_val(v, nl); break; }\n",
           OP_PRINT);
-  fprintf(f, "    case %d: return 0;\n", OP_HALT);
-  fprintf(f, "    default: return 0;\n");
+  fprintf(f, "    case %d: g_ret.tag = VAL_INT; g_ret.as.i = 0; return 0;\n", OP_HALT);
+  fprintf(f, "    default: fprintf(stderr, \"error: unknown opcode %%u\\n\", (unsigned)op); exit(1);\n");
   fprintf(f, "    }\n  }\n}\n\n");
 
   /* Main entry */
@@ -406,7 +574,8 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "  pthread_t pth;\n");
     fprintf(f, "  pthread_create(&pth, NULL, pulsar_thread_proc, NULL);\n");
   }
-  fprintf(f, "  int rc = run_function(%u);\n", bc->main_func_idx);
+  fprintf(f, "  run_function(%u, NULL, 0);\n", bc->main_func_idx);
+  fprintf(f, "  int rc = (g_ret.tag == VAL_INT) ? (int)g_ret.as.i : 0;\n");
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "  EnterCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "  g_pulsar_stop = true;\n");

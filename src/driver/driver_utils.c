@@ -203,6 +203,7 @@ void sn_driver_usage(FILE *out) {
       "  snl --check-parse <file.snl>   lex+parse; exit non-zero on "
       "error\n"
       "  snl run           <file.snl>   parse and execute\n"
+      "  snl run-snbc      <file.snbc>  execute a canonical SnBC image\n"
       "  snl build         <file.snl> [-o output] [--target=triple]\n"
       "                                       compile to standalone native "
       "executable\n"
