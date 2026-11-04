@@ -203,6 +203,11 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     case SN_EXPR_ASSIGN: {
         SnSymbol *target_sym = resolve_value_symbol(c, local, e->lhs);
         SnTypeRep *target_ty = e->lhs->resolved_type;
+        if (target_sym && e->op != SN_TOK_ASSIGN && target_sym->is_moved) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_USE_AFTER_MOVE, e->lhs->span,
+                         "`%s` was moved and cannot be read by a compound assignment",
+                         target_sym->name ? target_sym->name : "<value>");
+        }
         /* Indexed l-values are not resolved as symbols. Walk them explicitly
          * so a moved receiver cannot be mutated through `value[index] = ...`. */
         if (!target_ty) target_ty = sn_check_expr(c, local, e->lhs);
