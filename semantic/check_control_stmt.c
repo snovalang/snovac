@@ -2,6 +2,85 @@
 
 #include <string.h>
 
+typedef struct {
+    int found_move_error;
+    int code;
+    SnSpan span;
+    char message[1024];
+} LoopMoveProbe;
+
+static void capture_loop_move_diagnostic(void *ctx, SnDiagLevel level, int code,
+                                         SnSpan span, const char *message,
+                                         const char *file_path) {
+    (void)file_path;
+    LoopMoveProbe *probe = (LoopMoveProbe *)ctx;
+    if (level != SN_DIAG_ERROR ||
+        (code != SNOVA_USE_AFTER_MOVE && code != SNOVA_INVALID_MOVE) ||
+        probe->found_move_error) return;
+    probe->found_move_error = 1;
+    probe->code = code;
+    probe->span = span;
+    snprintf(probe->message, sizeof(probe->message), "%s", message);
+}
+
+/* Analyze one possible loop backedge using the move state produced by the
+ * first pass. The normal pass remains responsible for diagnostics; this probe
+ * only reports a new move error reachable on a later iteration. */
+static void check_loop_backedge(SnChecker *c, SnScope *scope, SnExpr *condition,
+                                SnStmt *body, SnSpan span,
+                                SnMoveSnapshot *moves) {
+    int changed = 0;
+    for (size_t i = 0; i < moves->count; ++i) {
+        if (moves->symbols[i]->is_moved != moves->before[i]) {
+            changed = 1;
+            break;
+        }
+    }
+    if (!changed) return;
+
+    uint8_t *backedge_state = (uint8_t *)sn_arena_alloc(c->arena, moves->count);
+    for (size_t i = 0; i < moves->count; ++i)
+        backedge_state[i] = moves->symbols[i]->is_moved;
+
+    FILE *discard = tmpfile();
+    if (!discard) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_INVALID_MOVE, span,
+                     "cannot verify ownership safety across loop iterations");
+        return;
+    }
+
+    SnDiagSink *outer_diag = c->diag;
+    SnDiagSink probe_diag;
+    sn_diag_init(&probe_diag, outer_diag->file.path, outer_diag->file.src,
+                 outer_diag->file.src_len);
+    probe_diag.file = outer_diag->file;
+    probe_diag.out = discard;
+    LoopMoveProbe probe = {0};
+    sn_diag_set_callback(&probe_diag, capture_loop_move_diagnostic, &probe);
+
+    for (size_t i = 0; i < moves->count; ++i)
+        moves->symbols[i]->is_moved = backedge_state[i] != 0;
+    c->diag = &probe_diag;
+    if (condition) (void)sn_check_expr(c, scope, condition);
+    c->loop_depth++;
+    if (body) sn_check_stmt(c, scope, body);
+    c->loop_depth--;
+    c->diag = outer_diag;
+
+    /* A failed probe cannot make an unsafe loop acceptable. */
+    if (probe.found_move_error) {
+        sn_diag_emit(outer_diag, SN_DIAG_ERROR, probe.code, probe.span, "%s",
+                     probe.message);
+    } else if (probe_diag.error_count > 0) {
+        sn_diag_emit(outer_diag, SN_DIAG_ERROR, SNOVA_INVALID_MOVE, span,
+                     "cannot prove ownership safety across loop iterations");
+    }
+
+    sn_check_move_snapshot_accumulate(moves);
+    sn_check_move_snapshot_apply(moves);
+    fclose(discard);
+}
+
 int sn_check_control_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
     switch (s->kind) {
     case SN_STMT_IF: {
@@ -27,6 +106,7 @@ int sn_check_control_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
         return 1;
     }
     case SN_STMT_WHILE: {
+        SnMoveSnapshot *moves = sn_check_move_snapshot_new(c, local);
         int is_always_true = 0;
         if (s->expr) {
             SnTypeRep *cond = sn_check_expr(c, local, s->expr);
@@ -43,13 +123,14 @@ int sn_check_control_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
             sn_diag_emit(c->diag, SN_DIAG_WARNING, SNOVA_INFINITE_LOOP, s->span,
                          "infinite `while (true)` loop has no `break`, `return`, or `throw` -- potential unintended busy hang");
         }
-        SnMoveSnapshot *moves = sn_check_move_snapshot_new(c, local);
+        sn_check_move_snapshot_accumulate(moves);
         if (s->then_br) {
             c->loop_depth++;
             sn_check_stmt(c, local, s->then_br);
             c->loop_depth--;
         }
         sn_check_move_snapshot_accumulate(moves);
+        check_loop_backedge(c, local, s->expr, s->then_br, s->span, moves);
         sn_check_move_snapshot_apply(moves);
         return 1;
     }
@@ -77,10 +158,13 @@ int sn_check_control_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
         }
         SnScope body_scope;
         sn_scope_init(&body_scope, c->arena, local);
+        SnSymbol *loop_symbol = NULL;
         if (s->name) {
-            SnSymbol *sym = sn_scope_define(&body_scope, sn_intern_cstr(c->intern, s->name),
-                                            SN_SYM_LOCAL, NULL, s->span);
-            if (sym) sym->value_type = elem_ty ? elem_ty : sn_type_error(c->types);
+            loop_symbol = sn_scope_define(&body_scope,
+                                          sn_intern_cstr(c->intern, s->name),
+                                          SN_SYM_LOCAL, NULL, s->span);
+            if (loop_symbol)
+                loop_symbol->value_type = elem_ty ? elem_ty : sn_type_error(c->types);
         }
         SnMoveSnapshot *moves = sn_check_move_snapshot_new(c, local);
         if (s->then_br) {
@@ -89,6 +173,9 @@ int sn_check_control_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
             c->loop_depth--;
         }
         sn_check_move_snapshot_accumulate(moves);
+        /* The loop binding receives a fresh element on every iteration. */
+        if (loop_symbol) loop_symbol->is_moved = 0;
+        check_loop_backedge(c, &body_scope, NULL, s->then_br, s->span, moves);
         sn_check_move_snapshot_apply(moves);
         return 1;
     }
