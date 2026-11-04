@@ -118,7 +118,7 @@ void sn_bcunit_free(SnBCUnit *unit) {
     free(unit->string_pool.strings);
     for (size_t i = 0; i < unit->function_count; i++) {
         sn_chunk_free(&unit->functions[i]->chunk);
-        free((char *)unit->functions[i]->name);
+        free(unit->functions[i]->name);
         free(unit->functions[i]);
     }
     free(unit->functions);

@@ -88,7 +88,7 @@ typedef struct {
 } SnStringPool;
 
 typedef struct {
-    const char *name;
+    char *name; /* owned copy; released by sn_bcunit_free */
     uint32_t arity;
     uint32_t local_count;
     SnChunk chunk;
@@ -111,7 +111,8 @@ void sn_chunk_write_double(SnChunk *chunk, double val, uint32_t line);
 
 /* Initialize before use; every initialized unit must be freed exactly once.
  * Allocation failure while building bytecode is fatal and reported before
- * aborting, matching the current compiler/runtime OOM policy. */
+ * aborting, matching the current compiler/runtime OOM policy. Function names
+ * passed to sn_bcunit_add_function are copied and owned by the unit. */
 void sn_bcunit_init(SnBCUnit *unit);
 void sn_bcunit_free(SnBCUnit *unit);
 uint32_t sn_bcunit_add_string(SnBCUnit *unit, const char *str);
