@@ -21,6 +21,7 @@ Value eval_call_lambda_with_value(Interp *in, const LambdaVal *lam,
         in->ret = saved;
         in->flow = FLOW_NORMAL;
     }
+    if (eval_value_is_heap_owned(result)) eval_region_mark_escaping(in);
     eval_region_end(in, region);
     return result;
 }

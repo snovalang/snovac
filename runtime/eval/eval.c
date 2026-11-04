@@ -23,22 +23,36 @@ void rt_error(Interp *in, int code, SnSpan span, const char *fmt, ...) {
 Env *env_new(Interp *in, Env *parent) {
     Env *e = (Env *)sn_arena_calloc(in->arena, sizeof(Env));
     e->parent = parent;
+    e->owner_region = in->current_region;
     return e;
 }
 
-Value *env_lookup(Env *e, const char *name) {
+Value *env_lookup_owned(Env *e, const char *name, EvalRegion **owner_region) {
     for (; e; e = e->parent) {
         for (size_t i = e->names.len; i > 0; i--) {
             if (strcmp((const char *)e->names.items[i - 1], name) == 0) {
+                if (owner_region) *owner_region = e->owner_region;
                 return (Value *)e->slots.items[i - 1];
             }
         }
     }
+    if (owner_region) *owner_region = NULL;
     return NULL;
 }
 
+Value *env_lookup(Env *e, const char *name) {
+    return env_lookup_owned(e, name, NULL);
+}
+
+int eval_value_is_heap_owned(Value value) {
+    return value.kind == V_STRING || value.kind == V_OBJECT ||
+           value.kind == V_VARIANT || value.kind == V_LAMBDA ||
+           value.kind == V_ARRAY;
+}
+
 Value *env_define(Interp *in, Env *e, const char *name, Value v) {
-    if (in->current_region && e == in->globals)
+    if (in->current_region && eval_value_is_heap_owned(v) &&
+        e->owner_region != in->current_region)
         eval_region_mark_escaping(in);
     Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
     *slot = v;
@@ -145,6 +159,8 @@ void eval_region_end(Interp *in, EvalRegion *region) {
         region->next_retained = in->retained_regions;
         in->retained_regions = region;
     } else {
+        array_free_storage(in, region->arrays);
+        region->arrays = NULL;
         sn_arena_free(&region->arena);
         free(region);
     }
@@ -206,6 +222,8 @@ Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
     in->ret = v_unit();
     Flow f = exec_stmt(in, local, fn->body);
     Value r = (f == FLOW_RETURN) ? in->ret : v_unit();
+    if (f == FLOW_RETURN && eval_value_is_heap_owned(r))
+        eval_region_mark_escaping(in);
     in->ret = saved;
     in->flow = FLOW_NORMAL;
     eval_region_end(in, region);
@@ -244,6 +262,7 @@ Value call_lambda(Interp *in, const LambdaVal *lam, SnList *args, Env *caller,
         in->ret = saved;
         in->flow = FLOW_NORMAL;
     }
+    if (eval_value_is_heap_owned(result)) eval_region_mark_escaping(in);
     eval_region_end(in, region);
     return result;
 }
@@ -304,6 +323,8 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
         EvalRegion *next = region->next_retained;
         if (getenv("SNOVA_MEMORY_STATS"))
             sn_arena_report_stats(stderr, "evaluator-call-region", &region->arena);
+        array_free_storage(&in, region->arrays);
+        region->arrays = NULL;
         sn_arena_free(&region->arena);
         free(region);
         region = next;

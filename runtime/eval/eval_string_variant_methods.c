@@ -6,7 +6,6 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
     const char *m = callee->text;
     const char *s = recv.as.s ? recv.as.s : "";
     if (strcmp(m, "toUpper") == 0) {
-        eval_region_mark_escaping(in);
         size_t len = strlen(s);
         char *buf = (char *)sn_arena_alloc(in->arena, len + 1);
         for (size_t i = 0; i < len; i++) buf[i] = (char)toupper((unsigned char)s[i]);
@@ -15,7 +14,6 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
         return 1;
     }
     if (strcmp(m, "toLower") == 0) {
-        eval_region_mark_escaping(in);
         size_t len = strlen(s);
         char *buf = (char *)sn_arena_alloc(in->arena, len + 1);
         for (size_t i = 0; i < len; i++) buf[i] = (char)tolower((unsigned char)s[i]);
@@ -32,7 +30,6 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
         return 1;
     }
     if (strcmp(m, "trim") == 0) {
-        eval_region_mark_escaping(in);
         size_t len = strlen(s);
         size_t start = 0;
         while (start < len && isspace((unsigned char)s[start])) start++;
@@ -96,7 +93,6 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
             long long idx = as_int(in, arg, call->span);
             size_t slen = strlen(s);
             if (idx >= 0 && (size_t)idx < slen) {
-                eval_region_mark_escaping(in);
                 char chbuf[2] = { s[idx], '\0' };
                 Value chVal = v_str(sn_arena_strndup(in->arena, chbuf, 1));
                 SnList payload = {0};
@@ -128,7 +124,6 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
             if (end < start) end = start;
             if ((size_t)end > slen) end = (long long)slen;
         }
-        eval_region_mark_escaping(in);
         char *buf = sn_arena_strndup(in->arena, s + start, (size_t)(end - start));
         *out = v_str(buf);
         return 1;
@@ -141,7 +136,6 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
             const char *rstr = (repl.kind == V_STRING && repl.as.s) ? repl.as.s : "";
             char *found = strstr((char *)s, tstr);
             if (found && tstr[0]) {
-                eval_region_mark_escaping(in);
                 size_t prefix_len = (size_t)(found - s);
                 size_t tlen = strlen(tstr);
                 size_t rlen = strlen(rstr);
@@ -260,7 +254,6 @@ int eval_try_variant_method(Interp *in, Env *env, Value recv,
             if (fn.kind == V_LAMBDA) {
                 Value mapped =
                     eval_call_lambda_with_value(in, fn.as.lam, payload, call->span);
-                eval_region_mark_escaping(in);
                 SnList payload_list = {0};
                 Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
                 *slot = mapped;

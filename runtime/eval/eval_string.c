@@ -101,7 +101,6 @@ static size_t append_interpolation(StrBuf *b, Env *env, const SnExpr *e,
 }
 
 const char *decode_string(Interp *in, Env *env, const SnExpr *e) {
-    eval_region_mark_escaping(in);
     const char *raw = e->text;
     size_t n = strlen(raw);
     if (n >= 2 && raw[0] == '"') {

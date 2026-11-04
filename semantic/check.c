@@ -157,8 +157,21 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
                             "condition must be `bool`");
             }
             SnExpr *pair = e->rhs;
+            if (!pair) {
+                result = sn_type_error(c->types);
+                break;
+            }
+            /* The branches are mutually exclusive. Analyze each from the
+             * same incoming move state, then join their outgoing states.
+             * Checking them sequentially would incorrectly make a move in
+             * the true branch visible while checking the false branch. */
+            SnMoveSnapshot *moves = sn_check_move_snapshot_new(c, local);
             SnTypeRep *then_ty = sn_check_expr(c, local, pair->lhs);
+            sn_check_move_snapshot_accumulate(moves);
+            sn_check_move_snapshot_restore(moves);
             SnTypeRep *else_ty = sn_check_expr(c, local, pair->rhs);
+            sn_check_move_snapshot_accumulate(moves);
+            sn_check_move_snapshot_apply(moves);
             pair->resolved_type = sn_type_error(c->types);
             if (sn_check_is_error(then_ty) || sn_check_is_error(else_ty)) {
                 result = sn_type_error(c->types);

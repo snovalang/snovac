@@ -15,6 +15,8 @@ static Flow exec_block(Interp *in, Env *env, const SnStmt *s) {
             break;
         }
     }
+    if (result == FLOW_RETURN && eval_value_is_heap_owned(in->ret))
+        eval_region_mark_escaping(in);
     eval_region_end(in, region);
     return result;
 }
@@ -24,6 +26,8 @@ static Flow exec_while(Interp *in, Env *env, const SnStmt *s) {
     while (!in->failed && truthy(in, eval_expr(in, env, s->expr), s->span)) {
         EvalRegion *region = eval_region_begin(in);
         Flow f = exec_stmt(in, env, s->then_br);
+        if (f == FLOW_RETURN && eval_value_is_heap_owned(in->ret))
+            eval_region_mark_escaping(in);
         eval_region_end(in, region);
         if (f == FLOW_RETURN) {
             return f;
@@ -131,6 +135,8 @@ static Flow exec_match(Interp *in, Env *env, const SnStmt *s) {
         eval_expr(in, arm_env, arm->value);
         result = in->failed ? FLOW_RETURN : FLOW_NORMAL;
     }
+    if (result == FLOW_RETURN && eval_value_is_heap_owned(in->ret))
+        eval_region_mark_escaping(in);
     eval_region_end(in, region);
     return result;
 }
@@ -148,6 +154,8 @@ static Flow exec_for(Interp *in, Env *env, const SnStmt *s) {
             Env *loop_env = env_new(in, env);
             if (s->name) env_define(in, loop_env, s->name, v_int(i));
             Flow f = exec_stmt(in, loop_env, s->then_br);
+            if (f == FLOW_RETURN && eval_value_is_heap_owned(in->ret))
+                eval_region_mark_escaping(in);
             eval_region_end(in, region);
             if (f == FLOW_RETURN) return f;
             if (f == FLOW_BREAK) break;
@@ -164,6 +172,8 @@ static Flow exec_for(Interp *in, Env *env, const SnStmt *s) {
             Env *loop_env = env_new(in, env);
             if (s->name) env_define(in, loop_env, s->name, *item);
             Flow f = exec_stmt(in, loop_env, s->then_br);
+            if (f == FLOW_RETURN && eval_value_is_heap_owned(in->ret))
+                eval_region_mark_escaping(in);
             eval_region_end(in, region);
             if (f == FLOW_RETURN) return f;
             if (f == FLOW_BREAK) break;

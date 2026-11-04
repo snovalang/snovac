@@ -207,7 +207,6 @@ static void builder_append(StringBuilder *builder, const char *text) {
 }
 
 static char *builder_finish(Interp *in, StringBuilder *builder) {
-    eval_region_mark_escaping(in);
     char *result = sn_arena_strndup(in->arena,
                                     builder->data ? builder->data : "",
                                     builder->len);
@@ -220,7 +219,6 @@ static char *builder_finish(Interp *in, StringBuilder *builder) {
 /* ── strings ──────────────────────────────────────────────────────────────── */
 
 char *arena_sprintf(Interp *in, const char *fmt, ...) {
-    eval_region_mark_escaping(in);
     va_list ap;
     va_start(ap, fmt);
     va_list measure;
@@ -238,7 +236,6 @@ char *arena_sprintf(Interp *in, const char *fmt, ...) {
 }
 
 char *str_concat(Interp *in, const char *a, const char *b) {
-    eval_region_mark_escaping(in);
     size_t la = strlen(a), lb = strlen(b);
     if (la > SIZE_MAX - lb - 1u) {
         fputs("snovac runtime: concatenated string size overflow\n", stderr);
@@ -316,7 +313,6 @@ const char *to_string(Interp *in, Value v, SnSpan span) {
 /* ── variants and equality ────────────────────────────────────────────────── */
 
 Value v_variant(Interp *in, const char *name, SnList payload) {
-    eval_region_mark_escaping(in);
     VariantVal *vt = (VariantVal *)sn_arena_calloc(in->arena, sizeof(VariantVal));
     vt->name = name;
     vt->payload = payload;

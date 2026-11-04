@@ -53,8 +53,11 @@ int sn_check_expr_has_borrowed_origin(const SnExpr *expr) {
         }
         return 0;
     case SN_EXPR_BINARY:
-        if (expr->op == SN_TOK_QUESTION && expr->rhs &&
-            expr->rhs->kind == SN_EXPR_BINARY && expr->rhs->op == SN_TOK_COLON) {
+        if (expr->op == SN_TOK_QUESTION) {
+            if (!expr->rhs || expr->rhs->kind != SN_EXPR_BINARY ||
+                expr->rhs->op != SN_TOK_COLON) {
+                return sn_check_expr_has_borrowed_origin(expr->rhs);
+            }
             return sn_check_expr_has_borrowed_origin(expr->rhs->lhs) ||
                    sn_check_expr_has_borrowed_origin(expr->rhs->rhs);
         }
@@ -116,9 +119,9 @@ void sn_check_mark_expr_consumed(SnChecker *c, SnExpr *expr, SnTypeRep *type) {
         }
         return;
     }
-    if (expr->kind == SN_EXPR_BINARY && expr->op == SN_TOK_QUESTION &&
-        expr->rhs && expr->rhs->kind == SN_EXPR_BINARY &&
-        expr->rhs->op == SN_TOK_COLON) {
+    if (expr->kind == SN_EXPR_BINARY && expr->op == SN_TOK_QUESTION) {
+        if (!expr->rhs || expr->rhs->kind != SN_EXPR_BINARY ||
+            expr->rhs->op != SN_TOK_COLON) return;
         SnExpr *then_value = expr->rhs->lhs;
         SnExpr *else_value = expr->rhs->rhs;
         sn_check_mark_expr_consumed(c, then_value,

@@ -3,14 +3,23 @@
 #include <stdint.h>
 
 ArrayVal *array_new(Interp *in) {
-    eval_region_mark_escaping(in);
     ArrayVal *array = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
-    array->next_owned = in->arrays;
-    in->arrays = array;
+    array->owner_region = in->current_region;
+    if (in->current_region) {
+        array->next_owned = in->current_region->arrays;
+        in->current_region->arrays = array;
+    } else {
+        array->next_owned = in->arrays;
+        in->arrays = array;
+    }
     return array;
 }
 
 int array_push(Interp *in, ArrayVal *array, Value value, SnSpan span) {
+    if (in->current_region && value.kind != V_UNIT &&
+        value.kind != V_INT && value.kind != V_DOUBLE && value.kind != V_BOOL &&
+        value.kind != V_MOVED && array->owner_region != in->current_region)
+        eval_region_mark_escaping(in);
     if (in->array_used_bytes > SIZE_MAX - sizeof(Value)) {
         rt_error(in, SNOVA_TYPE_ERROR, span, "array live memory accounting overflow");
         return 0;
@@ -89,7 +98,6 @@ Value default_for(const SnType *t) {
 
 Object *instantiate(Interp *in, const SnDecl *cls, SnList *args, Env *env,
                     SnSpan span) {
-    eval_region_mark_escaping(in);
     Object *o = (Object *)sn_arena_calloc(in->arena, sizeof(Object));
     o->cls = cls;
 

@@ -153,7 +153,6 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
     case SN_EXPR_ASSIGN:
         return eval_assign(in, env, e);
     case SN_EXPR_LAMBDA: {
-        eval_region_mark_escaping(in);
         LambdaVal *lam = (LambdaVal *)sn_arena_calloc(in->arena,
                                                       sizeof(LambdaVal));
         lam->expr = e;
@@ -178,7 +177,6 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
                      e->lhs->text);
             return v_unit();
         }
-        eval_region_mark_escaping(in);
         Object *o = (Object *)sn_arena_calloc(in->arena, sizeof(Object));
         o->cls = cls;
         for (size_t i = 0; i < cls->members.len; i++) {
@@ -230,8 +228,10 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
              * `return` inside is delivered as the surrounding function's
              * return value by the caller's exec loop. */
             Flow f = exec_stmt(in, arm_env, arm->body);
-            (void)f;
+            if (f == FLOW_RETURN && eval_value_is_heap_owned(in->ret))
+                eval_region_mark_escaping(in);
         }
+        if (eval_value_is_heap_owned(result)) eval_region_mark_escaping(in);
         eval_region_end(in, region);
         return result;
     }

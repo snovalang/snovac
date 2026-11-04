@@ -114,7 +114,11 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
     Value container = v_unit();
     int created_container_field = 0;
     if (e->lhs->kind == SN_EXPR_IDENT) {
-        slot = env_lookup(env, e->lhs->text);
+        EvalRegion *slot_region = NULL;
+        slot = env_lookup_owned(env, e->lhs->text, &slot_region);
+        if (in->current_region && eval_value_is_heap_owned(val) &&
+            slot && slot_region != in->current_region)
+            eval_region_mark_escaping(in);
     } else if (e->lhs->kind == SN_EXPR_MEMBER) {
         if (e->lhs->lhs && e->lhs->lhs->kind == SN_EXPR_IDENT && e->lhs->lhs->text &&
             !env_lookup(env, e->lhs->lhs->text)) {
@@ -122,9 +126,13 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
             if (cls) {
                 char key[512];
                 snprintf(key, sizeof(key), "%s.%s", e->lhs->lhs->text, e->lhs->text);
-                slot = env_lookup(in->globals, key);
+                EvalRegion *slot_region = NULL;
+                slot = env_lookup_owned(in->globals, key, &slot_region);
                 if (!slot) {
                     slot = env_define(in, in->globals, key, val);
+                } else if (in->current_region && eval_value_is_heap_owned(val) &&
+                           slot_region != in->current_region) {
+                    eval_region_mark_escaping(in);
                 }
             }
         }
@@ -172,6 +180,12 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
         val = eval_binary(in, env, &tmp);
     }
     if (container.kind != V_UNIT) {
+        int destination_outlives_region =
+            container.kind != V_ARRAY ||
+            container.as.arr->owner_region != in->current_region;
+        if (in->current_region && destination_outlives_region &&
+            eval_value_is_heap_owned(val))
+            eval_region_mark_escaping(in);
         int cycle = eval_would_create_cycle(container, val);
         if (cycle != 0) {
             if (created_container_field) {

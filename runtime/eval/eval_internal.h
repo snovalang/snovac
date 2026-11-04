@@ -59,6 +59,7 @@ struct ArrayVal {
     size_t len;
     size_t capacity;
     ArrayVal *next_owned;
+    EvalRegion *owner_region;
 };
 
 struct Object {
@@ -79,6 +80,7 @@ typedef enum { FLOW_NORMAL, FLOW_RETURN, FLOW_BREAK, FLOW_CONTINUE } Flow;
 
 typedef struct Env {
     struct Env *parent;
+    EvalRegion *owner_region;
     SnList names; /* const char* */
     SnList slots; /* Value* — boxed so assignment is visible to inner scopes */
 } Env;
@@ -95,6 +97,7 @@ struct EvalRegion {
     SnArena *parent_arena;
     EvalRegion *parent_region;
     EvalRegion *next_retained;
+    ArrayVal *arrays;
     int may_escape;
 };
 
@@ -128,10 +131,12 @@ static inline Value v_str(const char *s) { Value v; v.kind = V_STRING; v.as.s = 
 void rt_error(Interp *in, int code, SnSpan span, const char *fmt, ...);
 EvalRegion *eval_region_begin(Interp *in);
 void eval_region_end(Interp *in, EvalRegion *region);
+int eval_value_is_heap_owned(Value value);
 
 Env *env_new(Interp *in, Env *parent);
 void eval_region_mark_escaping(Interp *in);
 Value *env_lookup(Env *e, const char *name);
+Value *env_lookup_owned(Env *e, const char *name, EvalRegion **owner_region);
 Value *env_define(Interp *in, Env *e, const char *name, Value v);
 
 char *arena_sprintf(Interp *in, const char *fmt, ...);
