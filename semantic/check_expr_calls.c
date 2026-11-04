@@ -57,6 +57,14 @@ SnTypeRep *check_expr_call(SnChecker *c, SnScope *local, SnExpr *e) {
         if (intrinsic_ctor) {
             e->lhs->resolved_type = intrinsic_ctor;
         }
+        if (callee_sym && callee_sym->is_moved &&
+            (callee_sym->kind == SN_SYM_LOCAL ||
+             callee_sym->kind == SN_SYM_PARAM)) {
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_USE_AFTER_MOVE,
+                         e->lhs->span,
+                         "`%s` was moved and cannot be called before reinitialization",
+                         callee_sym->name ? callee_sym->name : "<value>");
+        }
         /* Consumed here, before argument-checking recurses into anything
          * that might itself be a `pulsar work()` launch — SNOVA124 exempts
          * only the CALL directly named by a `pulsar` statement's own expr,

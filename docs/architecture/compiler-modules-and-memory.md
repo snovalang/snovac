@@ -123,6 +123,8 @@ O parser agora preserva `&T`, `&mut T`, `*mut T` e `*const T` como categorias di
 
 O checker trata atribuições compostas a bindings locais (`+=`, `-=`, etc.) como leitura do valor antigo: um binding movido não pode ser usado como operando implícito. Reatribuição simples (`=`) a `var` movido segue permitida como reinitialização; o RHS continua sendo analisado antes de restaurar o estado inicializado.
 
+Chamadas a valores locais com tipo função também consultam o estado de move do binding antes de aceitar a invocação. Isso fecha o caminho em que `resolve_value_symbol` tipava uma closure movida sem passar pela checagem normal de leitura de identificadores.
+
 O contrato de alocação proposto para a linguagem é:
 
 | Categoria | Dono e fim de vida | Estratégia inicial |
