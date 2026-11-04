@@ -63,7 +63,7 @@ int sn_native_try_dispatch(Interp *in, const SnDecl *fn, SnList *args, Env *call
             buf[n] = '\0';
             char *interned = sn_arena_strndup(in->arena, buf, (size_t)n);
             free(buf);
-            *out = v_str(interned);
+            *out = v_str_in_region(interned, in->current_region);
             return 1;
         }
 
