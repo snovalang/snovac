@@ -185,7 +185,10 @@ void eval_value_mark_escaping(Interp *in, Value value) {
                 ok = graph_queue_ref(&seen, &queue, &count, &capacity,
                                      queue_inline,
                                      (GraphRef){env->parent, GRAPH_ENV});
-            if (env->captured_region) env->captured_region->may_escape = 1;
+            for (size_t i = 0; i < env->captured_regions.len; ++i) {
+                EvalRegion *owner = (EvalRegion *)env->captured_regions.items[i];
+                if (owner) owner->may_escape = 1;
+            }
             if (ok)
                 ok = eval_mark_enqueue_list(&seen, &queue, &count, &capacity,
                                             queue_inline, &env->slots);

@@ -90,9 +90,9 @@ typedef enum { FLOW_NORMAL, FLOW_RETURN, FLOW_BREAK, FLOW_CONTINUE } Flow;
 typedef struct Env {
     struct Env *parent;
     EvalRegion *owner_region;
-    EvalRegion *captured_region;
     SnList names; /* const char* */
     SnList slots; /* Value* — boxed so assignment is visible to inner scopes */
+    SnList captured_regions; /* EvalRegion* owners of aliased captured slots */
 } Env;
 
 /* A first-class `(x) -> ...` value: the lambda expression plus the environment
@@ -165,6 +165,7 @@ void eval_value_mark_escaping(Interp *in, Value value);
 Value *env_lookup(Env *e, const char *name);
 Value *env_lookup_owned(Env *e, const char *name, EvalRegion **owner_region);
 Value *env_define(Interp *in, Env *e, const char *name, Value v);
+Env *env_capture_lambda(Interp *in, Env *source, const SnExpr *lambda);
 
 char *arena_sprintf(Interp *in, const char *fmt, ...);
 char *str_concat(Interp *in, const char *a, const char *b);
