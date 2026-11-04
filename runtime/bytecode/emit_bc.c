@@ -13,6 +13,13 @@
 
 #include "emit_bc_internal.h"
 
+void emit_unsupported(Compiler *c, SnSpan span, const char *feature) {
+    if (!c || c->failed) return;
+    sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_BYTECODE_UNSUPPORTED, span,
+                 "bytecode backend does not support %s yet", feature);
+    c->failed = 1;
+}
+
 uint32_t add_local(Compiler *c, const char *name, SnSpan span) {
     if (c->failed) return 0;
     if (c->local_count >= SN_BC_VM_STACK_CAPACITY) {
@@ -97,9 +104,9 @@ void compile_expr(Compiler *c, const SnExpr *e);
 void sn_compile_stmt(Compiler *c, const SnStmt *s);
 
 void compile_expr(Compiler *c, const SnExpr *e) {
+    if (c->failed) return;
     if (!e) {
-        emit_byte(c, OP_CONST_UNIT, 0);
-        return;
+        emit_unsupported(c, (SnSpan){0}, "a missing expression"); return;
     }
     uint32_t line = e->span.line;
 
@@ -168,7 +175,7 @@ void compile_expr(Compiler *c, const SnExpr *e) {
                 emit_byte(c, OP_CONST_INT, line);
                 emit_i64(c, (int64_t)fn_idx, line);
             } else {
-                emit_byte(c, OP_CONST_UNIT, line);
+                emit_unsupported(c, e->span, "global or unresolved identifiers");
             }
         }
         break;
@@ -180,6 +187,8 @@ void compile_expr(Compiler *c, const SnExpr *e) {
             if (resolve_local(c, e->lhs->text, &loc_idx)) {
                 emit_byte(c, OP_SET_LOCAL, line);
                 emit_u32(c, loc_idx, line);
+            } else {
+                emit_unsupported(c, e->span, "assignment to globals");
             }
         } else if (e->lhs && e->lhs->kind == SN_EXPR_INDEX) {
             compile_expr(c, e->lhs->lhs);
@@ -187,7 +196,7 @@ void compile_expr(Compiler *c, const SnExpr *e) {
             compile_expr(c, e->rhs);
             emit_byte(c, OP_SET_INDEX, line);
         } else {
-            compile_expr(c, e->rhs);
+            emit_unsupported(c, e->span, "this assignment target");
         }
         break;
     }
@@ -206,7 +215,7 @@ void compile_expr(Compiler *c, const SnExpr *e) {
         case SN_TOK_LE:      emit_byte(c, OP_LE, line); break;
         case SN_TOK_GT:      emit_byte(c, OP_GT, line); break;
         case SN_TOK_GE:      emit_byte(c, OP_GE, line); break;
-        default: break;
+        default: emit_unsupported(c, e->span, "this binary operator"); break;
         }
         break;
     case SN_EXPR_UNARY:
@@ -215,6 +224,8 @@ void compile_expr(Compiler *c, const SnExpr *e) {
             emit_byte(c, OP_NEG, line);
         } else if (e->op == SN_TOK_BANG) {
             emit_byte(c, OP_NOT, line);
+        } else {
+            emit_unsupported(c, e->span, "this unary operator");
         }
         break;
     case SN_EXPR_MOVE: {
@@ -224,7 +235,7 @@ void compile_expr(Compiler *c, const SnExpr *e) {
             emit_byte(c, OP_MOVE_LOCAL, line);
             emit_u32(c, slot, line);
         } else {
-            emit_byte(c, OP_CONST_UNIT, line);
+            emit_unsupported(c, e->span, "this move expression");
         }
         break;
     }
@@ -293,7 +304,7 @@ void compile_expr(Compiler *c, const SnExpr *e) {
             emit_u32(c, fn_idx, line);
             emit_u32(c, (uint32_t)e->args.len, line);
         } else {
-            emit_byte(c, OP_CONST_UNIT, line);
+            emit_unsupported(c, e->span, "this call (only direct known functions and supported intrinsics are available)");
         }
         break;
     }
@@ -312,13 +323,14 @@ void compile_expr(Compiler *c, const SnExpr *e) {
         break;
     }
     default:
-        emit_byte(c, OP_CONST_UNIT, line);
+        emit_unsupported(c, e->span, "this expression");
         break;
     }
 }
 
 
 int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCUnit *out) {
+    if (!arena || !diag || !unit || !out) return 0;
     sn_bcunit_init(out);
 
     Compiler c;
@@ -331,18 +343,21 @@ int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCU
     /* First pass: register function prototypes */
     for (size_t i = 0; i < unit->decls.len; i++) {
         const SnDecl *d = SN_LIST_AT(unit->decls, SnDecl, i);
-        if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
+        if (d && d->kind == SN_DECL_FUNC) {
             uint32_t fn_idx = sn_bcunit_add_function(out, d->name, (uint32_t)d->params.len);
             if (strcmp(d->name, "main") == 0) {
                 out->main_func_idx = fn_idx;
             }
+        } else if (d) {
+            emit_unsupported(&c, d->span, "this top-level declaration");
         }
     }
 
     /* Second pass: compile function bodies */
     for (size_t i = 0; i < unit->decls.len; i++) {
         const SnDecl *d = SN_LIST_AT(unit->decls, SnDecl, i);
-        if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
+        if (!d || d->kind != SN_DECL_FUNC) continue;
+        {
             uint32_t fn_idx = 0;
             resolve_func(&c, d->name, &fn_idx);
             c.current_fn = out->functions[fn_idx];

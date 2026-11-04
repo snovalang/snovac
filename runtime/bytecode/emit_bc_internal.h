@@ -34,4 +34,5 @@ void emit_i64(Compiler *, int64_t, uint32_t);
 void emit_double(Compiler *, double, uint32_t);
 size_t emit_jump(Compiler *, SnOpcode, uint32_t);
 void patch_jump(Compiler *, size_t);
+void emit_unsupported(Compiler *, SnSpan, const char *);
 #endif

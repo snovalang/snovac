@@ -22,7 +22,7 @@ static void emit_loop_jump(Compiler *c, size_t target, uint32_t line) {
 }
 
 void sn_compile_stmt(Compiler *c, const SnStmt *s) {
-    if (!s) return;
+    if (c->failed || !s) return;
     uint32_t line = s->span.line;
 
     switch (s->kind) {
@@ -60,14 +60,14 @@ void sn_compile_stmt(Compiler *c, const SnStmt *s) {
             jump->offset = emit_jump(c, OP_JUMP, line);
             jump->next = loop->breaks;
             loop->breaks = jump;
-        }
+        } else emit_unsupported(c, s->span, "break outside a loop");
         break;
     case SN_STMT_CONTINUE:
         if (c->loop) {
             LoopContext *loop = c->loop;
             emit_scope_cleanup(c, loop->local_depth, line);
             emit_loop_jump(c, loop->start, line);
-        }
+        } else emit_unsupported(c, s->span, "continue outside a loop");
         break;
     case SN_STMT_IF: {
         compile_expr(c, s->expr);
@@ -111,6 +111,7 @@ void sn_compile_stmt(Compiler *c, const SnStmt *s) {
         break;
     }
     default:
+        emit_unsupported(c, s->span, "this statement");
         break;
     }
 }

@@ -8,6 +8,8 @@
 
 /* Backend diagnostic: one function exceeded the VM's simultaneous slot cap. */
 #define SNOVA_TOO_MANY_LOCALS 148
+/* The emitter refuses syntax whose runtime semantics are not implemented. */
+#define SNOVA_BYTECODE_UNSUPPORTED 149
 
 int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCUnit *out);
 
