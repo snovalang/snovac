@@ -4,6 +4,11 @@
 #include "eval_internal.h"
 #include "sn_native_dispatch.h"
 
+static void eval_stats_add(size_t *total, size_t value) {
+    if (*total > SIZE_MAX - value) *total = SIZE_MAX;
+    else *total += value;
+}
+
 void rt_error(Interp *in, int code, SnSpan span, const char *fmt, ...) {
     if (in->failed) {
         return;
@@ -239,10 +244,21 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     array_free_storage(&in, in.arrays);
     in.arrays = NULL;
     EvalRegion *region = in.retained_regions;
+    size_t retained_count = 0;
+    SnArenaStats retained_stats = {0};
+    int memory_stats = getenv("SNOVA_MEMORY_STATS") != NULL;
     while (region) {
         EvalRegion *next = region->next_retained;
-        if (getenv("SNOVA_MEMORY_STATS"))
-            sn_arena_report_stats(stderr, "evaluator-call-region", &region->arena);
+        if (memory_stats) {
+            SnArenaStats current = sn_arena_get_stats(&region->arena);
+            eval_stats_add(&retained_count, 1u);
+            eval_stats_add(&retained_stats.reserved_bytes, current.reserved_bytes);
+            eval_stats_add(&retained_stats.used_bytes, current.used_bytes);
+            eval_stats_add(&retained_stats.requested_bytes, current.requested_bytes);
+            eval_stats_add(&retained_stats.peak_used_bytes, current.peak_used_bytes);
+            eval_stats_add(&retained_stats.block_count, current.block_count);
+            eval_stats_add(&retained_stats.allocation_count, current.allocation_count);
+        }
         array_free_storage(&in, region->arrays);
         region->arrays = NULL;
         sn_arena_free(&region->arena);
@@ -250,7 +266,13 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     }
     in.retained_regions = NULL;
     eval_region_pool_free(&in);
-    if (getenv("SNOVA_MEMORY_STATS")) {
+    if (memory_stats) {
+        fprintf(stderr,
+                "memory[evaluator-retained-regions]: count=%zu reserved=%zu used=%zu requested=%zu sum-peak-used=%zu blocks=%zu allocations=%zu\n",
+                retained_count, retained_stats.reserved_bytes,
+                retained_stats.used_bytes, retained_stats.requested_bytes,
+                retained_stats.peak_used_bytes, retained_stats.block_count,
+                retained_stats.allocation_count);
         fprintf(stderr,
                 "memory[evaluator-closures]: closures=%zu captured-slots=%zu full-frame-fallbacks=%zu\n",
                 in.closure_count, in.captured_slot_count,
