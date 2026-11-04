@@ -9,6 +9,62 @@ typedef struct {
     char message[1024];
 } LoopMoveProbe;
 
+typedef struct {
+    int falls_through;
+    int reaches_next_iteration;
+} LoopBodyFlow;
+
+static LoopBodyFlow loop_body_flow(const SnStmt *stmt) {
+    if (!stmt) return (LoopBodyFlow){1, 1};
+    switch (stmt->kind) {
+    case SN_STMT_BREAK:
+    case SN_STMT_RETURN:
+    case SN_STMT_THROW:
+        return (LoopBodyFlow){0, 0};
+    case SN_STMT_CONTINUE:
+        return (LoopBodyFlow){0, 1};
+    case SN_STMT_BLOCK: {
+        int falls_through = 1;
+        int reaches_next_iteration = 0;
+        for (size_t i = 0; i < stmt->stmts.len && falls_through; ++i) {
+            LoopBodyFlow next = loop_body_flow(SN_LIST_AT(stmt->stmts, SnStmt, i));
+            reaches_next_iteration |= next.reaches_next_iteration;
+            falls_through = next.falls_through;
+        }
+        return (LoopBodyFlow){falls_through,
+                              reaches_next_iteration || falls_through};
+    }
+    case SN_STMT_IF: {
+        LoopBodyFlow then_flow = loop_body_flow(stmt->then_br);
+        LoopBodyFlow else_flow = stmt->else_br
+                                     ? loop_body_flow(stmt->else_br)
+                                     : (LoopBodyFlow){1, 1};
+        return (LoopBodyFlow){then_flow.falls_through || else_flow.falls_through,
+                              then_flow.reaches_next_iteration ||
+                                  else_flow.reaches_next_iteration};
+    }
+    case SN_STMT_MATCH: {
+        /* Without a proof of exhaustiveness, preserve the no-arm path. */
+        int falls_through = 1;
+        int reaches_next_iteration = 1;
+        for (size_t i = 0; i < stmt->arms.len; ++i) {
+            const SnMatchArm *arm = SN_LIST_AT(stmt->arms, SnMatchArm, i);
+            LoopBodyFlow arm_flow = arm->body
+                                        ? loop_body_flow(arm->body)
+                                        : (LoopBodyFlow){1, 1};
+            falls_through |= arm_flow.falls_through;
+            reaches_next_iteration |= arm_flow.reaches_next_iteration;
+        }
+        return (LoopBodyFlow){falls_through, reaches_next_iteration};
+    }
+    case SN_STMT_TRY:
+        /* Conservatively account for normal flow through try/catch/finally. */
+        return (LoopBodyFlow){1, 1};
+    default:
+        return (LoopBodyFlow){1, 1};
+    }
+}
+
 static void capture_loop_move_diagnostic(void *ctx, SnDiagLevel level, int code,
                                          SnSpan span, const char *message,
                                          const char *file_path) {
@@ -29,6 +85,7 @@ static void capture_loop_move_diagnostic(void *ctx, SnDiagLevel level, int code,
 static void check_loop_backedge(SnChecker *c, SnScope *scope, SnExpr *condition,
                                 SnStmt *body, SnSpan span,
                                 SnMoveSnapshot *moves) {
+    if (!loop_body_flow(body).reaches_next_iteration) return;
     int changed = 0;
     for (size_t i = 0; i < moves->count; ++i) {
         if (moves->symbols[i]->is_moved != moves->before[i]) {
