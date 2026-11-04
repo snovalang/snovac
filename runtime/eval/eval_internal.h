@@ -40,6 +40,7 @@ typedef struct VariantVal VariantVal;
 typedef struct LambdaVal LambdaVal;
 typedef struct ArrayVal ArrayVal;
 typedef struct EvalRegion EvalRegion;
+typedef struct EvalRegionBlock EvalRegionBlock;
 
 typedef struct {
     const char *data;
@@ -106,8 +107,15 @@ struct EvalRegion {
     SnArena *parent_arena;
     EvalRegion *parent_region;
     EvalRegion *next_retained;
+    EvalRegion *next_free;
     ArrayVal *arrays;
     int may_escape;
+};
+
+#define SN_EVAL_REGION_SLAB_COUNT 32u
+struct EvalRegionBlock {
+    EvalRegionBlock *next;
+    EvalRegion regions[SN_EVAL_REGION_SLAB_COUNT];
 };
 
 typedef struct {
@@ -122,6 +130,8 @@ typedef struct {
     size_t array_peak_used_bytes;
     EvalRegion *current_region;
     EvalRegion *retained_regions;
+    EvalRegion *free_regions;
+    EvalRegionBlock *region_blocks;
     Value ret;
     Flow flow;
     int failed;

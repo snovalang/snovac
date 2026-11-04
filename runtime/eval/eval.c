@@ -137,12 +137,53 @@ void sn_eval_merge_extensions(SnArena *arena, SnUnit *unit) {
 
 /* ── calls ────────────────────────────────────────────────────────────────── */
 
-EvalRegion *eval_region_begin(Interp *in) {
-    EvalRegion *region = (EvalRegion *)calloc(1, sizeof(*region));
-    if (!region) {
-        fputs("snovac evaluator: out of memory allocating call region\n", stderr);
-        abort();
+static EvalRegion *eval_region_acquire(Interp *in) {
+    if (!in->free_regions) {
+        EvalRegionBlock *block = (EvalRegionBlock *)calloc(1, sizeof(*block));
+        if (!block) {
+            fputs("snovac evaluator: out of memory allocating region slab\n", stderr);
+            abort();
+        }
+        block->next = in->region_blocks;
+        in->region_blocks = block;
+        for (size_t i = 0; i < SN_EVAL_REGION_SLAB_COUNT; ++i) {
+            block->regions[i].next_free = in->free_regions;
+            in->free_regions = &block->regions[i];
+        }
     }
+    EvalRegion *region = in->free_regions;
+    in->free_regions = region->next_free;
+    memset(region, 0, sizeof(*region));
+    return region;
+}
+
+static void eval_region_recycle(Interp *in, EvalRegion *region) {
+    memset(region, 0, sizeof(*region));
+    region->next_free = in->free_regions;
+    in->free_regions = region;
+}
+
+static void eval_region_pool_free(Interp *in) {
+    EvalRegionBlock *block = in->region_blocks;
+    size_t blocks = 0;
+    for (EvalRegionBlock *it = block; it; it = it->next) blocks++;
+    if (getenv("SNOVA_MEMORY_STATS")) {
+        fprintf(stderr,
+                "memory[evaluator-region-pool]: slabs=%zu descriptors=%zu bytes=%zu\n",
+                blocks, blocks * (size_t)SN_EVAL_REGION_SLAB_COUNT,
+                blocks * sizeof(*block));
+    }
+    while (block) {
+        EvalRegionBlock *next = block->next;
+        free(block);
+        block = next;
+    }
+    in->region_blocks = NULL;
+    in->free_regions = NULL;
+}
+
+EvalRegion *eval_region_begin(Interp *in) {
+    EvalRegion *region = eval_region_acquire(in);
     sn_arena_init(&region->arena, SN_EVAL_ARENA_BLOCK_SIZE);
     region->parent_arena = in->arena;
     region->parent_region = in->current_region;
@@ -163,7 +204,7 @@ void eval_region_end(Interp *in, EvalRegion *region) {
         array_free_storage(in, region->arrays);
         region->arrays = NULL;
         sn_arena_free(&region->arena);
-        free(region);
+        eval_region_recycle(in, region);
     }
 }
 
@@ -276,6 +317,7 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     sn_arena_init(&runtime_arena, SN_EVAL_ARENA_BLOCK_SIZE);
 
     Interp in;
+    memset(&in, 0, sizeof(in));
     /* Keep transient environments, objects and generated strings out of the
      * caller's AST/token arena. Source declarations remain borrowed from it. */
     in.arena = &runtime_arena;
@@ -301,6 +343,7 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
         if (getenv("SNOVA_MEMORY_STATS"))
             sn_arena_report_stats(stderr, "evaluator-runtime", &runtime_arena);
         sn_arena_free(&runtime_arena);
+        eval_region_pool_free(&in);
         sn_runtime_shutdown();
         return -1;
     }
@@ -320,10 +363,11 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
         array_free_storage(&in, region->arrays);
         region->arrays = NULL;
         sn_arena_free(&region->arena);
-        free(region);
+        eval_region_recycle(&in, region);
         region = next;
     }
     in.retained_regions = NULL;
+    eval_region_pool_free(&in);
     if (getenv("SNOVA_MEMORY_STATS")) {
         fprintf(stderr,
                 "memory[evaluator-arrays]: used=%zu reserved=%zu slack=%zu peak-used=%zu peak-reserved=%zu\n",
