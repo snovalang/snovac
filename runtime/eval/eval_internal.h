@@ -155,6 +155,7 @@ static inline Value v_str_in_region(const char *s, EvalRegion *owner_region) {
 void rt_error(Interp *in, int code, SnSpan span, const char *fmt, ...);
 EvalRegion *eval_region_begin(Interp *in);
 void eval_region_end(Interp *in, EvalRegion *region);
+void eval_region_pool_free(Interp *in);
 int eval_value_is_heap_owned(Value value);
 
 Env *env_new(Interp *in, Env *parent);

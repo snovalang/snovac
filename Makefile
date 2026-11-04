@@ -46,7 +46,8 @@ SEMANTIC_SRCS = semantic/symbol.c semantic/package.c semantic/package_scan_heade
                 semantic/check.c semantic/check_ownership.c semantic/check_stmt.c semantic/check_control_stmt.c \
                 semantic/check_decl.c semantic/check_flow.c
 RUNTIME_SRCS = runtime/concurrency/pulsar.c runtime/concurrency/async.c \
-               runtime/eval/eval.c runtime/eval/eval_values.c \
+               runtime/eval/eval.c runtime/eval/eval_env.c runtime/eval/eval_region.c \
+               runtime/eval/eval_values.c \
                runtime/eval/eval_objects.c runtime/eval/eval_expr.c runtime/eval/eval_operators.c \
                runtime/eval/eval_calls.c runtime/eval/eval_array_methods.c \
                runtime/eval/eval_string_variant_methods.c runtime/eval/eval_stmt.c \

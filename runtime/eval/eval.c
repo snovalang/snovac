@@ -20,48 +20,6 @@ void rt_error(Interp *in, int code, SnSpan span, const char *fmt, ...) {
 
 /* ── environment ──────────────────────────────────────────────────────────── */
 
-Env *env_new(Interp *in, Env *parent) {
-    Env *e = (Env *)sn_arena_calloc(in->arena, sizeof(Env));
-    e->parent = parent;
-    e->owner_region = in->current_region;
-    return e;
-}
-
-Value *env_lookup_owned(Env *e, const char *name, EvalRegion **owner_region) {
-    for (; e; e = e->parent) {
-        for (size_t i = e->names.len; i > 0; i--) {
-            if (strcmp((const char *)e->names.items[i - 1], name) == 0) {
-                if (owner_region) *owner_region = e->owner_region;
-                return (Value *)e->slots.items[i - 1];
-            }
-        }
-    }
-    if (owner_region) *owner_region = NULL;
-    return NULL;
-}
-
-Value *env_lookup(Env *e, const char *name) {
-    return env_lookup_owned(e, name, NULL);
-}
-
-int eval_value_is_heap_owned(Value value) {
-    return value.kind == V_STRING || value.kind == V_OBJECT ||
-           value.kind == V_VARIANT || value.kind == V_LAMBDA ||
-           value.kind == V_ARRAY;
-}
-
-Value *env_define(Interp *in, Env *e, const char *name, Value v) {
-    if (in->current_region && e->owner_region != in->current_region) {
-        eval_region_mark_current(in);
-        if (eval_value_is_heap_owned(v)) eval_value_mark_escaping(in, v);
-    }
-    Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
-    *slot = v;
-    sn_list_push(in->arena, &e->names, (void *)name);
-    sn_list_push(in->arena, &e->slots, slot);
-    return slot;
-}
-
 /* ── declaration lookup ───────────────────────────────────────────────────── */
 
 const SnDecl *find_member(const SnDecl *cls, const char *name) {
@@ -136,81 +94,6 @@ void sn_eval_merge_extensions(SnArena *arena, SnUnit *unit) {
 }
 
 /* ── calls ────────────────────────────────────────────────────────────────── */
-
-static EvalRegion *eval_region_acquire(Interp *in) {
-    if (!in->free_regions) {
-        EvalRegionBlock *block = (EvalRegionBlock *)calloc(1, sizeof(*block));
-        if (!block) {
-            fputs("snovac evaluator: out of memory allocating region slab\n", stderr);
-            abort();
-        }
-        block->next = in->region_blocks;
-        in->region_blocks = block;
-        for (size_t i = 0; i < SN_EVAL_REGION_SLAB_COUNT; ++i) {
-            block->regions[i].next_free = in->free_regions;
-            in->free_regions = &block->regions[i];
-        }
-    }
-    EvalRegion *region = in->free_regions;
-    in->free_regions = region->next_free;
-    memset(region, 0, sizeof(*region));
-    return region;
-}
-
-static void eval_region_recycle(Interp *in, EvalRegion *region) {
-    memset(region, 0, sizeof(*region));
-    region->next_free = in->free_regions;
-    in->free_regions = region;
-}
-
-static void eval_region_pool_free(Interp *in) {
-    EvalRegionBlock *block = in->region_blocks;
-    size_t blocks = 0;
-    for (EvalRegionBlock *it = block; it; it = it->next) blocks++;
-    if (getenv("SNOVA_MEMORY_STATS")) {
-        fprintf(stderr,
-                "memory[evaluator-region-pool]: slabs=%zu descriptors=%zu bytes=%zu\n",
-                blocks, blocks * (size_t)SN_EVAL_REGION_SLAB_COUNT,
-                blocks * sizeof(*block));
-    }
-    while (block) {
-        EvalRegionBlock *next = block->next;
-        free(block);
-        block = next;
-    }
-    in->region_blocks = NULL;
-    in->free_regions = NULL;
-}
-
-EvalRegion *eval_region_begin(Interp *in) {
-    EvalRegion *region = eval_region_acquire(in);
-    sn_arena_init(&region->arena, SN_EVAL_ARENA_BLOCK_SIZE);
-    region->parent_arena = in->arena;
-    region->parent_region = in->current_region;
-    in->arena = &region->arena;
-    in->current_region = region;
-    return region;
-}
-
-void eval_region_end(Interp *in, EvalRegion *region) {
-    in->arena = region->parent_arena;
-    in->current_region = region->parent_region;
-    if (region->may_escape) {
-        region->parent_arena = NULL;
-        region->parent_region = NULL;
-        region->next_retained = in->retained_regions;
-        in->retained_regions = region;
-    } else {
-        array_free_storage(in, region->arrays);
-        region->arrays = NULL;
-        sn_arena_free(&region->arena);
-        eval_region_recycle(in, region);
-    }
-}
-
-void eval_region_mark_current(Interp *in) {
-    if (in && in->current_region) in->current_region->may_escape = 1;
-}
 
 Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
                     Object *self, SnSpan span) {
@@ -363,7 +246,6 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
         array_free_storage(&in, region->arrays);
         region->arrays = NULL;
         sn_arena_free(&region->arena);
-        eval_region_recycle(&in, region);
         region = next;
     }
     in.retained_regions = NULL;
