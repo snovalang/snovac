@@ -1,4 +1,5 @@
 #include "vm_internal.h"
+#include <string.h>
 
 int sn_vm_execute_numeric(SnVM *vm, SnOpcode op) {
     switch (op) {
@@ -97,7 +98,18 @@ int sn_vm_execute_numeric(SnVM *vm, SnOpcode op) {
     case OP_GE: {
         SnVal b = sn_vm_pop(vm), a = sn_vm_pop(vm);
         bool result;
-        if (op == OP_LT) result = a.as.i < b.as.i;
+        if (a.tag == VAL_DOUBLE || b.tag == VAL_DOUBLE) {
+            double da = a.tag == VAL_DOUBLE ? a.as.d : (double)a.as.i;
+            double db = b.tag == VAL_DOUBLE ? b.as.d : (double)b.as.i;
+            if (op == OP_LT) result = da < db;
+            else if (op == OP_LE) result = da <= db;
+            else if (op == OP_GT) result = da > db;
+            else result = da >= db;
+        } else if (a.tag == VAL_STRING && b.tag == VAL_STRING &&
+                   (op == OP_LT || op == OP_GT)) {
+            int cmp = strcmp(sn_val_string_data(a), sn_val_string_data(b));
+            result = op == OP_LT ? cmp < 0 : cmp > 0;
+        } else if (op == OP_LT) result = a.as.i < b.as.i;
         else if (op == OP_LE) result = a.as.i <= b.as.i;
         else if (op == OP_GT) result = a.as.i > b.as.i;
         else result = a.as.i >= b.as.i;
