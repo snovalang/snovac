@@ -260,8 +260,10 @@ void compile_expr(Compiler *c, const SnExpr *e) {
                 break;
             }
         }
-        if (e->lhs && e->lhs->kind == SN_EXPR_MEMBER && e->lhs->text &&
-            (strcmp(e->lhs->text, "printline") == 0 || strcmp(e->lhs->text, "println") == 0 || strcmp(e->lhs->text, "print") == 0)) {
+        if (e->lhs && e->lhs->kind == SN_EXPR_MEMBER && e->lhs->lhs &&
+            e->lhs->lhs->kind == SN_EXPR_IDENT && e->lhs->lhs->text &&
+            strcmp(e->lhs->lhs->text, "Console") == 0 && e->lhs->text &&
+            (strcmp(e->lhs->text, "printline") == 0 || strcmp(e->lhs->text, "print") == 0)) {
             int is_nl = strcmp(e->lhs->text, "print") != 0;
             if (e->args.len > 0) {
                 compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
@@ -275,22 +277,6 @@ void compile_expr(Compiler *c, const SnExpr *e) {
             emit_byte(c, OP_CONST_UNIT, line);
             break;
         }
-        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && e->lhs->text &&
-            (strcmp(e->lhs->text, "printline") == 0 || strcmp(e->lhs->text, "println") == 0 || strcmp(e->lhs->text, "print") == 0)) {
-            int is_nl = strcmp(e->lhs->text, "print") != 0;
-            if (e->args.len > 0) {
-                compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
-            } else {
-                uint32_t s_idx = sn_bcunit_add_string(c->bc, "");
-                emit_byte(c, OP_CONST_STRING, line);
-                emit_u32(c, s_idx, line);
-            }
-            emit_byte(c, OP_PRINT, line);
-            emit_byte(c, (uint8_t)is_nl, line);
-            emit_byte(c, OP_CONST_UNIT, line);
-            break;
-        }
-
         uint32_t fn_idx = 0;
         int found = 0;
         if (e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
