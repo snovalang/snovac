@@ -28,6 +28,8 @@ void sn_compile_stmt(Compiler *, const SnStmt *);
 void compile_expr(Compiler *, const SnExpr *);
 void compile_return_expr(Compiler *, const SnExpr *);
 uint32_t add_local(Compiler *, const char *, SnSpan);
+int resolve_local(Compiler *, const char *, uint32_t *);
+int resolve_func(Compiler *, const char *, uint32_t *);
 void emit_byte(Compiler *, uint8_t, uint32_t);
 void emit_u32(Compiler *, uint32_t, uint32_t);
 void emit_i64(Compiler *, int64_t, uint32_t);

@@ -24,7 +24,7 @@ A migração é incremental e, nesta etapa, os módulos foram agrupados sem alte
 - `driver/`: `main`, comandos, utilitários de caminho e projeto.
 - `frontend/lexer/`, `frontend/parser/`, `frontend/ast/`: análise léxica, sintática e representação da AST.
 - `semantic/`: pacotes, símbolos, tipos, resolução, checker e regras de ownership/borrow (`check_ownership.c`).
-- `runtime/bytecode/`: `snbc`, emissão de bytecode e VM.
+- `runtime/bytecode/`: formato SNBC, protótipos/unidade no emitter, lowering de expressões (`emit_bc_expr.c`), statements/jumps/literais e VM por dispatcher/operação.
 - `runtime/value/`: representação, ownership, retain/release e operações de valores.
 - `runtime/eval/`: interpretador da AST e suas operações.
 - `runtime/concurrency/`: loop assíncrono e pool de threads expostos pelo runtime.
@@ -44,7 +44,7 @@ Não foi criado `runtimes/`: `runtime/` é a categoria única para as implementa
 - `semantic/`: checker, regras de controle de statements (`check_control_stmt.c`), resolução, tipos, símbolos e módulos/pacotes.
 - `backend/native/`: backend nativo, integração com bytecode, emissão separada do loop VM e dos valores/RC/ciclo de vida embutidos, e o adaptador de compatibilidade `link_append`.
 - `runtime/concurrency/`: implementação de `async` e do pool `pulsar`.
-- `runtime/`: ABI nativa/socket; `runtime/bytecode/` separa dispatcher, operações numéricas (`vm_numeric.c`), composites (`vm_composite.c`), lifecycle e emitter; `runtime/value/` separa ciclo de vida/RC (`value.c`), barreiras contra ciclos (`value_graph.c`), constructors/accessors (`value_objects.c`) e comparação/formatação (`value_format.c`); `runtime/eval/` mantém suas responsabilidades.
+- `runtime/`: ABI nativa/socket; `runtime/bytecode/` separa dispatcher, operações numéricas (`vm_numeric.c`), composites (`vm_composite.c`), lifecycle e emitter de expressões (`emit_bc_expr.c`); `runtime/value/` separa ciclo de vida/RC (`value.c`), barreiras contra ciclos (`value_graph.c`), constructors/accessors (`value_objects.c`) e comparação/formatação (`value_format.c`); `runtime/eval/` mantém suas responsabilidades.
 - `builtin/`: intrínsecos semânticos em C.
 - `arena`, `intern` e `diag` continuam na raiz porque são APIs compartilhadas pelo compilador e pelos runtimes; concentrá-los em `core/` exigirá atualizar também os includes relativos dos testes e as regras de instalação. `target.c` permanece na raiz porque a seleção de plataforma é compartilhada pelo driver e pelo backend.
 
