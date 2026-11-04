@@ -4,13 +4,13 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
                              const SnExpr *call, Value *out) {
     const SnExpr *callee = call->lhs;
     const char *m = callee->text;
-    const char *s = recv.as.s ? recv.as.s : "";
+    const char *s = recv.as.str.data ? recv.as.str.data : "";
     if (strcmp(m, "toUpper") == 0) {
         size_t len = strlen(s);
         char *buf = (char *)sn_arena_alloc(in->arena, len + 1);
         for (size_t i = 0; i < len; i++) buf[i] = (char)toupper((unsigned char)s[i]);
         buf[len] = '\0';
-        *out = v_str(buf);
+        *out = v_str_in_region(buf, in->current_region);
         return 1;
     }
     if (strcmp(m, "toLower") == 0) {
@@ -18,7 +18,7 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
         char *buf = (char *)sn_arena_alloc(in->arena, len + 1);
         for (size_t i = 0; i < len; i++) buf[i] = (char)tolower((unsigned char)s[i]);
         buf[len] = '\0';
-        *out = v_str(buf);
+        *out = v_str_in_region(buf, in->current_region);
         return 1;
     }
     if (strcmp(m, "len") == 0 || strcmp(m, "length") == 0) {
@@ -36,13 +36,13 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
         size_t end = len;
         while (end > start && isspace((unsigned char)s[end - 1])) end--;
         char *buf = sn_arena_strndup(in->arena, s + start, end - start);
-        *out = v_str(buf);
+        *out = v_str_in_region(buf, in->current_region);
         return 1;
     }
     if (strcmp(m, "startsWith") == 0) {
         if (call->args.len > 0) {
             Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
-            const char *prefix = (arg.kind == V_STRING && arg.as.s) ? arg.as.s : "";
+            const char *prefix = (arg.kind == V_STRING && arg.as.str.data) ? arg.as.str.data : "";
             size_t plen = strlen(prefix);
             *out = v_bool(strncmp(s, prefix, plen) == 0);
         } else {
@@ -53,7 +53,7 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
     if (strcmp(m, "endsWith") == 0) {
         if (call->args.len > 0) {
             Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
-            const char *suffix = (arg.kind == V_STRING && arg.as.s) ? arg.as.s : "";
+            const char *suffix = (arg.kind == V_STRING && arg.as.str.data) ? arg.as.str.data : "";
             size_t slen = strlen(s);
             size_t suflen = strlen(suffix);
             *out = v_bool(slen >= suflen && strcmp(s + (slen - suflen), suffix) == 0);
@@ -65,7 +65,7 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
     if (strcmp(m, "contains") == 0) {
         if (call->args.len > 0) {
             Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
-            const char *sub = (arg.kind == V_STRING && arg.as.s) ? arg.as.s : "";
+            const char *sub = (arg.kind == V_STRING && arg.as.str.data) ? arg.as.str.data : "";
             *out = v_bool(strstr(s, sub) != NULL);
         } else {
             *out = v_bool(0);
@@ -75,7 +75,7 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
     if (strcmp(m, "indexOf") == 0) {
         if (call->args.len > 0) {
             Value arg = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
-            const char *sub = (arg.kind == V_STRING && arg.as.s) ? arg.as.s : "";
+            const char *sub = (arg.kind == V_STRING && arg.as.str.data) ? arg.as.str.data : "";
             char *p = strstr((char *)s, sub);
             if (p) {
                 *out = v_int((long long)(p - s));
@@ -94,7 +94,7 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
             size_t slen = strlen(s);
             if (idx >= 0 && (size_t)idx < slen) {
                 char chbuf[2] = { s[idx], '\0' };
-                Value chVal = v_str(sn_arena_strndup(in->arena, chbuf, 1));
+                Value chVal = v_str_in_region(sn_arena_strndup(in->arena, chbuf, 1), in->current_region);
                 SnList payload = {0};
                 Value *boxed = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
                 *boxed = chVal;
@@ -125,15 +125,15 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
             if ((size_t)end > slen) end = (long long)slen;
         }
         char *buf = sn_arena_strndup(in->arena, s + start, (size_t)(end - start));
-        *out = v_str(buf);
+        *out = v_str_in_region(buf, in->current_region);
         return 1;
     }
     if (strcmp(m, "replaceFirst") == 0) {
         if (call->args.len >= 2) {
             Value target = eval_expr(in, env, (const SnExpr *)call->args.items[0]);
             Value repl = eval_expr(in, env, (const SnExpr *)call->args.items[1]);
-            const char *tstr = (target.kind == V_STRING && target.as.s) ? target.as.s : "";
-            const char *rstr = (repl.kind == V_STRING && repl.as.s) ? repl.as.s : "";
+            const char *tstr = (target.kind == V_STRING && target.as.str.data) ? target.as.str.data : "";
+            const char *rstr = (repl.kind == V_STRING && repl.as.str.data) ? repl.as.str.data : "";
             char *found = strstr((char *)s, tstr);
             if (found && tstr[0]) {
                 size_t prefix_len = (size_t)(found - s);
@@ -144,12 +144,12 @@ int eval_try_string_method(Interp *in, Env *env, Value recv,
                 memcpy(buf, s, prefix_len);
                 memcpy(buf + prefix_len, rstr, rlen);
                 memcpy(buf + prefix_len + rlen, found + tlen, rest_len + 1);
-                *out = v_str(buf);
+                *out = v_str_in_region(buf, in->current_region);
             } else {
-                *out = v_str(s);
+                *out = recv;
             }
         } else {
-            *out = v_str(s);
+            *out = recv;
         }
         return 1;
     }

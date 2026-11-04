@@ -51,9 +51,10 @@ int eval_value_is_heap_owned(Value value) {
 }
 
 Value *env_define(Interp *in, Env *e, const char *name, Value v) {
-    if (in->current_region && eval_value_is_heap_owned(v) &&
-        e->owner_region != in->current_region)
-        eval_region_mark_escaping(in);
+    if (in->current_region && e->owner_region != in->current_region) {
+        eval_region_mark_current(in);
+        if (eval_value_is_heap_owned(v)) eval_value_mark_escaping(in, v);
+    }
     Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
     *slot = v;
     sn_list_push(in->arena, &e->names, (void *)name);
@@ -166,14 +167,8 @@ void eval_region_end(Interp *in, EvalRegion *region) {
     }
 }
 
-void eval_region_mark_escaping(Interp *in) {
-    /* A value allocated in a child region may retain its enclosing Env chain
-     * (closures are the main case). Keep every owning ancestor alive too. */
-    if (!in) return;
-    for (EvalRegion *region = in->current_region; region;
-         region = region->parent_region) {
-        region->may_escape = 1;
-    }
+void eval_region_mark_current(Interp *in) {
+    if (in && in->current_region) in->current_region->may_escape = 1;
 }
 
 Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
@@ -222,8 +217,7 @@ Value call_function(Interp *in, const SnDecl *fn, SnList *args, Env *caller,
     in->ret = v_unit();
     Flow f = exec_stmt(in, local, fn->body);
     Value r = (f == FLOW_RETURN) ? in->ret : v_unit();
-    if (f == FLOW_RETURN && eval_value_is_heap_owned(r))
-        eval_region_mark_escaping(in);
+    if (eval_value_is_heap_owned(r)) eval_value_mark_escaping(in, r);
     in->ret = saved;
     in->flow = FLOW_NORMAL;
     eval_region_end(in, region);
@@ -262,7 +256,7 @@ Value call_lambda(Interp *in, const LambdaVal *lam, SnList *args, Env *caller,
         in->ret = saved;
         in->flow = FLOW_NORMAL;
     }
-    if (eval_value_is_heap_owned(result)) eval_region_mark_escaping(in);
+    if (eval_value_is_heap_owned(result)) eval_value_mark_escaping(in, result);
     eval_region_end(in, region);
     return result;
 }

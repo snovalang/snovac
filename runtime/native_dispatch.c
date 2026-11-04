@@ -28,7 +28,7 @@ int sn_native_try_dispatch(Interp *in, const SnDecl *fn, SnList *args, Env *call
         if (strcmp(fn->name, "listen") == 0 && args && args->len >= 2) {
             Value vhost = eval_expr(in, caller, (const SnExpr *)args->items[0]);
             Value vport = eval_expr(in, caller, (const SnExpr *)args->items[1]);
-            const char *host = (vhost.kind == V_STRING && vhost.as.s) ? vhost.as.s : "0.0.0.0";
+            const char *host = (vhost.kind == V_STRING && vhost.as.str.data) ? vhost.as.str.data : "0.0.0.0";
             int port = (vport.kind == V_INT) ? (int)vport.as.i : 8080;
             int handle = sn_socket_listen(host, port);
             *out = v_int(handle);
@@ -71,7 +71,7 @@ int sn_native_try_dispatch(Interp *in, const SnDecl *fn, SnList *args, Env *call
             Value vhandle = eval_expr(in, caller, (const SnExpr *)args->items[0]);
             Value vdata = eval_expr(in, caller, (const SnExpr *)args->items[1]);
             int handle = (vhandle.kind == V_INT) ? (int)vhandle.as.i : -1;
-            const char *data = (vdata.kind == V_STRING && vdata.as.s) ? vdata.as.s : "";
+            const char *data = (vdata.kind == V_STRING && vdata.as.str.data) ? vdata.as.str.data : "";
             int64_t sent = sn_socket_send(handle, data, strlen(data));
             *out = v_int(sent);
             return 1;

@@ -42,12 +42,17 @@ typedef struct ArrayVal ArrayVal;
 typedef struct EvalRegion EvalRegion;
 
 typedef struct {
+    const char *data;
+    EvalRegion *owner_region;
+} EvalString;
+
+typedef struct {
     ValKind kind;
     union {
         long long i;
         double d;
         int b;
-        const char *s;
+        EvalString str;
         Object *o;
         VariantVal *vt;
         LambdaVal *lam;
@@ -65,6 +70,7 @@ struct ArrayVal {
 
 struct Object {
     const SnDecl *cls;
+    EvalRegion *owner_region;
     SnList names;  /* const char* */
     SnList slots;  /* Value* */
 };
@@ -74,6 +80,7 @@ struct Object {
  * holds the constructor arguments in order (Value*). */
 struct VariantVal {
     const char *name;
+    EvalRegion *owner_region;
     SnList payload; /* Value* */
 };
 
@@ -91,6 +98,7 @@ typedef struct Env {
 struct LambdaVal {
     const SnExpr *expr; /* SN_EXPR_LAMBDA node (params, value/body) */
     Env *env;           /* captured lexical environment */
+    EvalRegion *owner_region;
 };
 
 struct EvalRegion {
@@ -125,7 +133,12 @@ static inline Value v_unit(void)         { Value v; v.kind = V_UNIT; v.as.i = 0;
 static inline Value v_int(long long i)   { Value v; v.kind = V_INT; v.as.i = i; return v; }
 static inline Value v_double(double d)   { Value v; v.kind = V_DOUBLE; v.as.d = d; return v; }
 static inline Value v_bool(int b)        { Value v; v.kind = V_BOOL; v.as.b = b != 0; return v; }
-static inline Value v_str(const char *s) { Value v; v.kind = V_STRING; v.as.s = s; return v; }
+static inline Value v_str(const char *s) {
+    Value v; v.kind = V_STRING; v.as.str.data = s; v.as.str.owner_region = NULL; return v;
+}
+static inline Value v_str_in_region(const char *s, EvalRegion *owner_region) {
+    Value v; v.kind = V_STRING; v.as.str.data = s; v.as.str.owner_region = owner_region; return v;
+}
 
 /* ── eval.c ───────────────────────────────────────────────────────────────── */
 
@@ -135,7 +148,8 @@ void eval_region_end(Interp *in, EvalRegion *region);
 int eval_value_is_heap_owned(Value value);
 
 Env *env_new(Interp *in, Env *parent);
-void eval_region_mark_escaping(Interp *in);
+void eval_region_mark_current(Interp *in);
+void eval_value_mark_escaping(Interp *in, Value value);
 Value *env_lookup(Env *e, const char *name);
 Value *env_lookup_owned(Env *e, const char *name, EvalRegion **owner_region);
 Value *env_define(Interp *in, Env *e, const char *name, Value v);

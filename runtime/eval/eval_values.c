@@ -102,6 +102,113 @@ static int graph_queue_list_values(GraphSet *seen, GraphRef **queue, size_t *cou
     return 1;
 }
 
+static int eval_mark_enqueue_value(GraphSet *seen, GraphRef **queue, size_t *count,
+                                   size_t *capacity, GraphRef *inline_items,
+                                   Value value) {
+    if (value.kind == V_STRING) {
+        if (value.as.str.owner_region) value.as.str.owner_region->may_escape = 1;
+        return 1;
+    }
+    return graph_queue_value(seen, queue, count, capacity, inline_items, value);
+}
+
+static int eval_mark_enqueue_list(GraphSet *seen, GraphRef **queue, size_t *count,
+                                  size_t *capacity, GraphRef *inline_items,
+                                  const SnList *list) {
+    for (size_t i = 0; i < list->len; ++i) {
+        const Value *value = (const Value *)list->items[i];
+        if (!eval_mark_enqueue_value(seen, queue, count, capacity, inline_items,
+                                     *value)) return 0;
+    }
+    return 1;
+}
+
+static void eval_mark_all_regions_conservatively(Interp *in) {
+    for (EvalRegion *region = in->current_region; region;
+         region = region->parent_region) region->may_escape = 1;
+    for (EvalRegion *region = in->retained_regions; region;
+         region = region->next_retained) region->may_escape = 1;
+}
+
+/* Retain exactly the arena regions that own an escaping value graph. This is
+ * promotion bookkeeping, not collection: no reachable object is reclaimed by
+ * this walk. If scratch allocation fails, keep all active and retained regions
+ * alive so that an incomplete traversal can never create a dangling pointer. */
+void eval_value_mark_escaping(Interp *in, Value value) {
+    GraphRef queue_inline[16] = {0};
+    GraphRef seen_inline[16] = {0};
+    GraphRef *queue = queue_inline;
+    size_t count = 0, capacity = 16;
+    GraphSet seen = {seen_inline, 0, 16, 0};
+    int complete = 1;
+    if (!eval_mark_enqueue_value(&seen, &queue, &count, &capacity,
+                                 queue_inline, value)) {
+        complete = 0;
+        goto done;
+    }
+    while (count) {
+        GraphRef current = queue[--count];
+        int ok = 1;
+        switch (current.kind) {
+        case GRAPH_OBJECT: {
+            const Object *object = (const Object *)current.ptr;
+            if (object->owner_region) object->owner_region->may_escape = 1;
+            ok = eval_mark_enqueue_list(&seen, &queue, &count, &capacity,
+                                        queue_inline, &object->slots);
+            break;
+        }
+        case GRAPH_ARRAY: {
+            const ArrayVal *array = (const ArrayVal *)current.ptr;
+            if (array->owner_region) array->owner_region->may_escape = 1;
+            for (size_t i = 0; i < array->len; ++i) {
+                if (!eval_mark_enqueue_value(&seen, &queue, &count, &capacity,
+                                             queue_inline, array->items[i])) {
+                    ok = 0;
+                    break;
+                }
+            }
+            break;
+        }
+        case GRAPH_VARIANT: {
+            const VariantVal *variant = (const VariantVal *)current.ptr;
+            if (variant->owner_region) variant->owner_region->may_escape = 1;
+            ok = eval_mark_enqueue_list(&seen, &queue, &count, &capacity,
+                                        queue_inline, &variant->payload);
+            break;
+        }
+        case GRAPH_LAMBDA: {
+            const LambdaVal *lambda = (const LambdaVal *)current.ptr;
+            if (lambda->owner_region) lambda->owner_region->may_escape = 1;
+            if (lambda->env)
+                ok = graph_queue_ref(&seen, &queue, &count, &capacity,
+                                     queue_inline,
+                                     (GraphRef){lambda->env, GRAPH_ENV});
+            break;
+        }
+        case GRAPH_ENV: {
+            const Env *env = (const Env *)current.ptr;
+            if (env->owner_region) env->owner_region->may_escape = 1;
+            if (env->parent)
+                ok = graph_queue_ref(&seen, &queue, &count, &capacity,
+                                     queue_inline,
+                                     (GraphRef){env->parent, GRAPH_ENV});
+            if (ok)
+                ok = eval_mark_enqueue_list(&seen, &queue, &count, &capacity,
+                                            queue_inline, &env->slots);
+            break;
+        }
+        }
+        if (!ok) {
+            complete = 0;
+            break;
+        }
+    }
+done:
+    if (queue != queue_inline) free(queue);
+    if (seen.owns_items) free(seen.items);
+    if (!complete) eval_mark_all_regions_conservatively(in);
+}
+
 static int eval_would_create_cycle_target(GraphRef target, Value value) {
     if (!target.ptr) return 0;
     if ((value.kind == V_OBJECT && target.kind == GRAPH_OBJECT && value.as.o == target.ptr) ||
@@ -255,7 +362,7 @@ const char *to_string(Interp *in, Value v, SnSpan span) {
     case V_INT:    return arena_sprintf(in, "%lld", v.as.i);
     case V_DOUBLE: return arena_sprintf(in, "%g", v.as.d);
     case V_BOOL:   return v.as.b ? "true" : "false";
-    case V_STRING: return v.as.s;
+    case V_STRING: return v.as.str.data;
     case V_OBJECT: {
         /* Printing an object uses its `asString()`, matching the convention the
          * corpus relies on (tests/run-pass/counter.snova). */
@@ -264,7 +371,7 @@ const char *to_string(Interp *in, Value v, SnSpan span) {
             SnList none = {0};
             Value s = call_method(in, v.as.o, m, &none, NULL, span);
             if (s.kind == V_STRING) {
-                return s.as.s;
+                return s.as.str.data;
             }
         }
         return arena_sprintf(in, "<%s>",
@@ -316,6 +423,7 @@ Value v_variant(Interp *in, const char *name, SnList payload) {
     VariantVal *vt = (VariantVal *)sn_arena_calloc(in->arena, sizeof(VariantVal));
     vt->name = name;
     vt->payload = payload;
+    vt->owner_region = in->current_region;
     Value v;
     v.kind = V_VARIANT;
     v.as.vt = vt;
@@ -333,7 +441,7 @@ int value_equals(Value a, Value b) {
         return x == y;
     }
     if (a.kind == V_STRING && b.kind == V_STRING) {
-        return strcmp(a.as.s, b.as.s) == 0;
+        return strcmp(a.as.str.data, b.as.str.data) == 0;
     }
     if (a.kind == V_UNIT && b.kind == V_UNIT) return 1;
     if (a.kind == V_VARIANT && b.kind == V_VARIANT) {

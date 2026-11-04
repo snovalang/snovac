@@ -38,9 +38,9 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
     case SN_EXPR_BOOL:
         return v_bool(strcmp(e->text, "true") == 0);
     case SN_EXPR_STRING:
-        return v_str(decode_string(in, env, e));
+        return v_str_in_region(decode_string(in, env, e), in->current_region);
     case SN_EXPR_CHAR:
-        return v_str(e->text);
+        return v_str_in_region(decode_string(in, env, e), in->current_region);
     case SN_EXPR_THIS: {
         Value *v = env_lookup(env, "this");
         return v ? *v : v_unit();
@@ -157,6 +157,7 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
                                                       sizeof(LambdaVal));
         lam->expr = e;
         lam->env = env;
+        lam->owner_region = in->current_region;
         Value v;
         v.kind = V_LAMBDA;
         v.as.lam = lam;
@@ -179,6 +180,7 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
         }
         Object *o = (Object *)sn_arena_calloc(in->arena, sizeof(Object));
         o->cls = cls;
+        o->owner_region = in->current_region;
         for (size_t i = 0; i < cls->members.len; i++) {
             const SnDecl *m = (const SnDecl *)cls->members.items[i];
             if (m->kind != SN_DECL_FIELD) {
@@ -229,9 +231,9 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
              * return value by the caller's exec loop. */
             Flow f = exec_stmt(in, arm_env, arm->body);
             if (f == FLOW_RETURN && eval_value_is_heap_owned(in->ret))
-                eval_region_mark_escaping(in);
+                eval_value_mark_escaping(in, in->ret);
         }
-        if (eval_value_is_heap_owned(result)) eval_region_mark_escaping(in);
+        if (eval_value_is_heap_owned(result)) eval_value_mark_escaping(in, result);
         eval_region_end(in, region);
         return result;
     }

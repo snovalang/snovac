@@ -19,7 +19,7 @@ int array_push(Interp *in, ArrayVal *array, Value value, SnSpan span) {
     if (in->current_region && value.kind != V_UNIT &&
         value.kind != V_INT && value.kind != V_DOUBLE && value.kind != V_BOOL &&
         value.kind != V_MOVED && array->owner_region != in->current_region)
-        eval_region_mark_escaping(in);
+        eval_value_mark_escaping(in, value);
     if (in->array_used_bytes > SIZE_MAX - sizeof(Value)) {
         rt_error(in, SNOVA_TYPE_ERROR, span, "array live memory accounting overflow");
         return 0;
@@ -100,6 +100,7 @@ Object *instantiate(Interp *in, const SnDecl *cls, SnList *args, Env *env,
                     SnSpan span) {
     Object *o = (Object *)sn_arena_calloc(in->arena, sizeof(Object));
     o->cls = cls;
+    o->owner_region = in->current_region;
 
     /* Fields are declared in order; positional constructor arguments fill them
      * in that same order (`LiveWorkbook(path, frame, false)`). */

@@ -24,8 +24,9 @@ Value eval_binary(Interp *in, Env *env, const SnExpr *e) {
 
     /* `+` concatenates when either side is a string. */
     if (e->op == SN_TOK_PLUS && (a.kind == V_STRING || b.kind == V_STRING)) {
-        return v_str(str_concat(in, to_string(in, a, e->span),
-                                to_string(in, b, e->span)));
+        return v_str_in_region(str_concat(in, to_string(in, a, e->span),
+                                          to_string(in, b, e->span)),
+                               in->current_region);
     }
 
     if (a.kind == V_DOUBLE || b.kind == V_DOUBLE) {
@@ -47,7 +48,7 @@ Value eval_binary(Interp *in, Env *env, const SnExpr *e) {
     }
 
     if (a.kind == V_STRING && b.kind == V_STRING) {
-        int c = strcmp(a.as.s, b.as.s);
+        int c = strcmp(a.as.str.data, b.as.str.data);
         switch (e->op) {
         case SN_TOK_EQ: return v_bool(c == 0);
         case SN_TOK_NE: return v_bool(c != 0);
@@ -118,7 +119,7 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
         slot = env_lookup_owned(env, e->lhs->text, &slot_region);
         if (in->current_region && eval_value_is_heap_owned(val) &&
             slot && slot_region != in->current_region)
-            eval_region_mark_escaping(in);
+            eval_value_mark_escaping(in, val);
     } else if (e->lhs->kind == SN_EXPR_MEMBER) {
         if (e->lhs->lhs && e->lhs->lhs->kind == SN_EXPR_IDENT && e->lhs->lhs->text &&
             !env_lookup(env, e->lhs->lhs->text)) {
@@ -132,7 +133,7 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
                     slot = env_define(in, in->globals, key, val);
                 } else if (in->current_region && eval_value_is_heap_owned(val) &&
                            slot_region != in->current_region) {
-                    eval_region_mark_escaping(in);
+                    eval_value_mark_escaping(in, val);
                 }
             }
         }
@@ -142,7 +143,10 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
                 container = recv;
                 slot = object_field(recv.as.o, e->lhs->text);
                 if (!slot && recv.as.o) {
-                    eval_region_mark_escaping(in);
+                    /* The new field slot and list backing belong to the
+                     * current arena even when the assigned value is scalar. */
+                    if (recv.as.o->owner_region != in->current_region)
+                        eval_region_mark_current(in);
                     Value *new_slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
                     *new_slot = v_unit();
                     sn_list_push(in->arena, &recv.as.o->names, (void *)e->lhs->text);
@@ -185,7 +189,7 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
             container.as.arr->owner_region != in->current_region;
         if (in->current_region && destination_outlives_region &&
             eval_value_is_heap_owned(val))
-            eval_region_mark_escaping(in);
+            eval_value_mark_escaping(in, val);
         int cycle = eval_would_create_cycle(container, val);
         if (cycle != 0) {
             if (created_container_field) {

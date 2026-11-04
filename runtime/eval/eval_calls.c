@@ -95,11 +95,13 @@ Value eval_call(Interp *in, Env *env, const SnExpr *e) {
             if (e->args.len > 0) {
                 const SnExpr *arg0 = (const SnExpr *)e->args.items[0];
                 if (arg0->text) {
-                    return v_str(arg0->text);
+                    char *type_name = sn_arena_strndup(in->arena, arg0->text,
+                                                       strlen(arg0->text));
+                    return v_str_in_region(type_name, in->current_region);
                 }
                 Value av = eval_expr(in, env, arg0);
                 if (av.kind == V_STRING) return av;
-                return v_str(to_string(in, av, e->span));
+                return v_str_in_region(to_string(in, av, e->span), in->current_region);
             }
             return v_str("type");
         }
