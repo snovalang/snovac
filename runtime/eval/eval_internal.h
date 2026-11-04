@@ -129,6 +129,9 @@ typedef struct {
     size_t array_used_bytes;
     size_t array_peak_bytes;
     size_t array_peak_used_bytes;
+    size_t closure_count;
+    size_t captured_slot_count;
+    size_t capture_fallback_count;
     EvalRegion *current_region;
     EvalRegion *retained_regions;
     EvalRegion *free_regions;

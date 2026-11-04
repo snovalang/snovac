@@ -137,6 +137,7 @@ static void capture_remove_lambda_params(CaptureNames *set,
 }
 
 Env *env_capture_lambda(Interp *in, Env *source, const SnExpr *lambda) {
+    if (in->closure_count < SIZE_MAX) in->closure_count++;
     Env *capture = env_new(in, NULL);
     if (!source) return capture;
     CaptureNames names = {0};
@@ -145,6 +146,7 @@ Env *env_capture_lambda(Interp *in, Env *source, const SnExpr *lambda) {
     capture_lambda_body(&names, lambda);
     capture_remove_lambda_params(&names, lambda);
     if (names.incomplete) {
+        if (in->capture_fallback_count < SIZE_MAX) in->capture_fallback_count++;
         /* Keep the complete lexical frame chain if analysis cannot enumerate
          * every runtime reference (for example, interpolation reparsed later). */
         capture->parent = source->parent;
@@ -164,6 +166,10 @@ Env *env_capture_lambda(Interp *in, Env *source, const SnExpr *lambda) {
             sn_list_push(in->arena, &capture->captured_regions, owner_region);
         }
     }
+    if (in->captured_slot_count <= SIZE_MAX - capture->slots.len)
+        in->captured_slot_count += capture->slots.len;
+    else
+        in->captured_slot_count = SIZE_MAX;
     if (names.owns_names) free((void *)names.names);
     return capture;
 }

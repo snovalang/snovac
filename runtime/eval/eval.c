@@ -252,6 +252,10 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     eval_region_pool_free(&in);
     if (getenv("SNOVA_MEMORY_STATS")) {
         fprintf(stderr,
+                "memory[evaluator-closures]: closures=%zu captured-slots=%zu full-frame-fallbacks=%zu\n",
+                in.closure_count, in.captured_slot_count,
+                in.capture_fallback_count);
+        fprintf(stderr,
                 "memory[evaluator-arrays]: used=%zu reserved=%zu slack=%zu peak-used=%zu peak-reserved=%zu\n",
                 in.array_used_bytes, in.array_reserved_bytes,
                 in.array_reserved_bytes - in.array_used_bytes,
