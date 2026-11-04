@@ -37,5 +37,8 @@ int sn_vm_init(SnVM *vm, SnBCUnit *unit);
  * to end the VM lifetime; it is safe after either result. */
 void sn_vm_free(SnVM *vm);
 int sn_vm_interpret(SnVM *vm);
+/* Convenience entry point for one-shot execution. It always frees the VM,
+ * including its globals, after interpretation or initialization failure. */
+int sn_vm_run_unit(SnBCUnit *unit);
 
 #endif /* SNOVAC_VM_H */

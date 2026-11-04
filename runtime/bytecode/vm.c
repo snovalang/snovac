@@ -253,3 +253,14 @@ int sn_vm_interpret(SnVM *vm) {
     }
 #undef VM_REQUIRE
 }
+
+int sn_vm_run_unit(SnBCUnit *unit) {
+    SnVM vm;
+    if (!sn_vm_init(&vm, unit)) {
+        sn_vm_free(&vm);
+        return 1;
+    }
+    int result = sn_vm_interpret(&vm);
+    sn_vm_free(&vm);
+    return result;
+}
