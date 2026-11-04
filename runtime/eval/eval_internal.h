@@ -90,6 +90,7 @@ typedef enum { FLOW_NORMAL, FLOW_RETURN, FLOW_BREAK, FLOW_CONTINUE } Flow;
 typedef struct Env {
     struct Env *parent;
     EvalRegion *owner_region;
+    EvalRegion *captured_region;
     SnList names; /* const char* */
     SnList slots; /* Value* — boxed so assignment is visible to inner scopes */
 } Env;
@@ -199,6 +200,7 @@ int value_equals(Value a, Value b);
 /* 1 if storing `value` under `container` creates a strong object graph cycle,
  * 0 if safe, and -1 if the graph could not be checked due to memory pressure. */
 int eval_would_create_cycle(Value container, Value value);
+int eval_would_create_slot_cycle(Value value, const Value *slot);
 /* Attempts to match `subject` against `pat`; bindings are defined in `env`.
  * Returns 1 on match. Bindings from a failed partial match may remain in
  * `env` — callers pass a fresh child env per arm. */

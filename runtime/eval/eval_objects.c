@@ -16,10 +16,6 @@ ArrayVal *array_new(Interp *in) {
 }
 
 int array_push(Interp *in, ArrayVal *array, Value value, SnSpan span) {
-    if (in->current_region && value.kind != V_UNIT &&
-        value.kind != V_INT && value.kind != V_DOUBLE && value.kind != V_BOOL &&
-        value.kind != V_MOVED && array->owner_region != in->current_region)
-        eval_value_mark_escaping(in, value);
     if (in->array_used_bytes > SIZE_MAX - sizeof(Value)) {
         rt_error(in, SNOVA_TYPE_ERROR, span, "array live memory accounting overflow");
         return 0;
@@ -48,6 +44,9 @@ int array_push(Interp *in, ArrayVal *array, Value value, SnSpan span) {
             in->array_peak_bytes = in->array_reserved_bytes;
         }
     }
+    if (in->current_region && eval_value_is_heap_owned(value) &&
+        array->owner_region != in->current_region)
+        eval_value_mark_escaping(in, value);
     array->items[array->len++] = value;
     in->array_used_bytes += sizeof(Value);
     if (in->array_used_bytes > in->array_peak_used_bytes) {

@@ -112,14 +112,11 @@ Value eval_unary(Interp *in, Env *env, const SnExpr *e) {
 Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
     Value val = eval_expr(in, env, e->rhs);
     Value *slot = NULL;
+    EvalRegion *slot_region = NULL;
     Value container = v_unit();
     int created_container_field = 0;
     if (e->lhs->kind == SN_EXPR_IDENT) {
-        EvalRegion *slot_region = NULL;
         slot = env_lookup_owned(env, e->lhs->text, &slot_region);
-        if (in->current_region && eval_value_is_heap_owned(val) &&
-            slot && slot_region != in->current_region)
-            eval_value_mark_escaping(in, val);
     } else if (e->lhs->kind == SN_EXPR_MEMBER) {
         if (e->lhs->lhs && e->lhs->lhs->kind == SN_EXPR_IDENT && e->lhs->lhs->text &&
             !env_lookup(env, e->lhs->lhs->text)) {
@@ -127,13 +124,9 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
             if (cls) {
                 char key[512];
                 snprintf(key, sizeof(key), "%s.%s", e->lhs->lhs->text, e->lhs->text);
-                EvalRegion *slot_region = NULL;
                 slot = env_lookup_owned(in->globals, key, &slot_region);
                 if (!slot) {
                     slot = env_define(in, in->globals, key, val);
-                } else if (in->current_region && eval_value_is_heap_owned(val) &&
-                           slot_region != in->current_region) {
-                    eval_value_mark_escaping(in, val);
                 }
             }
         }
@@ -184,12 +177,6 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
         val = eval_binary(in, env, &tmp);
     }
     if (container.kind != V_UNIT) {
-        int destination_outlives_region =
-            container.kind != V_ARRAY ||
-            container.as.arr->owner_region != in->current_region;
-        if (in->current_region && destination_outlives_region &&
-            eval_value_is_heap_owned(val))
-            eval_value_mark_escaping(in, val);
         int cycle = eval_would_create_cycle(container, val);
         if (cycle != 0) {
             if (created_container_field) {
@@ -201,6 +188,27 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
                          ? "assignment would create a strong reference cycle"
                          : "cannot verify assignment safety because of memory pressure");
             return v_unit();
+        }
+    }
+    if (slot && container.kind == V_UNIT && eval_value_is_heap_owned(val)) {
+        int cycle = eval_would_create_slot_cycle(val, slot);
+        if (cycle != 0) {
+            rt_error(in, SNOVA_TYPE_ERROR, e->span,
+                     cycle > 0
+                         ? "environment assignment would create a strong reference cycle"
+                         : "cannot verify environment assignment safety because of memory pressure");
+            return v_unit();
+        }
+    }
+    if (in->current_region && eval_value_is_heap_owned(val)) {
+        if (container.kind != V_UNIT) {
+            int destination_outlives_region =
+                container.kind != V_ARRAY ||
+                container.as.arr->owner_region != in->current_region;
+            if (destination_outlives_region)
+                eval_value_mark_escaping(in, val);
+        } else if (slot_region != in->current_region) {
+            eval_value_mark_escaping(in, val);
         }
     }
     *slot = val;

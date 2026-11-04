@@ -185,6 +185,7 @@ void eval_value_mark_escaping(Interp *in, Value value) {
                 ok = graph_queue_ref(&seen, &queue, &count, &capacity,
                                      queue_inline,
                                      (GraphRef){env->parent, GRAPH_ENV});
+            if (env->captured_region) env->captured_region->may_escape = 1;
             if (ok)
                 ok = eval_mark_enqueue_list(&seen, &queue, &count, &capacity,
                                             queue_inline, &env->slots);
@@ -202,8 +203,9 @@ done:
     if (!complete) eval_mark_all_regions_conservatively(in);
 }
 
-static int eval_would_create_cycle_target(GraphRef target, Value value) {
-    if (!target.ptr) return 0;
+static int eval_would_create_cycle_target(GraphRef target, Value value,
+                                          const Value *slot_target) {
+    if (!target.ptr && !slot_target) return 0;
     if ((value.kind == V_OBJECT && target.kind == GRAPH_OBJECT && value.as.o == target.ptr) ||
         (value.kind == V_ARRAY && target.kind == GRAPH_ARRAY && value.as.arr == target.ptr) ||
         (value.kind == V_LAMBDA && target.kind == GRAPH_LAMBDA && value.as.lam == target.ptr)) {
@@ -222,7 +224,7 @@ static int eval_would_create_cycle_target(GraphRef target, Value value) {
     }
     while (count) {
         GraphRef current = queue[--count];
-        if (graph_ref_equal(current, target)) { result = 1; break; }
+        if (target.ptr && graph_ref_equal(current, target)) { result = 1; break; }
 
         switch (current.kind) {
         case GRAPH_OBJECT: {
@@ -255,7 +257,20 @@ static int eval_would_create_cycle_target(GraphRef target, Value value) {
             const Env *env = (const Env *)current.ptr;
             if (env->parent && !graph_queue_ref(&seen, &queue, &count, &capacity, queue_inline,
                                                 (GraphRef){env->parent, GRAPH_ENV})) result = -1;
-            if (result == 0 && !graph_queue_list_values(&seen, &queue, &count, &capacity, queue_inline, &env->slots)) result = -1;
+            if (result == 0) {
+                for (size_t i = 0; i < env->slots.len; ++i) {
+                    const Value *slot = (const Value *)env->slots.items[i];
+                    if (slot == slot_target) {
+                        result = 1;
+                        break;
+                    }
+                    if (!graph_queue_value(&seen, &queue, &count, &capacity,
+                                           queue_inline, *slot)) {
+                        result = -1;
+                        break;
+                    }
+                }
+            }
             break;
         }
         }
@@ -274,5 +289,10 @@ int eval_would_create_cycle(Value container, Value value) {
     case V_ARRAY: target = (GraphRef){container.as.arr, GRAPH_ARRAY}; break;
     default: return 0;
     }
-    return eval_would_create_cycle_target(target, value);
+    return eval_would_create_cycle_target(target, value, NULL);
+}
+
+int eval_would_create_slot_cycle(Value value, const Value *slot) {
+    return eval_would_create_cycle_target((GraphRef){NULL, GRAPH_ENV}, value,
+                                          slot);
 }

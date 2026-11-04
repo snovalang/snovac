@@ -156,7 +156,18 @@ Value eval_expr(Interp *in, Env *env, const SnExpr *e) {
         LambdaVal *lam = (LambdaVal *)sn_arena_calloc(in->arena,
                                                       sizeof(LambdaVal));
         lam->expr = e;
-        lam->env = env;
+        /* Capture this frame by sharing its mutable slots, not by retaining
+         * the frame that will own the closure binding. This avoids the
+         * structural Env -> Lambda -> Env cycle while preserving mutation. */
+        Env *capture = env_new(in, env ? env->parent : NULL);
+        if (env) {
+            capture->captured_region = env->owner_region;
+            for (size_t i = 0; i < env->names.len; ++i) {
+                sn_list_push(in->arena, &capture->names, env->names.items[i]);
+                sn_list_push(in->arena, &capture->slots, env->slots.items[i]);
+            }
+        }
+        lam->env = capture;
         lam->owner_region = in->current_region;
         Value v;
         v.kind = V_LAMBDA;
