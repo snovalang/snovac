@@ -142,7 +142,7 @@ EvalRegion *eval_region_begin(Interp *in) {
         fputs("snovac evaluator: out of memory allocating call region\n", stderr);
         abort();
     }
-    sn_arena_init(&region->arena, 0);
+    sn_arena_init(&region->arena, SN_EVAL_ARENA_BLOCK_SIZE);
     region->parent_arena = in->arena;
     region->parent_region = in->current_region;
     in->arena = &region->arena;
@@ -279,7 +279,7 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
         return -1;
     }
     SnArena runtime_arena;
-    sn_arena_init(&runtime_arena, 0);
+    sn_arena_init(&runtime_arena, SN_EVAL_ARENA_BLOCK_SIZE);
 
     Interp in;
     /* Keep transient environments, objects and generated strings out of the

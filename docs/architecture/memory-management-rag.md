@@ -28,7 +28,7 @@ Como liberar memória de forma previsível sem tracing GC, limitando fragmentaç
 
 ## Decisões resultantes para este repositório
 
-1. **Compilação e estruturas temporárias:** `SnArena` por comando/unidade; libera em lote AST, tokens, símbolos e temporários após o consumidor terminar. Bloco inicial lazy e crescimento sob demanda evitam reservar megabytes em comandos pequenos.
+1. **Compilação e estruturas temporárias:** `SnArena` por comando/unidade; libera em lote AST, tokens, símbolos e temporários após o consumidor terminar. O evaluator também usa arenas regionais com blocos iniciais de 4 KiB (incluindo scratch de interpolação), enquanto alocações grandes recebem blocos sob medida; isso reduz slack em regiões pequenas sem impor um pool fixo por chamada.
 2. **Locais bytecode:** slots de frame são reutilizados e `OP_CLEAR_LOCAL` libera o valor owned na saída lexical, retorno ou salto de controle. Moves transferem a única referência owned; clones são explícitos.
 3. **Objetos runtime:** strings/instâncias/variantes são co-alocados quando isso reduz chamadas e ponteiros; arrays mantêm header estável e buffer redimensionável. RC é atômico para valores owned compartilhados entre threads, mas mutação de slots exige sincronização própria.
 4. **Ciclos:** containers rejeitam arestas fortes que criariam ciclo. `shared/weak` e destrutores gerais ainda precisam de especificação; não se deve prometer leak freedom apenas por usar RC.

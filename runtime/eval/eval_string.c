@@ -46,7 +46,7 @@ static void sb_push_str(StrBuf *b, const char *s) {
 static Value eval_interp_source(Interp *in, Env *env, const char *src,
                                 size_t len, SnSpan span) {
     SnArena scratch;
-    sn_arena_init(&scratch, 0);
+    sn_arena_init(&scratch, SN_EVAL_ARENA_BLOCK_SIZE);
     SnArena *saved_arena = in->arena;
     in->arena = &scratch;
     char *buf = sn_arena_strndup(in->arena, src, len);
