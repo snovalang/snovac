@@ -3,7 +3,7 @@
 
 #define MyAppName "Snovalang Compiler"
 #define MyAppShortName "snovac"
-#define MyAppVersion "0.0.1-p2"
+#define MyAppVersion "0.0.1-p3"
 #define MyAppPublisher "Snovalang Project"
 #define MyAppURL "https://github.com/supernovalang/snovac"
 #define MyAppExeName "snovac.exe"

@@ -4,7 +4,7 @@
     <Product Id="*"
              Name="Snovalang Compiler (snovac)"
              Language="1033"
-             Version="0.0.1.1"
+             Version="0.0.1.2"
              Manufacturer="Snovalang Project"
              UpgradeCode="9E52D2E4-617F-4BFA-8116-29177F8CF99C">
         
