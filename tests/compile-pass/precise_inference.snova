@@ -1,0 +1,21 @@
+package tests.precise_inference
+
+func apply(f: (int) -> int, value: int): int {
+    return f(value)
+}
+
+func sum(values: int[]): int {
+    var total = 0
+    for (let value in values) {
+        total += value
+    }
+    return total
+}
+
+func choose(flag: bool): int {
+    return if flag { 1 } else { 2 }
+}
+
+func main(): int {
+    return apply((n) -> n + 1, sum([1, 2, 3]))
+}

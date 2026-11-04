@@ -1,0 +1,10 @@
+package tests.incompatible_inferred_types
+
+func bad_array(): int {
+    let values = [1, "two"]
+    return 0
+}
+
+func bad_branch(flag: bool): int {
+    return if flag { 1 } else { "two" }
+}

@@ -7,7 +7,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = "supernovalang/snovac"
-$Version = "0.0.1-p1"
+$Version = "0.0.1-p2"
 $InstallPrefix = if (-not [string]::IsNullOrEmpty($env:SNOVA_INSTALL_DIR)) {
     $env:SNOVA_INSTALL_DIR
 } else {

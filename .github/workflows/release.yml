@@ -63,7 +63,7 @@ jobs:
       - name: Package release artifact
         run: |
           mkdir -p dist
-          cp build/snovac dist/snovac
+          cp build/sncli dist/snovac
           tar -czf "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" -C dist snovac
           shasum -a 256 "snovac-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" > "snovac-${{ matrix.os }}-${{ matrix.arch }}.sha256"
 

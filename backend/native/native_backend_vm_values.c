@@ -1,0 +1,95 @@
+#include "native_backend_internal.h"
+
+#include <stdio.h>
+
+void sn_native_emit_vm_value_runtime(FILE *f) {
+  fprintf(f, "\n");
+  fprintf(f, "typedef enum { VAL_UNIT, VAL_BOOL, VAL_INT, VAL_DOUBLE, "
+             "VAL_STRING, VAL_ARRAY, VAL_FUTURE } ValTag;\n");
+  fprintf(f, "typedef struct Val Val;\n");
+  fprintf(f, "struct Val { ValTag tag; union { bool b; int64_t i; double d; "
+             "char *str; void *ptr; } as; };\n\n");
+  fprintf(f, "typedef struct SnNativeArray SnNativeArray;\n");
+  fprintf(f, "struct SnNativeArray { atomic_size_t refs; size_t count; size_t capacity; size_t allocation_size; SnNativeArray *release_next; Val *items; };\n");
+  fprintf(f, "static int g_memory_stats_enabled;\nstatic atomic_size_t g_managed_live_objects;\nstatic atomic_size_t g_managed_live_bytes;\nstatic atomic_size_t g_managed_peak_bytes;\n");
+  fprintf(f, "static void sn_native_track_alloc(size_t bytes) { if (!g_memory_stats_enabled) return; size_t live = atomic_load_explicit(&g_managed_live_bytes, memory_order_relaxed); for (;;) { if (live > SIZE_MAX - bytes) abort(); if (atomic_compare_exchange_weak_explicit(&g_managed_live_bytes, &live, live + bytes, memory_order_relaxed, memory_order_relaxed)) { live += bytes; break; } } atomic_fetch_add_explicit(&g_managed_live_objects, 1u, memory_order_relaxed); size_t peak = atomic_load_explicit(&g_managed_peak_bytes, memory_order_relaxed); while (peak < live && !atomic_compare_exchange_weak_explicit(&g_managed_peak_bytes, &peak, live, memory_order_relaxed, memory_order_relaxed)) {} }\n");
+  fprintf(f, "static void sn_native_track_free(size_t bytes) { if (!g_memory_stats_enabled) return; size_t live = atomic_fetch_sub_explicit(&g_managed_live_bytes, bytes, memory_order_relaxed); size_t objects = atomic_fetch_sub_explicit(&g_managed_live_objects, 1u, memory_order_relaxed); if (live < bytes || objects == 0) abort(); }\n");
+  fprintf(f, "static void sn_native_track_resize(size_t old_bytes, size_t new_bytes) { if (!g_memory_stats_enabled || old_bytes == new_bytes) return; size_t live = atomic_load_explicit(&g_managed_live_bytes, memory_order_relaxed); for (;;) { if (new_bytes > old_bytes) { size_t growth = new_bytes - old_bytes; if (live > SIZE_MAX - growth) abort(); if (atomic_compare_exchange_weak_explicit(&g_managed_live_bytes, &live, live + growth, memory_order_relaxed, memory_order_relaxed)) { live += growth; break; } } else { size_t shrink = old_bytes - new_bytes; if (live < shrink) abort(); if (atomic_compare_exchange_weak_explicit(&g_managed_live_bytes, &live, live - shrink, memory_order_relaxed, memory_order_relaxed)) { live -= shrink; break; } } } if (new_bytes > old_bytes) { size_t peak = atomic_load_explicit(&g_managed_peak_bytes, memory_order_relaxed); while (peak < live && !atomic_compare_exchange_weak_explicit(&g_managed_peak_bytes, &peak, live, memory_order_relaxed, memory_order_relaxed)) {} } }\n");
+  fprintf(f, "typedef struct { SnNativeArray *inline_items[16]; SnNativeArray **items; size_t count; size_t capacity; } SnNativeArrayVec;\n");
+  fprintf(f, "static void sn_native_array_vec_init(SnNativeArrayVec *v) { v->items = v->inline_items; v->count = 0; v->capacity = 16u; }\n");
+  fprintf(f, "static int sn_native_array_vec_push(SnNativeArrayVec *v, SnNativeArray *item) {\n");
+  fprintf(f, "  if (v->count == v->capacity) { if (v->capacity > SIZE_MAX / 2u) return 0; size_t next = v->capacity * 2u; if (next > SIZE_MAX / sizeof(*v->items)) return 0; SnNativeArray **grown = v->items == v->inline_items ? (SnNativeArray**)malloc(next * sizeof(*grown)) : (SnNativeArray**)realloc(v->items, next * sizeof(*grown)); if (!grown) return 0; if (v->items == v->inline_items) memcpy(grown, v->items, v->count * sizeof(*grown)); v->items = grown; v->capacity = next; }\n");
+  fprintf(f, "  v->items[v->count++] = item; return 1;\n}\n");
+  fprintf(f, "static void sn_native_array_vec_free(SnNativeArrayVec *v) { if (v->items != v->inline_items) free(v->items); }\n");
+  fprintf(f, "typedef struct { SnNativeArray *inline_items[16]; SnNativeArray **items; size_t count; size_t capacity; } SnNativeArraySet;\n");
+  fprintf(f, "static void sn_native_array_set_init(SnNativeArraySet *s) { s->items = s->inline_items; memset(s->items, 0, sizeof(s->inline_items)); s->count = 0; s->capacity = 16u; }\n");
+  fprintf(f, "static size_t sn_native_array_hash(const SnNativeArray *item) { uintptr_t key = (uintptr_t)item; key ^= key >> 4u; key *= (uintptr_t)0x9e3779b1u; key ^= key >> (sizeof(key) * 4u); return (size_t)key; }\n");
+  fprintf(f, "static int sn_native_array_set_add(SnNativeArraySet *s, SnNativeArray *item) { if (s->count >= s->capacity - s->capacity / 4u) { if (s->capacity > SIZE_MAX / 2u) return -1; size_t next = s->capacity * 2u; if (next > SIZE_MAX / sizeof(*s->items)) return -1; SnNativeArray **grown = (SnNativeArray**)calloc(next, sizeof(*grown)); if (!grown) return -1; for (size_t i = 0; i < s->capacity; ++i) { SnNativeArray *old = s->items[i]; if (!old) continue; size_t slot = sn_native_array_hash(old) & (next - 1u); while (grown[slot]) slot = (slot + 1u) & (next - 1u); grown[slot] = old; } if (s->items != s->inline_items) free(s->items); s->items = grown; s->capacity = next; } size_t slot = sn_native_array_hash(item) & (s->capacity - 1u); while (s->items[slot]) { if (s->items[slot] == item) return 0; slot = (slot + 1u) & (s->capacity - 1u); } s->items[slot] = item; ++s->count; return 1; }\n");
+  fprintf(f, "static void sn_native_array_set_free(SnNativeArraySet *s) { if (s->items != s->inline_items) free(s->items); }\n");
+  fprintf(f, "static int sn_native_array_would_cycle(SnNativeArray *container, Val value) {\n");
+  fprintf(f, "  if (value.tag != VAL_ARRAY || !value.as.ptr) return 0; SnNativeArray *source = (SnNativeArray*)value.as.ptr; if (source == container) return 1;\n");
+  fprintf(f, "  SnNativeArrayVec pending; SnNativeArraySet seen; sn_native_array_vec_init(&pending); sn_native_array_set_init(&seen); int result = 0;\n");
+  fprintf(f, "  int source_added = sn_native_array_set_add(&seen, source); if (source_added < 0 || !sn_native_array_vec_push(&pending, source)) result = -1;\n");
+  fprintf(f, "  while (result == 0 && pending.count) { SnNativeArray *current = pending.items[--pending.count]; if (current == container) { result = 1; break; }\n");
+  fprintf(f, "    for (size_t i = 0; i < current->count; ++i) { Val child = current->items[i]; if (child.tag != VAL_ARRAY || !child.as.ptr) continue; SnNativeArray *next = (SnNativeArray*)child.as.ptr; if (next == container) { result = 1; break; } int added = sn_native_array_set_add(&seen, next); if (added < 0) { result = -1; break; } if (added == 1 && !sn_native_array_vec_push(&pending, next)) { result = -1; break; } }\n  }\n");
+  fprintf(f, "  sn_native_array_vec_free(&pending); sn_native_array_set_free(&seen); return result;\n}\n\n");
+  fprintf(f, "typedef struct { atomic_size_t refs; size_t allocation_size; char bytes[]; } SnNativeString;\n");
+  fprintf(f, "#define SN_NATIVE_STRING_HEADER(data) ((SnNativeString*)((unsigned char*)(data) - offsetof(SnNativeString, bytes)))\n");
+  fprintf(f, "static char *sn_native_string_alloc(size_t len) {\n");
+  fprintf(f, "  if (len > SIZE_MAX - sizeof(SnNativeString) - 1u) abort();\n");
+  fprintf(f, "  SnNativeString *s = (SnNativeString*)malloc(sizeof(*s) + len + 1u);\n");
+  fprintf(f, "  if (!s) { fputs(\"runtime error: out of memory\\n\", stderr); abort(); }\n");
+  fprintf(f, "  atomic_init(&s->refs, 1u); s->allocation_size = sizeof(*s) + len + 1u; s->bytes[len] = '\\0'; sn_native_track_alloc(s->allocation_size); return s->bytes;\n}\n");
+  fprintf(f, "static char *sn_native_string_copy(const char *src, size_t len) {\n");
+  fprintf(f, "  char *dst = sn_native_string_alloc(len); if (len) memcpy(dst, src, len); return dst;\n}\n");
+  fprintf(f, "static char *sn_native_string_concat(const char *a, const char *b) {\n");
+  fprintf(f, "  size_t la = strlen(a), lb = strlen(b); if (la > SIZE_MAX - lb) abort();\n");
+  fprintf(f, "  char *dst = sn_native_string_alloc(la + lb); memcpy(dst, a, la); memcpy(dst + la, b, lb); return dst;\n}\n");
+  fprintf(f, "static int sn_native_ref_drop(atomic_size_t *refs) {\n");
+  fprintf(f, "  size_t current = atomic_load_explicit(refs, memory_order_relaxed);\n");
+  fprintf(f, "  for (;;) { if (current == 0) { fputs(\"runtime error: invalid managed value release\\n\", stderr); abort(); } if (atomic_compare_exchange_weak_explicit(refs, &current, current - 1u, memory_order_acq_rel, memory_order_relaxed)) return current == 1u; }\n}\n");
+  fprintf(f, "static void sn_native_string_retain(char *data) {\n");
+  fprintf(f, "  if (!data) return; SnNativeString *s = SN_NATIVE_STRING_HEADER(data);\n");
+  fprintf(f, "  size_t refs = atomic_load_explicit(&s->refs, memory_order_relaxed);\n");
+  fprintf(f, "  do { if (refs == 0 || refs == SIZE_MAX) abort(); } while (!atomic_compare_exchange_weak_explicit(&s->refs, &refs, refs + 1u, memory_order_relaxed, memory_order_relaxed));\n}\n");
+  fprintf(f, "static void sn_native_string_release(char *data) {\n");
+  fprintf(f, "  if (!data) return; SnNativeString *s = SN_NATIVE_STRING_HEADER(data);\n");
+  fprintf(f, "  if (sn_native_ref_drop(&s->refs)) { sn_native_track_free(s->allocation_size); free(s); }\n}\n");
+  fprintf(f, "static void sn_native_val_release(Val v);\n");
+  fprintf(f, "static SnNativeArray *sn_native_array_new(size_t count) {\n");
+  fprintf(f, "  if (count > (SIZE_MAX - sizeof(SnNativeArray)) / sizeof(Val)) abort();\n");
+  fprintf(f, "  SnNativeArray *a = (SnNativeArray*)malloc(sizeof(*a));\n");
+  fprintf(f, "  if (!a) { fputs(\"runtime error: out of memory\\n\", stderr); abort(); }\n");
+  fprintf(f, "  a->items = count ? (Val*)calloc(count, sizeof(Val)) : NULL; if (count && !a->items) { free(a); fputs(\"runtime error: out of memory\\n\", stderr); abort(); } atomic_init(&a->refs, 1u); a->count = count; a->capacity = count; a->allocation_size = sizeof(*a) + count * sizeof(Val); a->release_next = NULL; sn_native_track_alloc(a->allocation_size); return a;\n}\n");
+  fprintf(f, "static int sn_native_array_reserve(SnNativeArray *a, size_t needed) { if (needed <= a->capacity) return 1; size_t cap = a->capacity ? a->capacity : 4u; while (cap < needed) { if (cap > SIZE_MAX / 2u) { cap = needed; break; } cap *= 2u; } if (cap > (SIZE_MAX - sizeof(*a)) / sizeof(Val)) return 0; Val *items = (Val*)realloc(a->items, cap * sizeof(Val)); if (!items) return 0; memset(items + a->capacity, 0, (cap - a->capacity) * sizeof(Val)); size_t old = a->allocation_size; a->items = items; a->capacity = cap; a->allocation_size = sizeof(*a) + cap * sizeof(Val); sn_native_track_resize(old, a->allocation_size); return 1; }\n");
+  fprintf(f, "static void sn_native_array_shrink(SnNativeArray *a, size_t cap) { if (cap >= a->capacity) return; size_t old = a->allocation_size; if (!cap) { free(a->items); a->items = NULL; a->capacity = 0; } else { Val *items = (Val*)realloc(a->items, cap * sizeof(Val)); if (!items) return; a->items = items; a->capacity = cap; } a->allocation_size = sizeof(*a) + a->capacity * sizeof(Val); sn_native_track_resize(old, a->allocation_size); }\n");
+  fprintf(f, "static void sn_native_array_clear(SnNativeArray *a) { for (size_t i = 0; i < a->count; ++i) { Val v = a->items[i]; memset(&a->items[i], 0, sizeof(Val)); sn_native_val_release(v); } a->count = 0; sn_native_array_shrink(a, 0); }\n");
+  fprintf(f, "static void sn_native_val_retain(Val v) {\n");
+  fprintf(f, "  atomic_size_t *refs = v.tag == VAL_STRING && v.as.str ? &SN_NATIVE_STRING_HEADER(v.as.str)->refs : v.tag == VAL_ARRAY && v.as.ptr ? &((SnNativeArray*)v.as.ptr)->refs : NULL;\n");
+  fprintf(f, "  if (!refs) return; size_t current = atomic_load_explicit(refs, memory_order_relaxed);\n");
+  fprintf(f, "  do { if (current == 0 || current == SIZE_MAX) abort(); } while (!atomic_compare_exchange_weak_explicit(refs, &current, current + 1u, memory_order_relaxed, memory_order_relaxed));\n}\n");
+  fprintf(f, "static void sn_native_val_release(Val v) {\n");
+  fprintf(f, "  if (v.tag == VAL_STRING) { sn_native_string_release(v.as.str); return; }\n");
+  fprintf(f, "  if (v.tag != VAL_ARRAY || !v.as.ptr) return;\n");
+  fprintf(f, "  SnNativeArray *root = (SnNativeArray*)v.as.ptr; if (!sn_native_ref_drop(&root->refs)) return;\n");
+  fprintf(f, "  SnNativeArray *pending = root; while (pending) { SnNativeArray *a = pending; pending = a->release_next;\n");
+  fprintf(f, "    for (size_t i = 0; i < a->count; ++i) { Val child = a->items[i]; if (child.tag == VAL_STRING) sn_native_string_release(child.as.str); else if (child.tag == VAL_ARRAY && child.as.ptr) { SnNativeArray *ca = (SnNativeArray*)child.as.ptr; if (sn_native_ref_drop(&ca->refs)) { ca->release_next = pending; pending = ca; } } } free(a->items); sn_native_track_free(a->allocation_size); free(a); }\n}\n\n");
+  fprintf(f, "#if defined(_MSC_VER)\n#define SNOVA_THREAD_LOCAL __declspec(thread)\n#else\n#define SNOVA_THREAD_LOCAL _Thread_local\n#endif\n");
+  fprintf(f, "static SNOVA_THREAD_LOCAL Val g_stack[4096];\nstatic SNOVA_THREAD_LOCAL Val *g_sp;\n");
+  fprintf(f, "static SNOVA_THREAD_LOCAL size_t g_call_depth;\n");
+  fprintf(f, "static atomic_int g_runtime_failed;\n");
+  fprintf(f, "static inline void ensure_stack(void) { if (!g_sp) g_sp = g_stack; }\n");
+  fprintf(f, "static inline void push(Val v) { ensure_stack(); if (g_sp >= g_stack + 4096) abort(); *g_sp++ = v; }\n");
+  fprintf(f, "static inline Val pop(void) { ensure_stack(); if (g_sp <= g_stack) abort(); Val v = *--g_sp; memset(g_sp, 0, sizeof(*g_sp)); return v; }\n");
+  fprintf(f, "static inline Val peek(int d) { ensure_stack(); return g_sp[-1 - d]; }\n\n");
+  fprintf(f, "static uint32_t read_u32(const uint8_t **ip) {\n");
+  fprintf(f, "  uint32_t v = (uint32_t)((*ip)[0]) | ((uint32_t)((*ip)[1]) << 8) | ((uint32_t)((*ip)[2]) << 16) | ((uint32_t)((*ip)[3]) << 24);\n");
+  fprintf(f, "  *ip += 4;\n  return v;\n}\n");
+  fprintf(f, "static int64_t read_i64(const uint8_t **ip) {\n");
+  fprintf(f, "  uint64_t v = 0;\n  for (int i = 0; i < 8; i++) v |= ((uint64_t)((*ip)[i]) << (i * 8));\n");
+  fprintf(f, "  *ip += 8;\n  return (int64_t)v;\n}\n");
+  fprintf(f, "static double read_double(const uint8_t **ip) {\n");
+  fprintf(f, "  union { double d; uint64_t u; } cvt; cvt.u = 0;\n");
+  fprintf(f, "  for (int i = 0; i < 8; i++) cvt.u |= ((uint64_t)((*ip)[i]) << (i * 8));\n");
+  fprintf(f, "  *ip += 8;\n  return cvt.d;\n}\n\n");
+}

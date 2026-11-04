@@ -38,8 +38,13 @@
 #include "../intern.h"
 #include "../package.h"
 
+#include "test_package_corpus.h"
+#include "test_package_helpers.h"
+
 static int pass = 0;
 static int fail = 0;
+#include "test_package_corpus.h"
+#include "test_package_helpers.h"
 
 #define CHECK(name, cond)                                                    \
     do {                                                                     \
@@ -53,24 +58,6 @@ static int fail = 0;
 
 /* ── scratch fixture helpers ─────────────────────────────────────────────── */
 
-static void write_file(const char *dir, const char *name, const char *content) {
-    char path[1024];
-    snprintf(path, sizeof(path), "%s/%s", dir, name);
-    FILE *f = fopen(path, "w");
-    if (!f) {
-        printf("FAIL setup: could not create %s\n", path);
-        return;
-    }
-    fputs(content, f);
-    fclose(f);
-}
-
-/* Fixtures are written under the OS tmp dir (mkdtemp) and deliberately left
- * in place rather than cleaned up here — they're a few hundred bytes each,
- * and adding a directory walker just to unlink them isn't worth it in a test
- * binary. */
-
-/* ── individual scenarios ────────────────────────────────────────────────── */
 
 static void test_basic_discovery(SnInternTable *it, SnArena *a, const char *tmp) {
     char dir[1024];
@@ -269,37 +256,6 @@ static void test_sno_script_file(SnInternTable *it, SnArena *a, const char *tmp)
 
 /* ── real corpus (report-only, see the file header for why) ────────────── */
 
-static void report_real_corpus(SnInternTable *it, SnArena *a) {
-    SnDiagSink diag;
-    sn_diag_init(&diag, "<corpus-scan>", "", 0);
-    diag.out = fopen("/dev/null", "w"); /* the point here is the counters, not the text */
-    if (!diag.out) {
-        diag.out = stderr;
-    }
-
-    SnPackageGraph g;
-    sn_pkggraph_init(&g, a, it, &diag);
-    size_t f1 = sn_pkggraph_scan_root(&g, "../compiler/src");
-    size_t f2 = sn_pkggraph_scan_root(&g, "../builtin");
-    sn_pkggraph_link(&g);
-
-    SnList cycle;
-    memset(&cycle, 0, sizeof(cycle));
-    int has_cycle = sn_pkggraph_find_cycle(&g, &cycle);
-
-    printf("\n[real corpus] compiler/src+builtin: %zu+%zu=%zu files scanned, "
-           "%zu packages, %zu link errors (known pre-existing corpus "
-           "mismatches, out of snovac's module scope — see file header), "
-           "cycle=%d\n",
-           f1, f2, f1 + f2, g.node_count, (size_t)diag.error_count, has_cycle);
-
-    CHECK("real corpus: no import cycle across compiler/src+builtin",
-          has_cycle == 0);
-
-    if (diag.out != stderr) {
-        fclose(diag.out);
-    }
-}
 
 int main(void) {
     SnArena arena;
@@ -320,7 +276,7 @@ int main(void) {
     test_multi_section_file(&it, &arena, tmp);
     test_missing_package_decl(&it, &arena, tmp);
     test_sno_script_file(&it, &arena, tmp);
-    report_real_corpus(&it, &arena);
+    CHECK("real corpus: no import cycle across compiler/src+builtin", report_real_corpus(&it, &arena));
 
     sn_arena_free(&arena);
 

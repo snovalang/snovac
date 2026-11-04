@@ -7,7 +7,7 @@
 
 CC      ?= cc
 CFLAGS  ?= -std=c11 -O2 -g -pthread
-CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE
+CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE -I. -Ibuiltin -Idriver -Ifrontend/lexer -Ifrontend/parser -Ifrontend/ast -Isemantic -Ibackend/native -Iruntime -Iruntime/concurrency -Iruntime/bytecode -Iruntime/value -Iruntime/eval
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
            -Wmissing-prototypes -Wconversion -Wno-sign-conversion
 BUILD   ?= build
@@ -26,16 +26,41 @@ endif
 
 BIN      = $(BUILD)/sncli$(EXE)
 
-SRCS = main.c driver_utils.c project.c cmd_check.c cmd_lex_parse.c cmd_run.c cmd_build.c cmd_tidy.c cmd_get.c \
-       target.c native_backend.c pulsar.c async.c \
-       dump.c ast.c \
-       lex.c lex_token.c lex_literal.c \
-       parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
-       parse_decl.c parse_decl_parts.c \
-       eval.c eval_expr.c eval_stmt.c eval_string.c \
-       socket_abi.c native_dispatch.c \
-       diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
-       snbc.c value.c vm.c emit_bc.c link_append.c
+CLI_SRCS = driver/main.c driver/cmd_check.c driver/cmd_lex_parse.c driver/cmd_run.c \
+           driver/cmd_build.c driver/cmd_tidy.c driver/cmd_tidy_discovery.c driver/cmd_get.c
+DRIVER_COMMON_SRCS = driver/driver_utils.c driver/exe_path.c driver/path_utils.c driver/project.c
+BACKEND_SRCS = target.c backend/native/link_append.c backend/native/native_backend.c backend/native/native_backend_bytecode.c \
+               backend/native/native_backend_vm_source.c backend/native/native_backend_vm_values.c
+FRONTEND_SRCS = frontend/ast/dump.c frontend/ast/ast.c \
+                frontend/lexer/lex.c frontend/lexer/lex_token.c frontend/lexer/lex_literal.c \
+                frontend/parser/parse.c frontend/parser/parse_type.c frontend/parser/parse_expr.c \
+                frontend/parser/parse_postfix.c frontend/parser/parse_primary.c frontend/parser/parse_stmt.c \
+                frontend/parser/parse_decl.c frontend/parser/parse_decl_helpers.c frontend/parser/parse_decl_parts.c
+SEMANTIC_SRCS = semantic/symbol.c semantic/package.c semantic/package_scan_header.c \
+                semantic/package_scan_section.c semantic/package_scan.c semantic/package_link.c \
+                semantic/types.c semantic/resolve.c semantic/resolve_scopes.c \
+                semantic/resolve_collect_helpers.c semantic/resolve_prelude.c semantic/resolve_names.c \
+                semantic/resolve_member_path.c semantic/check_types.c semantic/check_symbols.c \
+                semantic/check_symbol_resolution.c semantic/check_operators.c semantic/check_calls.c \
+                semantic/check_expr_calls.c semantic/check_expr_control.c semantic/check_match.c \
+                semantic/check.c semantic/check_ownership.c semantic/check_stmt.c semantic/check_control_stmt.c \
+                semantic/check_decl.c semantic/check_flow.c
+RUNTIME_SRCS = runtime/concurrency/pulsar.c runtime/concurrency/async.c \
+               runtime/eval/eval.c runtime/eval/eval_values.c \
+               runtime/eval/eval_objects.c runtime/eval/eval_expr.c runtime/eval/eval_operators.c \
+               runtime/eval/eval_calls.c runtime/eval/eval_array_methods.c \
+               runtime/eval/eval_string_variant_methods.c runtime/eval/eval_stmt.c \
+               runtime/eval/eval_string.c runtime/socket_abi.c runtime/native_dispatch.c \
+               runtime/bytecode/snbc.c runtime/value/value.c runtime/value/value_graph.c \
+               runtime/value/value_objects.c runtime/value/value_format.c runtime/bytecode/vm.c \
+               runtime/bytecode/vm_stack.c runtime/bytecode/vm_numeric.c runtime/bytecode/vm_composite.c runtime/bytecode/emit_bc.c \
+               runtime/bytecode/emit_bc_stmt.c runtime/bytecode/emit_bc_jump.c \
+               runtime/bytecode/emit_bc_literals.c
+BUILTIN_SRCS = builtin/builtins.c
+CORE_SRCS = diag.c arena.c intern.c
+COMMON_SRCS = $(DRIVER_COMMON_SRCS) $(BACKEND_SRCS) $(FRONTEND_SRCS) $(SEMANTIC_SRCS) \
+              $(RUNTIME_SRCS) $(BUILTIN_SRCS) $(CORE_SRCS)
+SRCS = $(CLI_SRCS) $(COMMON_SRCS)
 OBJS = $(addprefix $(BUILD)/,$(SRCS:.c=.o))
 DEPS = $(OBJS:.o=.d)
 
@@ -44,32 +69,31 @@ DEPS = $(OBJS:.o=.d)
 # $(BIN). See tests/test_symbol.c, tests/test_package.c, tests/test_types.c.
 TEST_SYMBOL_BIN = $(BUILD)/test_symbol$(EXE)
 TEST_PACKAGE_BIN = $(BUILD)/test_package$(EXE)
-TEST_PACKAGE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
-                     $(BUILD)/symbol.o $(BUILD)/package.o $(BUILD)/ast.o \
-                     $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o
+TEST_PACKAGE_OBJS = $(BUILD)/driver/driver_utils.o $(BUILD)/driver/path_utils.o $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
+                     $(BUILD)/semantic/symbol.o $(BUILD)/semantic/package.o $(BUILD)/semantic/package_scan_header.o $(BUILD)/semantic/package_scan_section.o $(BUILD)/semantic/package_scan.o $(BUILD)/semantic/package_link.o $(BUILD)/frontend/ast/ast.o \
+                     $(BUILD)/frontend/lexer/lex.o $(BUILD)/frontend/lexer/lex_token.o $(BUILD)/frontend/lexer/lex_literal.o
 TEST_TYPES_BIN = $(BUILD)/test_types$(EXE)
-TEST_TYPES_OBJS = $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o \
-                   $(BUILD)/types.o
+TEST_TYPES_OBJS = $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/semantic/symbol.o \
+                   $(BUILD)/semantic/types.o
 TEST_RESOLVE_BIN = $(BUILD)/test_resolve$(EXE)
-TEST_RESOLVE_OBJS = $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
-                     $(BUILD)/symbol.o $(BUILD)/package.o $(BUILD)/types.o \
-                     $(BUILD)/resolve.o $(BUILD)/ast.o \
-                     $(BUILD)/lex.o $(BUILD)/lex_token.o $(BUILD)/lex_literal.o \
-                     $(BUILD)/parse.o $(BUILD)/parse_type.o $(BUILD)/parse_expr.o \
-                     $(BUILD)/parse_primary.o $(BUILD)/parse_stmt.o \
-                     $(BUILD)/parse_decl.o $(BUILD)/parse_decl_parts.o
+TEST_RESOLVE_OBJS = $(BUILD)/driver/driver_utils.o $(BUILD)/driver/path_utils.o $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
+                     $(BUILD)/semantic/symbol.o $(BUILD)/semantic/package.o $(BUILD)/semantic/package_scan_header.o $(BUILD)/semantic/package_scan_section.o $(BUILD)/semantic/package_scan.o $(BUILD)/semantic/package_link.o $(BUILD)/semantic/types.o \
+                     $(BUILD)/semantic/resolve.o $(BUILD)/semantic/resolve_scopes.o $(BUILD)/semantic/resolve_collect_helpers.o $(BUILD)/semantic/resolve_prelude.o $(BUILD)/semantic/resolve_names.o $(BUILD)/semantic/resolve_member_path.o $(BUILD)/frontend/ast/ast.o \
+                     $(BUILD)/frontend/lexer/lex.o $(BUILD)/frontend/lexer/lex_token.o $(BUILD)/frontend/lexer/lex_literal.o \
+                     $(BUILD)/frontend/parser/parse.o $(BUILD)/frontend/parser/parse_type.o $(BUILD)/frontend/parser/parse_expr.o $(BUILD)/frontend/parser/parse_postfix.o \
+                     $(BUILD)/frontend/parser/parse_primary.o $(BUILD)/frontend/parser/parse_stmt.o \
+                     $(BUILD)/frontend/parser/parse_decl.o $(BUILD)/frontend/parser/parse_decl_helpers.o $(BUILD)/frontend/parser/parse_decl_parts.o
 TEST_CHECK_BIN = $(BUILD)/test_check$(EXE)
-TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtins.o $(BUILD)/check.o
+TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtin/builtins.o $(BUILD)/semantic/check_types.o \
+                  $(BUILD)/semantic/check_symbols.o $(BUILD)/semantic/check_operators.o \
+                  $(BUILD)/semantic/check_symbol_resolution.o $(BUILD)/semantic/check_calls.o $(BUILD)/semantic/check.o \
+                  $(BUILD)/semantic/check_ownership.o \
+                  $(BUILD)/semantic/check_expr_calls.o $(BUILD)/semantic/check_expr_control.o \
+                  $(BUILD)/semantic/check_match.o \
+                  $(BUILD)/semantic/check_stmt.o $(BUILD)/semantic/check_control_stmt.o \
+                  $(BUILD)/semantic/check_decl.o $(BUILD)/semantic/check_flow.o
 
-RT_SRCS = driver_utils.c project.c target.c native_backend.c pulsar.c async.c \
-          dump.c ast.c \
-          lex.c lex_token.c lex_literal.c \
-          parse.c parse_type.c parse_expr.c parse_primary.c parse_stmt.c \
-          parse_decl.c parse_decl_parts.c \
-          eval.c eval_expr.c eval_stmt.c eval_string.c \
-          socket_abi.c native_dispatch.c \
-          diag.c arena.c intern.c symbol.c package.c types.c resolve.c builtins.c check.c \
-          snbc.c value.c vm.c emit_bc.c link_append.c
+RT_SRCS = $(COMMON_SRCS)
 RT_OBJS = $(addprefix $(BUILD)/,$(RT_SRCS:.c=.o))
 LIB_RT  = $(BUILD)/libsnovart.a
 
@@ -148,6 +172,7 @@ installer-windows: $(BIN) $(LIB_RT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File installer/windows/build_installer.ps1
 
 $(BUILD)/%.o: %.c | $(BUILD)
+	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<
 
 $(BUILD):
@@ -157,12 +182,12 @@ else
 	mkdir -p $(BUILD)
 endif
 
-$(TEST_SYMBOL_BIN): tests/test_symbol.c $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o | $(BUILD)
+$(TEST_SYMBOL_BIN): tests/test_symbol.c $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/semantic/symbol.o | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_symbol.c \
-	    $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/symbol.o
+	    $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/semantic/symbol.o
 
-$(TEST_PACKAGE_BIN): tests/test_package.c $(TEST_PACKAGE_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_package.c $(TEST_PACKAGE_OBJS)
+$(TEST_PACKAGE_BIN): tests/test_package.c tests/test_package_corpus.c $(TEST_PACKAGE_OBJS) | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_package.c tests/test_package_corpus.c $(TEST_PACKAGE_OBJS)
 
 $(TEST_TYPES_BIN): tests/test_types.c $(TEST_TYPES_OBJS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_types.c $(TEST_TYPES_OBJS)

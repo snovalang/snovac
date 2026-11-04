@@ -1,0 +1,370 @@
+/* emit_bc.c — AST to SnBC bytecode code generation. */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+
+#include "emit_bc.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "emit_bc_internal.h"
+
+uint32_t add_local(Compiler *c, const char *name, SnSpan span) {
+    if (c->failed) return 0;
+    if (c->local_count >= SN_BC_VM_STACK_CAPACITY) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_TOO_MANY_LOCALS, span,
+                     "function exceeds the VM limit of %u simultaneous local slots",
+                     (unsigned)SN_BC_VM_STACK_CAPACITY);
+        c->failed = 1;
+        return 0;
+    }
+    if ((size_t)c->local_count == c->locals_capacity) {
+        size_t capacity = c->locals_capacity ? c->locals_capacity * 2u : 16u;
+        if (capacity > SN_BC_VM_STACK_CAPACITY) {
+            capacity = SN_BC_VM_STACK_CAPACITY;
+        }
+        LocalVar *locals = (LocalVar *)sn_arena_alloc(
+            c->arena, capacity * sizeof(*locals));
+        if (c->local_count) {
+            memcpy(locals, c->locals, (size_t)c->local_count * sizeof(*locals));
+        }
+        c->locals = locals;
+        c->locals_capacity = capacity;
+    }
+    uint32_t idx = c->local_count++;
+    c->locals[idx].name = name;
+    c->locals[idx].index = idx;
+    if (c->local_count > c->current_fn->local_count) {
+        c->current_fn->local_count = c->local_count;
+    }
+    return idx;
+}
+
+static int resolve_local(Compiler *c, const char *name, uint32_t *out_idx) {
+    if (!name) return 0;
+    for (size_t i = c->local_count; i > 0; --i) {
+        const LocalVar *local = &c->locals[i - 1u];
+        if (local->name && strcmp(local->name, name) == 0) {
+            *out_idx = local->index;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void compile_return_expr(Compiler *c, const SnExpr *expr) {
+    uint32_t slot;
+    if (expr && expr->kind == SN_EXPR_IDENT &&
+        resolve_local(c, expr->text, &slot)) {
+        emit_byte(c, OP_MOVE_LOCAL, expr->span.line);
+        emit_u32(c, slot, expr->span.line);
+        return;
+    }
+    compile_expr(c, expr);
+}
+
+static int resolve_func(Compiler *c, const char *name, uint32_t *out_idx) {
+    for (size_t i = 0; i < c->bc->function_count; i++) {
+        if (c->bc->functions[i]->name && strcmp(c->bc->functions[i]->name, name) == 0) {
+            *out_idx = (uint32_t)i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void emit_byte(Compiler *c, uint8_t b, uint32_t line) {
+    sn_chunk_write(&c->current_fn->chunk, b, line);
+}
+
+void emit_u32(Compiler *c, uint32_t val, uint32_t line) {
+    sn_chunk_write_u32(&c->current_fn->chunk, val, line);
+}
+
+size_t emit_jump(Compiler *c, SnOpcode op, uint32_t line) {
+    emit_byte(c, (uint8_t)op, line);
+    size_t pos = c->current_fn->chunk.count;
+    emit_u32(c, 0, line); /* placeholder */
+    return pos;
+}
+
+
+void compile_expr(Compiler *c, const SnExpr *e);
+void sn_compile_stmt(Compiler *c, const SnStmt *s);
+
+void compile_expr(Compiler *c, const SnExpr *e) {
+    if (!e) {
+        emit_byte(c, OP_CONST_UNIT, 0);
+        return;
+    }
+    uint32_t line = e->span.line;
+
+    switch (e->kind) {
+    case SN_EXPR_INT:
+    case SN_EXPR_LONG: {
+        int64_t val = e->text ? (int64_t)strtoll(e->text, NULL, 0) : 0;
+        emit_byte(c, OP_CONST_INT, line);
+        emit_i64(c, val, line);
+        break;
+    }
+    case SN_EXPR_DOUBLE:
+    case SN_EXPR_DECIMAL: {
+        double val = e->text ? strtod(e->text, NULL) : 0.0;
+        emit_byte(c, OP_CONST_DOUBLE, line);
+        emit_double(c, val, line);
+        break;
+    }
+    case SN_EXPR_STRING:
+    case SN_EXPR_CHAR: {
+        const char *raw = e->text ? e->text : "";
+        char buf[8192];
+        size_t n = strlen(raw);
+        if (n >= 2 && raw[0] == '"' && raw[n - 1] == '"') {
+            raw++;
+            n -= 2;
+        }
+        size_t out_len = 0;
+        for (size_t i = 0; i < n && out_len + 1 < sizeof(buf); i++) {
+            char ch = raw[i];
+            if (ch == '\\' && i + 1 < n) {
+                char esc = raw[++i];
+                switch (esc) {
+                case 'n':  buf[out_len++] = '\n'; break;
+                case 't':  buf[out_len++] = '\t'; break;
+                case 'r':  buf[out_len++] = '\r'; break;
+                case '0':  buf[out_len++] = '\0'; break;
+                case '\\': buf[out_len++] = '\\'; break;
+                case '"':  buf[out_len++] = '"'; break;
+                default:   buf[out_len++] = esc; break;
+                }
+            } else {
+                buf[out_len++] = ch;
+            }
+        }
+        buf[out_len] = '\0';
+        uint32_t s_idx = sn_bcunit_add_string(c->bc, buf);
+        emit_byte(c, OP_CONST_STRING, line);
+        emit_u32(c, s_idx, line);
+        break;
+    }
+    case SN_EXPR_BOOL: {
+        uint8_t b = (e->text && strcmp(e->text, "true") == 0) ? 1 : 0;
+        emit_byte(c, OP_CONST_BOOL, line);
+        emit_byte(c, b, line);
+        break;
+    }
+    case SN_EXPR_IDENT: {
+        uint32_t loc_idx;
+        if (resolve_local(c, e->text, &loc_idx)) {
+            emit_byte(c, e->implicit_move ? OP_MOVE_LOCAL : OP_GET_LOCAL, line);
+            emit_u32(c, loc_idx, line);
+        } else {
+            uint32_t fn_idx;
+            if (resolve_func(c, e->text, &fn_idx)) {
+                emit_byte(c, OP_CONST_INT, line);
+                emit_i64(c, (int64_t)fn_idx, line);
+            } else {
+                emit_byte(c, OP_CONST_UNIT, line);
+            }
+        }
+        break;
+    }
+    case SN_EXPR_ASSIGN: {
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
+            compile_expr(c, e->rhs);
+            uint32_t loc_idx;
+            if (resolve_local(c, e->lhs->text, &loc_idx)) {
+                emit_byte(c, OP_SET_LOCAL, line);
+                emit_u32(c, loc_idx, line);
+            }
+        } else if (e->lhs && e->lhs->kind == SN_EXPR_INDEX) {
+            compile_expr(c, e->lhs->lhs);
+            compile_expr(c, e->lhs->rhs);
+            compile_expr(c, e->rhs);
+            emit_byte(c, OP_SET_INDEX, line);
+        } else {
+            compile_expr(c, e->rhs);
+        }
+        break;
+    }
+    case SN_EXPR_BINARY:
+        compile_expr(c, e->lhs);
+        compile_expr(c, e->rhs);
+        switch (e->op) {
+        case SN_TOK_PLUS:    emit_byte(c, OP_ADD, line); break;
+        case SN_TOK_MINUS:   emit_byte(c, OP_SUB, line); break;
+        case SN_TOK_STAR:    emit_byte(c, OP_MUL, line); break;
+        case SN_TOK_SLASH:   emit_byte(c, OP_DIV, line); break;
+        case SN_TOK_PERCENT: emit_byte(c, OP_MOD, line); break;
+        case SN_TOK_EQ:      emit_byte(c, OP_EQ, line); break;
+        case SN_TOK_NE:      emit_byte(c, OP_NE, line); break;
+        case SN_TOK_LT:      emit_byte(c, OP_LT, line); break;
+        case SN_TOK_LE:      emit_byte(c, OP_LE, line); break;
+        case SN_TOK_GT:      emit_byte(c, OP_GT, line); break;
+        case SN_TOK_GE:      emit_byte(c, OP_GE, line); break;
+        default: break;
+        }
+        break;
+    case SN_EXPR_UNARY:
+        compile_expr(c, e->lhs);
+        if (e->op == SN_TOK_MINUS) {
+            emit_byte(c, OP_NEG, line);
+        } else if (e->op == SN_TOK_BANG) {
+            emit_byte(c, OP_NOT, line);
+        }
+        break;
+    case SN_EXPR_MOVE: {
+        uint32_t slot;
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT &&
+            resolve_local(c, e->lhs->text, &slot)) {
+            emit_byte(c, OP_MOVE_LOCAL, line);
+            emit_u32(c, slot, line);
+        } else {
+            emit_byte(c, OP_CONST_UNIT, line);
+        }
+        break;
+    }
+    case SN_EXPR_CALL: {
+        if (e->lhs && e->lhs->kind == SN_EXPR_MEMBER && e->lhs->lhs &&
+            e->lhs->text) {
+            const char *method = e->lhs->text;
+            if (strcmp(method, "push") == 0 && e->args.len == 1) {
+                compile_expr(c, e->lhs->lhs);
+                compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
+                emit_byte(c, OP_ARRAY_PUSH, line);
+                break;
+            }
+            if (strcmp(method, "pop") == 0 && e->args.len == 0) {
+                compile_expr(c, e->lhs->lhs);
+                emit_byte(c, OP_ARRAY_POP, line);
+                break;
+            }
+            if (strcmp(method, "clear") == 0 && e->args.len == 0) {
+                compile_expr(c, e->lhs->lhs);
+                emit_byte(c, OP_ARRAY_CLEAR, line);
+                break;
+            }
+        }
+        if (e->lhs && e->lhs->kind == SN_EXPR_MEMBER && e->lhs->text &&
+            (strcmp(e->lhs->text, "printline") == 0 || strcmp(e->lhs->text, "println") == 0 || strcmp(e->lhs->text, "print") == 0)) {
+            int is_nl = strcmp(e->lhs->text, "print") != 0;
+            if (e->args.len > 0) {
+                compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
+            } else {
+                uint32_t s_idx = sn_bcunit_add_string(c->bc, "");
+                emit_byte(c, OP_CONST_STRING, line);
+                emit_u32(c, s_idx, line);
+            }
+            emit_byte(c, OP_PRINT, line);
+            emit_byte(c, (uint8_t)is_nl, line);
+            emit_byte(c, OP_CONST_UNIT, line);
+            break;
+        }
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && e->lhs->text &&
+            (strcmp(e->lhs->text, "printline") == 0 || strcmp(e->lhs->text, "println") == 0 || strcmp(e->lhs->text, "print") == 0)) {
+            int is_nl = strcmp(e->lhs->text, "print") != 0;
+            if (e->args.len > 0) {
+                compile_expr(c, SN_LIST_AT(e->args, SnExpr, 0));
+            } else {
+                uint32_t s_idx = sn_bcunit_add_string(c->bc, "");
+                emit_byte(c, OP_CONST_STRING, line);
+                emit_u32(c, s_idx, line);
+            }
+            emit_byte(c, OP_PRINT, line);
+            emit_byte(c, (uint8_t)is_nl, line);
+            emit_byte(c, OP_CONST_UNIT, line);
+            break;
+        }
+
+        uint32_t fn_idx = 0;
+        int found = 0;
+        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
+            found = resolve_func(c, e->lhs->text, &fn_idx);
+        }
+        for (size_t i = 0; i < e->args.len; i++) {
+            compile_expr(c, SN_LIST_AT(e->args, SnExpr, i));
+        }
+        if (found) {
+            emit_byte(c, OP_CALL, line);
+            emit_u32(c, fn_idx, line);
+            emit_u32(c, (uint32_t)e->args.len, line);
+        } else {
+            emit_byte(c, OP_CONST_UNIT, line);
+        }
+        break;
+    }
+    case SN_EXPR_ARRAY: {
+        for (size_t i = 0; i < e->args.len; i++) {
+            compile_expr(c, SN_LIST_AT(e->args, SnExpr, i));
+        }
+        emit_byte(c, OP_NEW_ARRAY, line);
+        emit_u32(c, (uint32_t)e->args.len, line);
+        break;
+    }
+    case SN_EXPR_INDEX: {
+        compile_expr(c, e->lhs);
+        compile_expr(c, e->rhs);
+        emit_byte(c, OP_GET_INDEX, line);
+        break;
+    }
+    default:
+        emit_byte(c, OP_CONST_UNIT, line);
+        break;
+    }
+}
+
+
+int sn_emit_bytecode(SnArena *arena, SnDiagSink *diag, const SnUnit *unit, SnBCUnit *out) {
+    sn_bcunit_init(out);
+
+    Compiler c;
+    memset(&c, 0, sizeof(c));
+    c.arena = arena;
+    c.diag = diag;
+    c.unit = unit;
+    c.bc = out;
+
+    /* First pass: register function prototypes */
+    for (size_t i = 0; i < unit->decls.len; i++) {
+        const SnDecl *d = SN_LIST_AT(unit->decls, SnDecl, i);
+        if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
+            uint32_t fn_idx = sn_bcunit_add_function(out, d->name, (uint32_t)d->params.len);
+            if (strcmp(d->name, "main") == 0) {
+                out->main_func_idx = fn_idx;
+            }
+        }
+    }
+
+    /* Second pass: compile function bodies */
+    for (size_t i = 0; i < unit->decls.len; i++) {
+        const SnDecl *d = SN_LIST_AT(unit->decls, SnDecl, i);
+        if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
+            uint32_t fn_idx = 0;
+            resolve_func(&c, d->name, &fn_idx);
+            c.current_fn = out->functions[fn_idx];
+            c.local_count = 0;
+            c.loop = NULL;
+
+            for (size_t pi = 0; pi < d->params.len; pi++) {
+                const SnParam *p = SN_LIST_AT(d->params, SnParam, pi);
+                add_local(&c, p->name, p->span);
+            }
+
+            if (d->body) {
+                sn_compile_stmt(&c, d->body);
+            }
+            emit_byte(&c, OP_CONST_UNIT, d->span.line);
+            emit_byte(&c, OP_RETURN, d->span.line);
+        }
+    }
+
+    if (c.failed) {
+        sn_bcunit_free(out);
+        return 0;
+    }
+    return 1;
+}
