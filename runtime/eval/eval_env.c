@@ -206,7 +206,8 @@ int eval_value_is_heap_owned(Value value) {
 }
 
 Value *env_define(Interp *in, Env *env, const char *name, Value value) {
-    SnArena *env_arena = env->owner_region ? &env->owner_region->arena : in->arena;
+    SnArena *env_arena = env->owner_region ? &env->owner_region->arena
+                                          : in->root_arena;
     if (in->current_region && env->owner_region != in->current_region) {
         if (eval_value_is_heap_owned(value))
             eval_value_mark_escaping(in, value);

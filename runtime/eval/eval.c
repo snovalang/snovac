@@ -209,6 +209,7 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     /* Keep transient environments, objects and generated strings out of the
      * caller's AST/token arena. Source declarations remain borrowed from it. */
     in.arena = &runtime_arena;
+    in.root_arena = &runtime_arena;
     in.diag = diag;
     in.unit = unit;
     in.globals = env_new(&in, NULL);

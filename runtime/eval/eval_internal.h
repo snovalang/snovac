@@ -121,6 +121,7 @@ struct EvalRegionBlock {
 
 typedef struct {
     SnArena *arena;
+    SnArena *root_arena; /* stable lifetime for environments created outside regions */
     SnDiagSink *diag;
     const SnUnit *unit;
     Env *globals;

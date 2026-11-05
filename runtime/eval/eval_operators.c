@@ -137,7 +137,7 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
                 slot = object_field(recv.as.o, e->lhs->text);
                 if (!slot && recv.as.o) {
                     SnArena *object_arena = recv.as.o->owner_region
-                        ? &recv.as.o->owner_region->arena : in->arena;
+                        ? &recv.as.o->owner_region->arena : in->root_arena;
                     Value *new_slot = (Value *)sn_arena_alloc(object_arena,
                                                               sizeof(Value));
                     *new_slot = v_unit();
