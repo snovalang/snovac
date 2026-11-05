@@ -198,6 +198,10 @@ void sn_val_retain(SnVal val) {
         sn_value_validate_object(val);
         uint_fast64_t current = atomic_load_explicit(&val.as.obj->rc, memory_order_relaxed);
         for (;;) {
+            if (current == 0) {
+                fputs("snovac runtime: cannot retain an unowned value\n", stderr);
+                abort();
+            }
             if (current == UINT_FAST64_MAX) {
                 fputs("snovac runtime: reference count overflow\n", stderr);
                 abort();

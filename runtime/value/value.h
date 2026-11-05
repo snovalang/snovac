@@ -81,6 +81,8 @@ bool sn_val_variant_is(SnVal variant, uint32_t tag_id);
 size_t sn_val_variant_payload_count(SnVal variant);
 SnVal sn_val_variant_get(SnVal variant, size_t index);
 
+/* Retain requires a live owned/borrowed reference whose object still has a
+ * nonzero count; retaining a zero-count object aborts as an ownership bug. */
 void sn_val_retain(SnVal val);
 void sn_val_release(SnVal val);
 /* Replace an owned slot with a borrowed value, retaining before releasing the
