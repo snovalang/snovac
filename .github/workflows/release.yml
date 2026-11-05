@@ -30,6 +30,10 @@ on:
 permissions:
   contents: write
 
+# A tag push builds that tag. Manual runs build the requested release tag name.
+env:
+  SNOVAC_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+
 jobs:
   build:
     name: Build ${{ matrix.os }}-${{ matrix.arch }}
