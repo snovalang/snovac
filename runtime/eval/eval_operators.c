@@ -136,14 +136,14 @@ Value eval_assign(Interp *in, Env *env, const SnExpr *e) {
                 container = recv;
                 slot = object_field(recv.as.o, e->lhs->text);
                 if (!slot && recv.as.o) {
-                    /* The new field slot and list backing belong to the
-                     * current arena even when the assigned value is scalar. */
-                    if (recv.as.o->owner_region != in->current_region)
-                        eval_region_mark_current(in);
-                    Value *new_slot = (Value *)sn_arena_alloc(in->arena, sizeof(Value));
+                    SnArena *object_arena = recv.as.o->owner_region
+                        ? &recv.as.o->owner_region->arena : in->arena;
+                    Value *new_slot = (Value *)sn_arena_alloc(object_arena,
+                                                              sizeof(Value));
                     *new_slot = v_unit();
-                    sn_list_push(in->arena, &recv.as.o->names, (void *)e->lhs->text);
-                    sn_list_push(in->arena, &recv.as.o->slots, new_slot);
+                    sn_list_push(object_arena, &recv.as.o->names,
+                                 (void *)e->lhs->text);
+                    sn_list_push(object_arena, &recv.as.o->slots, new_slot);
                     slot = new_slot;
                     created_container_field = 1;
                 }

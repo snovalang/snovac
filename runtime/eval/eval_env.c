@@ -206,14 +206,17 @@ int eval_value_is_heap_owned(Value value) {
 }
 
 Value *env_define(Interp *in, Env *env, const char *name, Value value) {
+    SnArena *env_arena = env->owner_region ? &env->owner_region->arena : in->arena;
     if (in->current_region && env->owner_region != in->current_region) {
-        eval_region_mark_current(in);
         if (eval_value_is_heap_owned(value))
             eval_value_mark_escaping(in, value);
     }
-    Value *slot = (Value *)sn_arena_alloc(in->arena, sizeof(*slot));
+    /* Binding metadata belongs to the environment, not to whichever nested
+     * call happens to add the binding. Otherwise a one-slot assignment into
+     * an outer environment would force the entire call region to escape. */
+    Value *slot = (Value *)sn_arena_alloc(env_arena, sizeof(*slot));
     *slot = value;
-    sn_list_push(in->arena, &env->names, (void *)name);
-    sn_list_push(in->arena, &env->slots, slot);
+    sn_list_push(env_arena, &env->names, (void *)name);
+    sn_list_push(env_arena, &env->slots, slot);
     return slot;
 }
