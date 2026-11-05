@@ -104,6 +104,10 @@ bool sn_val_instance_set(SnVal instance, size_t index, SnVal value);
 bool sn_val_array_set_move(SnVal array, size_t index, SnVal *value);
 bool sn_val_instance_set_move(SnVal instance, size_t index, SnVal *value);
 bool sn_val_variant_set_move(SnVal variant, size_t index, SnVal *value);
+/* Equality compares scalars by value, strings by length/bytes, arrays and
+ * instances by identity, and variants by tag plus recursively equal payloads.
+ * Aggregate traversal is iterative so nested variants do not consume the C
+ * call stack. */
 bool sn_val_equal(SnVal a, SnVal b);
 void sn_val_print(SnVal val, bool newline);
 

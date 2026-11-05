@@ -54,7 +54,8 @@ RUNTIME_SRCS = runtime/concurrency/pulsar.c runtime/concurrency/async.c \
                runtime/eval/eval_string.c runtime/socket_abi.c runtime/native_dispatch.c \
                runtime/bytecode/snbc.c runtime/bytecode/snbc_io.c \
                runtime/value/value.c runtime/value/value_graph.c \
-               runtime/value/value_objects.c runtime/value/value_format.c runtime/bytecode/vm.c \
+               runtime/value/value_objects.c runtime/value/value_equal.c \
+               runtime/value/value_format.c runtime/bytecode/vm.c \
                runtime/bytecode/vm_stack.c runtime/bytecode/vm_numeric.c runtime/bytecode/vm_composite.c \
                runtime/bytecode/emit_bc.c runtime/bytecode/emit_bc_expr.c \
                runtime/bytecode/emit_bc_stmt.c runtime/bytecode/emit_bc_jump.c \
