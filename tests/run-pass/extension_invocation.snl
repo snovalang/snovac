@@ -18,9 +18,9 @@ extension Counter {
         }
         return "nonzero"
     }
-}
 
-public extension Counter.label(): string = "counter-extension"
+    func label(): string = "counter-extension"
+}
 
 func main(): int {
     let c = Counter(0)

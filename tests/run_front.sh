@@ -48,10 +48,25 @@ for name in hello string_comment_url array_field_access counter extension_invoca
   pulsar_launch pulsar_pool_submit pulsar_block_method pulsar_iife_capture pulsar_spawn_string overload_show; do
   if [ -f "$RP/$name.snl" ] && [ -f "$RP/$name.stdout" ]; then
     got_file="$(mktemp)"
-    "$SNOVAC" run "$RP/$name.snl" >"$got_file" 2>&1 || true
+    err_file="$(mktemp)"
+    if "$SNOVAC" run "$RP/$name.snl" >"$got_file" 2>"$err_file"; then
+      run_rc=0
+    else
+      run_rc=$?
+    fi
     same=0
     same_text "$RP/$name.stdout" "$got_file" || same=$?
-    rm -f "$got_file"
+    if [ "$run_rc" != 0 ] || [ "$same" != 0 ]; then
+      printf '--- run %s rc=%s ---\n' "$name" "$run_rc"
+      printf 'stdout:\n'
+      cat "$got_file"
+      printf 'expected:\n'
+      cat "$RP/$name.stdout"
+      printf 'stderr:\n'
+      cat "$err_file"
+    fi
+    rm -f "$got_file" "$err_file"
+    assert "run: $name exit" 0 "$run_rc"
     assert "run: $name" 0 "$same"
   fi
 done

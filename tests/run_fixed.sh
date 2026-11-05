@@ -18,12 +18,12 @@ agree_exec() {
   assert "emit-snbc: $label listings match" 0 "$listings_match"
   run_out="$SNBC_DIR/$label.run.out"
   bc_out="$SNBC_DIR/$label.bc.out"
-  if (cd "$work" && "$SNL_ABS" run "$src" >"$run_out"); then
+  if (cd "$work" && "$SNL_ABS" run "$src" >"$run_out" 2>"$SNBC_DIR/$label.run.err"); then
     run_rc=0
   else
     run_rc=$?
   fi
-  if (cd "$work" && "$SNL_ABS" run-snbc "$out" >"$bc_out"); then
+  if (cd "$work" && "$SNL_ABS" run-snbc "$out" >"$bc_out" 2>"$SNBC_DIR/$label.bc.err"); then
     bc_rc=0
   else
     bc_rc=$?
