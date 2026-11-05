@@ -374,7 +374,9 @@ const SnDecl *sn_eval_find_overload(SnEvalInterp *in, SnEvalEnv *env, const SnDe
     if (wins == 1) {
         return winner;
     }
-    return first ? first : sn_eval_find_member_inherited(in, cls, name);
+    if (first) return first;
+    const SnDecl *inherited = sn_eval_find_member_inherited(in, cls, name);
+    return inherited && inherited->kind == SN_DECL_METHOD ? inherited : NULL;
 }
 
 const SnDecl *sn_eval_find_top(const SnEvalInterp *in, const char *name, SnDeclKind k) {

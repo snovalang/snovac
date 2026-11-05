@@ -54,7 +54,9 @@ void sn_runtime_shutdown(void) {
 int sn_native_try_dispatch(SnEvalInterp *in, const SnDecl *fn, SnList *args, SnEvalEnv *caller,
                            SnEvalObject *self, SnSpan span, SnEvalValue *out) {
     (void)span;
-    if (!fn || !fn->name) return 0;
+    /* Only declarations marked as host calls may enter the OS ABI. Wrapper
+     * methods such as Net.listen and HttpServer.listen have Snovalang bodies. */
+    if (!fn || !fn->name || fn->body) return 0;
 
     if (!self && strcmp(fn->name, "mutexCreate") == 0) {
         *out = v_int(sn_runtime_mutex_create());

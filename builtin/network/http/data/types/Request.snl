@@ -53,7 +53,7 @@ struct Request {
 
     public method isValid(): bool {
         if target.isEmpty() || target.contains(" ") || target.contains("\t") ||
-            target.contains("\r") || target.contains("\n") || target.contains("\0") {
+            target.contains("\r") || target.contains("\n") {
             return false
         }
         var i = 0

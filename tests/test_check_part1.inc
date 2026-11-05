@@ -114,6 +114,9 @@ static int diag_has_code(World *w, const char *code /* e.g. "SNOVA0131" */) {
  * into w->diag_buf so callers can inspect error_count and/or diag_has_code. */
 static void run_check_on_func(World *w, const char *dir, const char *package_name,
                               const char *func_name) {
+    /* The checker obtains Option, Array, and primitive method signatures from
+     * source declarations, just like the driver does for real projects. */
+    sn_pkggraph_scan_root(&w->graph, "builtin");
     sn_pkggraph_scan_root(&w->graph, dir);
     sn_resolver_collect(&w->resolver);
     sn_resolver_build_prelude(&w->resolver);

@@ -1,0 +1,94 @@
+package builtin.network.http.server
+
+import builtin.collections.collections.types
+import builtin.network.http.data.types
+import builtin.network.transport.sockets
+import builtin.errors.hierarchy.types
+
+// Synchronous HTTP/1.1 server. Each accepted connection handles one request.
+class HttpServer {
+    private let routes: Array<HttpRoute> = Array<HttpRoute>.new()
+
+    public method route(method: string, path: string,
+                        handler: (HttpRequest) -> HttpResponse): unit {
+        var verb = method.toUpper()
+        if verb.isEmpty() || path.startsWith("/") == false ||
+            path.contains(" ") || path.contains("\r") || path.contains("\n") {
+            throw IllegalArgumentException("invalid HTTP route")
+        }
+        var i = 0
+        while i < routes.length() {
+            var entry = routes.get(i)
+            if entry.method == verb && entry.path == path {
+                throw IllegalArgumentException("duplicate HTTP route")
+            }
+            i += 1
+        }
+        routes.push(HttpRoute { method: verb, path: path, handler: handler })
+    }
+
+    public method get(path: string, handler: (HttpRequest) -> HttpResponse): unit {
+        this.route("GET", path, handler)
+    }
+
+    public method post(path: string, handler: (HttpRequest) -> HttpResponse): unit {
+        this.route("POST", path, handler)
+    }
+
+    public method dispatch(request: HttpRequest): HttpResponse {
+        var path = request.target
+        var query = path.indexOf("?")
+        if query >= 0 { path = path.substring(0, query) }
+        var knownPath = false
+        var i = 0
+        while i < routes.length() {
+            var entry = routes.get(i)
+            if entry.path == path {
+                if entry.method == request.method.toUpper() {
+                    return entry.handler(request)
+                }
+                knownPath = true
+            }
+            i += 1
+        }
+        if knownPath { return HttpResponse.text(405, "Method Not Allowed") }
+        return HttpResponse.text(404, "Not Found")
+    }
+
+    public method serveNext(listener: TcpListener): unit {
+        var stream = listener.accept()
+        try {
+            var request = HttpRequest {
+                method: "", target: "", headers: Array<Header>.new(), body: ""
+            }
+            try {
+                request = HttpWire.readRequest(stream)
+            } catch (error: any) {
+                HttpWire.writeResponse(stream, HttpResponse.text(400, "Bad Request"), true)
+                return
+            }
+            var response = HttpResponse.text(500, "Internal Server Error")
+            try {
+                response = this.dispatch(request)
+            } catch (error: any) {
+                response = HttpResponse.text(500, "Internal Server Error")
+            }
+            HttpWire.writeResponse(stream, response, request.method.toUpper() != "HEAD")
+        } finally {
+            stream.close()
+        }
+    }
+
+    public method serve(listener: TcpListener): unit {
+        while listener.isClosed() == false { this.serveNext(listener) }
+    }
+
+    public method listen(host: string, port: int): unit {
+        var listener = Net.listen(host, port)
+        try {
+            this.serve(listener)
+        } finally {
+            listener.close()
+        }
+    }
+}

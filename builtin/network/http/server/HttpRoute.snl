@@ -1,0 +1,7 @@
+package builtin.network.http.server
+
+struct HttpRoute {
+    public let method: string
+    public let path: string
+    public let handler: (HttpRequest) -> HttpResponse
+}

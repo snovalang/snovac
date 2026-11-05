@@ -22,6 +22,7 @@ For example, HTTP response data lives at
 | Time | `builtin.time.clock.values` | `time/clock/values/{Duration,Instant,Time}.snl` |
 | Networking | `builtin.network.transport.sockets` | `network/transport/sockets/{Net,Socket,SocketAddress,TcpListener,TcpStream,TcpStreamExtensions,UdpSocket}.snl` |
 | HTTP data | `builtin.network.http.data.types` | `network/http/data/types/{Method,Header,Request,Response}.snl` |
+| HTTP server | `builtin.network.http.server` | `network/http/server/{HttpRequest,HttpResponse,HttpRoute,HttpWire,HttpServer}.snl` |
 | Async and synchronization | `builtin.concurrent.async.tasks`, `builtin.concurrent.synchronization.primitives` | `concurrent/async/tasks/*.snl`, `concurrent/synchronization/primitives/*.snl` |
 | Channels | `builtin.concurrent.channels.queues` | `concurrent/channels/queues/Channel.snl` |
 | Context | `builtin.context.scoped.values` | `context/scoped/values/Context.snl` |
@@ -94,6 +95,16 @@ HTTP request/response values validate status and header fields, preserve
 repeated headers, and provide case-insensitive header lookup. The network
 wrappers validate ports and socket handles, expose `Result`-returning open,
 accept, connect, and send operations, and make `close()` idempotent.
+
+`HttpServer` registers typed `(HttpRequest) -> HttpResponse` handlers with
+`get`, `post`, or `route`, then listens with `server.listen(host, port)`.
+`dispatch` is also available for embedding or testing without opening a
+socket. The HTTP/1.1 server handles one request per TCP connection, uses
+`Content-Length` framing, limits headers to 16 KiB and text bodies to 1 MiB,
+and returns 400, 404, and 405 responses for malformed requests and unmatched
+routes. It rejects transfer-encoded request bodies and reserved response
+framing headers. TLS, chunked transfer coding, keep-alive, binary bodies, and
+concurrent request scheduling are not implemented yet.
 
 `CancellationToken` is a shared class value, so cancellation is visible to all
 holders of the same token. `Task<T>` stores a typed success, failure, or

@@ -1,0 +1,23 @@
+package builtin.network.http.server
+
+import builtin.collections.collections.types
+import builtin.core.types.values
+import builtin.network.http.data.types
+
+// Text request received over HTTP/1.1. The body is UTF-8 text.
+struct HttpRequest {
+    public let method: string
+    public let target: string
+    public let headers: Array<Header>
+    public let body: string
+
+    public method header(name: string): Option<string> {
+        var i = 0
+        while i < headers.length() {
+            var item = headers.get(i)
+            if item.isNamed(name) { return Some(item.value) }
+            i += 1
+        }
+        return None
+    }
+}

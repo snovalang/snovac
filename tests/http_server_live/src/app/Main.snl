@@ -1,0 +1,14 @@
+package app
+
+import builtin.network.http.server
+
+func hello(request: HttpRequest): HttpResponse {
+    return HttpResponse.text(200, "hello from handler")
+}
+
+func main(): int {
+    var server = HttpServer {}
+    server.get("/hello", hello)
+    server.listen("127.0.0.1", 18891)
+    return 0
+}

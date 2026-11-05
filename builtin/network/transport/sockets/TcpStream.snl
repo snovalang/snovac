@@ -22,6 +22,18 @@ class TcpStream {
         return Socket.receive(handle, maxLength)
     }
 
+    public method writeAll(data: string): unit {
+        if closed { throw IllegalStateException("TcpStream is closed") }
+        var offset = 0
+        while offset < data.length() {
+            var sent = Socket.send(handle, data.substring(offset, data.length()))
+            if sent <= 0 || sent > data.length() - offset {
+                throw RuntimeException("TcpStream.writeAll failed")
+            }
+            offset += sent
+        }
+    }
+
     public method tryWrite(data: string): Result<int, string> {
         if closed {
             return Err("TcpStream is closed")

@@ -160,4 +160,21 @@ else
 fi
 assert "builtin: interpreter runs source implementations" 0 "$builtin_run_rc"
 rm -rf "$BUILTIN_PROJECT"
+
+# Exercise HTTP handler registration and routing against the source builtin.
+HTTP_OUTPUT="$(mktemp)"
+if SNOVA_BUILTIN_DIR="$REPO_ROOT/builtin" "$SNOVAC_ABS" run --project \
+    "$REPO_ROOT/tests/http_server_dispatch" > "$HTTP_OUTPUT"; then
+  http_run_rc=0
+else
+  http_run_rc=$?
+fi
+assert "HTTP handlers: dispatch project runs" 0 "$http_run_rc"
+if same_text "$HTTP_OUTPUT" "$REPO_ROOT/tests/http_server_dispatch/expected.stdout"; then
+  http_output_rc=0
+else
+  http_output_rc=1
+fi
+assert "HTTP handlers: GET, 404, and 405" 0 "$http_output_rc"
+rm -f "$HTTP_OUTPUT"
 . "$DIR/run_fixed.sh"

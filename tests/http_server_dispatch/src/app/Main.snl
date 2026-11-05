@@ -1,0 +1,30 @@
+package app
+
+import builtin.network.http.server
+import builtin.network.http.data.types
+import builtin.collections.collections.types
+
+func hello(request: HttpRequest): HttpResponse {
+    return HttpResponse.text(200, "hello " + request.target)
+}
+
+func main(): int {
+    var server = HttpServer {}
+    server.get("/hello", hello)
+    var headers = Array<Header>.new()
+    var request = HttpRequest {
+        method: "GET", target: "/hello?name=world", headers: headers, body: ""
+    }
+    var response = server.dispatch(request)
+    Console.println(response.status)
+    Console.println(response.body)
+    var missing = HttpRequest {
+        method: "GET", target: "/missing", headers: headers, body: ""
+    }
+    Console.println(server.dispatch(missing).status)
+    var wrongMethod = HttpRequest {
+        method: "POST", target: "/hello", headers: headers, body: ""
+    }
+    Console.println(server.dispatch(wrongMethod).status)
+    return 0
+}

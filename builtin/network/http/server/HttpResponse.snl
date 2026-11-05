@@ -1,0 +1,29 @@
+package builtin.network.http.server
+
+import builtin.collections.collections.types
+import builtin.network.http.data.types
+import builtin.errors.hierarchy.types
+
+struct HttpResponse {
+    public let status: int
+    public let headers: Array<Header>
+    public let body: string
+
+    public static method text(status: int, body: string): HttpResponse {
+        if status < 100 || status > 599 {
+            throw IllegalArgumentException("HTTP status must be between 100 and 599")
+        }
+        var headers = Array<Header>.new()
+        headers.push(Header { name: "Content-Type", value: "text/plain; charset=utf-8" })
+        return HttpResponse { status: status, headers: headers, body: body }
+    }
+
+    public method addHeader(name: string, value: string): unit {
+        var header = Header { name: name, value: value }
+        if header.isValid() == false || name.toLower() == "content-length" ||
+            name.toLower() == "transfer-encoding" || name.toLower() == "connection" {
+            throw IllegalArgumentException("invalid or reserved HTTP response header")
+        }
+        headers.push(header)
+    }
+}
