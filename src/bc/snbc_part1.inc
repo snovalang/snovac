@@ -248,9 +248,10 @@ static const OpInfo OP_INFO[] = {
     {"OP_SPAWN", OP_OPERAND_U32_U32},
     {"OP_CALL_ASYNC", OP_OPERAND_U32_U32},
     {"OP_IS_ARRAY", OP_OPERAND_NONE},
+    {"OP_RUNTIME_API", OP_OPERAND_U32_U32},
 };
 
-_Static_assert(sizeof(OP_INFO) / sizeof(OP_INFO[0]) == (size_t)OP_IS_ARRAY + 1,
+_Static_assert(sizeof(OP_INFO) / sizeof(OP_INFO[0]) == (size_t)OP_RUNTIME_API + 1,
                "every SnOpcode is named");
 
 static int fits_u32(size_t n) {

@@ -140,7 +140,7 @@ pass_total=0; pass_ok=0
 # are counted apart rather than mixed into a single misleading percentage.
 #
 # The same gap also reaches fixtures outside that directory: `try_catch.snl`
-# imports `builtin.errors.Errors`, and `missing_import_type_usage_ok.snl`
+# imports `builtin.errors.errors`, and `missing_import_type_usage_ok.snl`
 # imports `builtin.http.Http`. Those are counted with the package fixtures;
 # the missing dependency is the reason they cannot be checked in this
 # checkout. This classification is only for compile-pass fixtures.

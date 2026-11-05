@@ -1,3 +1,78 @@
+static SnTypeRep *check_variant_constructor(SnChecker *c, SnExpr *call,
+                                            SnSymbol *variant_sym,
+                                            SnSymbol *owner_sym,
+                                            SnTypeRep **arg_tys) {
+    const SnDecl *owner = owner_sym ? owner_sym->decl : NULL;
+    const SnDecl *variant = variant_sym ? variant_sym->decl : NULL;
+    if (!owner || !variant) return sn_type_error(c->types);
+
+    if (variant->params.len != call->args.len) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARITY_MISMATCH, call->span,
+                    "expected %zu argument(s), found %zu",
+                    variant->params.len, call->args.len);
+    } else {
+        for (size_t i = 0; i < variant->params.len; i++) {
+            const SnParam *param = SN_LIST_AT(variant->params, SnParam, i);
+            int is_owner_typevar = 0;
+            if (param->type && param->type->kind == SN_TYPE_NAME) {
+                for (size_t gi = 0; gi < owner->generics.len; gi++) {
+                    const char *generic = SN_LIST_AT(owner->generics, const char, gi);
+                    if (strcmp(generic, param->type->name) == 0) {
+                        is_owner_typevar = 1;
+                        break;
+                    }
+                }
+            }
+            if (is_owner_typevar) continue;
+            SnTypeRep *expected = resolve_declared_type(c, variant_sym, param->type);
+            SnExpr *arg = SN_LIST_AT(call->args, SnExpr, i);
+            arg_tys[i] = adopt_literal_type(c, arg, arg_tys[i], expected);
+            if (types_clash(c, arg_tys[i], expected)) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH,
+                            call->span, "argument %zu (`%s`) has the wrong type",
+                            i + 1, param->name ? param->name : "<value>");
+            }
+        }
+    }
+
+    uint32_t count = (uint32_t)owner->generics.len;
+    if (!count) return sn_type_named(c->types, owner_sym, NULL, 0);
+    SnTypeRep **args = (SnTypeRep **)sn_arena_alloc(c->arena,
+                                                    count * sizeof(SnTypeRep *));
+    for (uint32_t gi = 0; gi < count; gi++) {
+        const char *generic = SN_LIST_AT(owner->generics, const char, gi);
+        args[gi] = sn_type_any(c->types);
+        for (size_t pi = 0; pi < variant->params.len && pi < call->args.len; pi++) {
+            const SnParam *param = SN_LIST_AT(variant->params, SnParam, pi);
+            if (param->type && param->type->kind == SN_TYPE_NAME &&
+                strcmp(param->type->name, generic) == 0) {
+                args[gi] = arg_tys[pi];
+                break;
+            }
+        }
+        if (gi < call->type_args.len) {
+            args[gi] = sn_check_resolve_type(c,
+                SN_LIST_AT(call->type_args, SnType, gi));
+        }
+    }
+    return sn_type_named(c->types, owner_sym, args, count);
+}
+
+/* `Result<T, E>.unwrap()` rethrows E. The generic declaration cannot know
+ * whether E is checked, so specialize that effect from the receiver here. */
+static void check_result_unwrap_effect(SnChecker *c, const SnExpr *call) {
+    if (!call || !call->lhs || call->lhs->kind != SN_EXPR_MEMBER ||
+        !call->lhs->text || strcmp(call->lhs->text, "unwrap") != 0 ||
+        !call->lhs->lhs || !call->lhs->lhs->resolved_type) {
+        return;
+    }
+    const SnTypeRep *receiver = call->lhs->lhs->resolved_type;
+    if (receiver->tag == SN_T_NAMED && receiver->decl && receiver->decl->name &&
+        strcmp(receiver->decl->name, "Result") == 0 && receiver->nargs == 2) {
+        require_error_handled(c, receiver->args[1], call->span);
+    }
+}
+
 SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
     SnTypeRep *result;
 
@@ -106,16 +181,13 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
             break;
         }
         if (!callee_sym) {
-            /* resolve_value_symbol returns NULL both for a real failure (it
-             * has already reported one, and left SN_T_ERROR behind) and for an
-             * intrinsic member, which has no symbol but does leave a real
-             * SN_T_FUNC type behind. The latter is callable; its argument list
-             * is not checked because builtins.c models no parameters.
-             * An immediate call of an inner or anonymous function is a lambda
-             * callee: its parameters are real, so they are checked. */
+            /* resolve_value_symbol returns NULL for a real failure (already
+             * diagnosed) or for an immediate call of an inner/anonymous
+             * function. In the latter case, its resolved function type carries
+             * the signature used to check the arguments below. */
             SnTypeRep *callee_ty = e->lhs->resolved_type;
             if (callee_ty && callee_ty->tag == SN_T_FUNC) {
-                check_call_against_functype(c, e, callee_ty, arg_tys, e->args.len);
+                check_call_against_functype(c, e, callee_ty, arg_tys, e->args.len, 1);
                 result = callee_ty->ret;
                 break;
             }
@@ -134,6 +206,8 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
                 callee_sym = chosen;
                 used_overload = 1;
             }
+            check_call_throws(c, callee_sym->decl, e->span);
+            check_result_unwrap_effect(c, e);
             if (callee_sym->decl->is_pulsar && c->in_async_body) {
                 sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_PULSAR_IN_ASYNC, e->span,
                              "cannot call pulsar function `%s` inside an async function",
@@ -144,7 +218,8 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
                             callee_sym->name, callee_sym->name);
             }
             if (!used_overload && e->lhs->resolved_type && e->lhs->resolved_type->tag == SN_T_FUNC) {
-                check_call_against_functype(c, e, e->lhs->resolved_type, arg_tys, e->args.len);
+                check_call_against_functype(c, e, e->lhs->resolved_type, arg_tys,
+                                            e->args.len, 0);
                 result = e->lhs->resolved_type->ret;
             } else {
                 check_call_args(c, e, callee_sym, &callee_sym->decl->params, arg_tys, e->args.len);
@@ -165,10 +240,8 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
             break;
         }
         if (callee_sym->kind == SN_SYM_VARIANT) {
-            check_call_args(c, e, callee_sym, &callee_sym->decl->params, arg_tys, e->args.len);
             SnSymbol *owner_sym = find_variant_owner_symbol(c->resolver, callee_sym);
-            result = owner_sym ? sn_type_named(c->types, owner_sym, NULL, 0)
-                               : sn_type_error(c->types);
+            result = check_variant_constructor(c, e, callee_sym, owner_sym, arg_tys);
             break;
         }
         if (callee_sym->kind == SN_SYM_TYPE) {
@@ -186,7 +259,7 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
          * function-typed parameter or field. */
         SnTypeRep *callee_ty = e->lhs->resolved_type;
         if (callee_ty && callee_ty->tag == SN_T_FUNC) {
-            check_call_against_functype(c, e, callee_ty, arg_tys, e->args.len);
+            check_call_against_functype(c, e, callee_ty, arg_tys, e->args.len, 1);
             result = callee_ty->ret;
             break;
         }

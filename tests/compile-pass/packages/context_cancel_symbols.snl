@@ -1,8 +1,8 @@
 package tests.packages.context_cancel_symbols
 
 
-import builtin.context.Context
-import builtin.console.Console
+import builtin.context.context
+import builtin.console.console
 
 
 func main(): int {

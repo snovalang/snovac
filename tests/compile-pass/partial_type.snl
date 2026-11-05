@@ -1,10 +1,10 @@
 package tests.partial_type
 
 
-import builtin.console.Console
+import builtin.console.console
 
 
-// `Partial<T>` (Stage 0, crates/snovalang/src/native/validate/static_facts.rs)
+// `Partial<T>` is a compiler intrinsic generic alias whose members come from T.
 // is a compiler-synthesized view of a struct where every field is accessed as
 // if it were `Option<FieldType>` — no hand-written mirror struct required.
 // This fixture exercises the accepted shape: constructing a `Partial<User>`

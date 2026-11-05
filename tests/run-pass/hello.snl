@@ -1,7 +1,7 @@
 package tests.run_pass.hello
 
 
-import builtin.console.Console
+import builtin.console.console
 
 
 func main(): int {

@@ -193,7 +193,8 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
 
     case SN_STMT_THROW:
         if (s->expr) {
-            sn_check_expr(c, local, s->expr);
+            SnTypeRep *thrown = sn_check_expr(c, local, s->expr);
+            require_error_handled(c, thrown, s->span);
         }
         break;
 
@@ -207,9 +208,18 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
         break;
 
     case SN_STMT_TRY:
+        {
+        size_t prior_catches = c->active_catch_types.len;
+        for (size_t i = 0; i < s->catches.len; i++) {
+            SnStmt *handler = SN_LIST_AT(s->catches, SnStmt, i);
+            SnTypeRep *caught = handler->type
+                ? sn_check_resolve_type(c, handler->type) : NULL;
+            sn_list_push(c->arena, &c->active_catch_types, caught);
+        }
         if (s->then_br) {
             sn_check_stmt(c, local, s->then_br);
         }
+        c->active_catch_types.len = prior_catches;
         for (size_t i = 0; i < s->catches.len; i++) {
             SnStmt *handler = SN_LIST_AT(s->catches, SnStmt, i);
             SnScope catch_scope;
@@ -232,6 +242,7 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
             sn_check_stmt(c, local, s->finally_br);
         }
         break;
+        }
 
     case SN_STMT_MATCH: {
         SnTypeRep *target_ty = s->expr ? sn_check_expr(c, local, s->expr) : NULL;

@@ -42,7 +42,7 @@ typedef enum {
      * blob. SN_T_CHAR is not an integer. */
     SN_T_INT8, SN_T_INT16, SN_T_INT32, SN_T_INT64, SN_T_INT128,
     SN_T_ANY,     /* the corpus's escape hatch — `func printline(value: any)`
-                    * in builtin/Console.snl. A real, resolvable type, but
+                    * in builtin/console/console/Console.snl. A real, resolvable type, but
                     * one that never takes part in a mismatch (sn_type_is_any) */
     SN_T_NAMED,   /* class/struct/enum/interface, with generic args */
     SN_T_TYPEVAR, /* type parameter T within a generic scope */
@@ -61,6 +61,8 @@ typedef struct SnTypeRep {
                                * SN_T_ARRAY: args[0] is the element type */
     uint32_t nargs;
     struct SnTypeRep *ret;   /* SN_T_FUNC only */
+    struct SnTypeRep **throws_types; /* SN_T_FUNC: checked effects */
+    uint32_t nthrows;
 } SnTypeRep;
 
 typedef struct SnTypeInternEntry SnTypeInternEntry;
@@ -114,6 +116,9 @@ SnTypeRep *sn_type_named(SnTypeTable *t, SnSymbol *decl, SnTypeRep **args,
 SnTypeRep *sn_type_typevar(SnTypeTable *t, SnSymbol *decl);
 SnTypeRep *sn_type_func(SnTypeTable *t, SnTypeRep **params, uint32_t nparams,
                          SnTypeRep *ret);
+SnTypeRep *sn_type_func_effect(SnTypeTable *t, SnTypeRep **params,
+                                uint32_t nparams, SnTypeRep *ret,
+                                SnTypeRep **throws_types, uint32_t nthrows);
 SnTypeRep *sn_type_array(SnTypeTable *t, SnTypeRep *elem);
 SnTypeRep *sn_type_ref(SnTypeTable *t, SnTypeRep *pointee, int nullable);
 int sn_type_is_ref(const SnTypeRep *t);

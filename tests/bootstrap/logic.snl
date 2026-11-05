@@ -1,6 +1,6 @@
 package tests.bootstrap.logic
 
-import builtin.console.Console
+import builtin.console.console
 
 func mark(): bool {
     Console.printline(1)

@@ -47,12 +47,7 @@ static SnTypeRep *primitive_by_name(SnResolver *r, const char *iname) {
     if (iname == sn_intern_cstr(it, "double")) return sn_type_double(r->types);
     if (iname == sn_intern_cstr(it, "decimal")) return sn_type_decimal(r->types);
     if (iname == sn_intern_cstr(it, "char")) return sn_type_char(r->types);
-    /* Also intrinsic, and also declared by no .snova file anywhere (measured
-     * the same way as the seven above): `any`, `float` and `byte` are used in
-     * builtin signatures (`func printline(value: any)`) and are on the Rust
-     * frontend's builtin-type list too — see
-     * crates/snovalang/src/native/selfcheck/static_facts.rs. Without them the
-     * checker reported SNOVA0027 for every builtin signature mentioning one. */
+    /* Additional primitive tags used by builtin signatures. */
     if (iname == sn_intern_cstr(it, "any")) return sn_type_any(r->types);
     if (iname == sn_intern_cstr(it, "float")) return sn_type_float(r->types);
     if (iname == sn_intern_cstr(it, "byte")) return sn_type_byte(r->types);

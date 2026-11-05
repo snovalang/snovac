@@ -19,6 +19,8 @@ void sn_checker_init(SnChecker *c, SnArena *a, SnInternTable *it, SnDiagSink *di
     c->current_imports = NULL;
     c->enclosing_type = NULL;
     c->current_return_type = NULL;
+    c->current_function = NULL;
+    memset(&c->active_catch_types, 0, sizeof(c->active_catch_types));
     c->type_params = NULL;
     c->in_constructor = 0;
     c->in_async_body = 0;
@@ -232,7 +234,59 @@ static int decl_derives_from(SnChecker *c, const SnDecl *sub, const SnDecl *supe
             return 1;
         }
     }
+    /* Every declared object type inherits the builtin root unless it is the
+     * root itself or explicitly declares another supertype. */
+    if (sub->name && strcmp(sub->name, "Object") != 0) {
+        SnSymbol *object_sym = find_type_symbol_anywhere(
+            c, sub, sn_intern_cstr(c->intern, "Object"));
+        if (object_sym && object_sym->kind == SN_SYM_TYPE && object_sym->decl &&
+            decl_derives_from(c, object_sym->decl, super, depth + 1)) {
+            return 1;
+        }
+    }
     return 0;
+}
+
+static int is_checked_error_type(SnChecker *c, const SnTypeRep *ty) {
+    if (!ty || ty->tag != SN_T_NAMED || !ty->decl || !ty->decl->decl) return 0;
+    SnSymbol *root = find_type_symbol_anywhere(
+        c, c->enclosing_type, sn_intern_cstr(c->intern, "Error"));
+    return root && root->decl && decl_derives_from(c, ty->decl->decl, root->decl, 0);
+}
+
+static int error_is_covered(SnChecker *c, const SnTypeRep *error_ty) {
+    for (size_t i = 0; i < c->active_catch_types.len; i++) {
+        SnTypeRep *caught = SN_LIST_AT(c->active_catch_types, SnTypeRep, i);
+        if (!caught) return 1;
+        if (caught->tag == SN_T_NAMED && caught->decl && error_ty->decl &&
+            decl_derives_from(c, error_ty->decl->decl, caught->decl->decl, 0)) return 1;
+    }
+    if (!c->current_function) return 0;
+    for (size_t i = 0; i < c->current_function->throws_types.len; i++) {
+        SnTypeRep *declared = sn_check_resolve_type(
+            c, SN_LIST_AT(c->current_function->throws_types, SnType, i));
+        if (declared && declared->tag == SN_T_NAMED && declared->decl &&
+            error_ty->decl && decl_derives_from(c, error_ty->decl->decl,
+                                                 declared->decl->decl, 0)) return 1;
+    }
+    return 0;
+}
+
+static void require_error_handled(SnChecker *c, const SnTypeRep *error_ty, SnSpan span) {
+    if (is_checked_error_type(c, error_ty) && !error_is_covered(c, error_ty)) {
+        sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNHANDLED_ERROR, span,
+                     "checked error `%s` must be caught or declared in this function's throws clause",
+                     error_ty->decl->name);
+    }
+}
+
+static void check_call_throws(SnChecker *c, const SnDecl *callee, SnSpan span) {
+    if (!callee) return;
+    for (size_t i = 0; i < callee->throws_types.len; i++) {
+        SnTypeRep *error_ty = sn_check_resolve_type(
+            c, SN_LIST_AT(callee->throws_types, SnType, i));
+        require_error_handled(c, error_ty, span);
+    }
 }
 
 /* True when a value of type `value` cannot stand where `expected` is wanted.
@@ -252,6 +306,48 @@ static int types_clash(SnChecker *c, const SnTypeRep *value, const SnTypeRep *ex
         return 0;
     }
     if (value == expected) {
+        return 0;
+    }
+    if (value->tag == SN_T_FUNC && expected->tag == SN_T_FUNC) {
+        if (value->nargs != expected->nargs) return 1;
+        for (uint32_t i = 0; i < value->nargs; i++) {
+            if (types_clash(c, value->args[i], expected->args[i])) return 1;
+        }
+        if (types_clash(c, value->ret, expected->ret)) return 1;
+        /* The target signature must promise to handle every checked effect
+         * the assigned function can produce. Exception subtypes are covered
+         * by a declared supertype effect. */
+        for (uint32_t i = 0; i < value->nthrows; i++) {
+            const SnTypeRep *actual_effect = value->throws_types[i];
+            int covered = 0;
+            for (uint32_t j = 0; j < expected->nthrows; j++) {
+                const SnTypeRep *accepted_effect = expected->throws_types[j];
+                if (actual_effect == accepted_effect ||
+                    sn_type_is_any(accepted_effect)) {
+                    covered = 1;
+                    break;
+                }
+                if (actual_effect && accepted_effect &&
+                    actual_effect->tag == SN_T_NAMED && accepted_effect->tag == SN_T_NAMED &&
+                    actual_effect->decl && accepted_effect->decl &&
+                    decl_derives_from(c, actual_effect->decl->decl,
+                                      accepted_effect->decl->decl, 0)) {
+                    covered = 1;
+                    break;
+                }
+            }
+            if (!covered) return 1;
+        }
+        return 0;
+    }
+    if (value->tag == expected->tag &&
+        (value->tag == SN_T_ARRAY || value->tag == SN_T_NAMED) &&
+        value->decl == expected->decl && value->nargs == expected->nargs) {
+        for (uint32_t i = 0; i < value->nargs; i++) {
+            if (types_clash(c, value->args[i], expected->args[i])) {
+                return 1;
+            }
+        }
         return 0;
     }
     if (expected->tag == SN_T_NAMED && expected->decl &&
@@ -286,13 +382,10 @@ static SnTypeRep *sn_check_resolve_type_base(SnChecker *c, const SnType *t) {
                 return sn_type_typevar(c->types, tp);
             }
         }
-        /* Intrinsic generic constructors — `Array<T>`, `Partial<T>`. No
-         * .snl file declares them, so they short-circuit before any scope
-         * lookup, exactly as the primitives do inside sn_resolve_type_name.
-         * Their arguments are resolved first because the constructed type
-         * needs them; a non-intrinsic name still resolves its own name first,
-         * so an unknown type keeps reporting one diagnostic and not also one
-         * per unresolved argument. */
+        /* Intrinsic runtime representation for the source-declared Array<T>,
+         * plus the source alias Partial<T>. Arguments are resolved first
+         * because the mapped representation needs them; an ordinary unknown
+         * type still reports once before its generic arguments are visited. */
         if (sn_builtin_is_generic_name(c->intern, sn_intern_cstr(c->intern, t->name))) {
             SnTypeRep **iargs = NULL;
             if (t->args.len) {
@@ -343,7 +436,18 @@ static SnTypeRep *sn_check_resolve_type_base(SnChecker *c, const SnType *t) {
             }
         }
         SnTypeRep *ret = sn_check_resolve_type(c, t->ret);
-        return sn_type_func(c->types, params, (uint32_t)t->params.len, ret);
+        SnTypeRep **throws_types = NULL;
+        if (t->throws_types.len) {
+            throws_types = (SnTypeRep **)sn_arena_alloc(
+                c->arena, t->throws_types.len * sizeof(SnTypeRep *));
+            for (size_t i = 0; i < t->throws_types.len; i++) {
+                throws_types[i] = sn_check_resolve_type(
+                    c, SN_LIST_AT(t->throws_types, SnType, i));
+            }
+        }
+        return sn_type_func_effect(c->types, params, (uint32_t)t->params.len,
+                                   ret, throws_types,
+                                   (uint32_t)t->throws_types.len);
     }
     case SN_TYPE_REF:
         return sn_check_resolve_ref(c, t);
@@ -358,8 +462,15 @@ static SnTypeRep *sn_check_resolve_type_base(SnChecker *c, const SnType *t) {
 SnTypeRep *sn_check_resolve_type(SnChecker *c, const SnType *t) {
     SnTypeRep *res = sn_check_resolve_type_base(c, t);
     if (t && t->is_optional && res != sn_type_error(c->types)) {
-        res = sn_builtin_generic(c->types, c->intern,
-                                  sn_intern_cstr(c->intern, "Option"), &res, 1);
+        SnSymbol *option = find_type_symbol_anywhere(
+            c, c->enclosing_type, sn_intern_cstr(c->intern, "Option"));
+        if (option && option->kind == SN_SYM_TYPE && option->decl &&
+            option->decl->kind == SN_DECL_ENUM && option->decl->generics.len == 1) {
+            res = sn_type_named(c->types, option, &res, 1);
+        } else {
+            res = sn_builtin_generic(c->types, c->intern,
+                                      sn_intern_cstr(c->intern, "Option"), &res, 1);
+        }
     }
     return res;
 }

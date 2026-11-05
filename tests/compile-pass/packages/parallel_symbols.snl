@@ -2,8 +2,8 @@ package tests.packages.parallel_symbols
 
 
 import builtin.parallel.Parallel
-import builtin.context.Context
-import builtin.console.Console
+import builtin.context.context
+import builtin.console.console
 
 
 async func main(): Task<int> {

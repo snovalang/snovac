@@ -2,7 +2,7 @@ package tests.packages.httpserver
 
 
 import builtin.http.Http
-import builtin.errors.Errors
+import builtin.errors.errors
 
 
 @GetRequest("/", mediaType = "application/json", headers = [])

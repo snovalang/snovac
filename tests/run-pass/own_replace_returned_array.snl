@@ -1,6 +1,6 @@
 package tests.run_pass.own_replace_returned_array
 
-import builtin.console.Console
+import builtin.console.console
 
 func makeBox(n: int): Array<int> {
     return [n, n, n, n]

@@ -79,7 +79,8 @@ typedef enum {
     OP_DEFER,         /* [uint32_t fn_idx, uint32_t argc]; args already pushed */
     OP_SPAWN,         /* [uint32_t fn_idx, uint32_t argc]; pulsar launch */
     OP_CALL_ASYNC,    /* [uint32_t fn_idx, uint32_t argc] */
-    OP_IS_ARRAY       /* pop value, push bool */
+    OP_IS_ARRAY,      /* pop value, push bool */
+    OP_RUNTIME_API    /* [uint32_t runtime_call, uint32_t argc] */
 } SnOpcode;
 
 typedef struct {

@@ -1,6 +1,6 @@
 package tests.run_pass.own_stack
 
-import builtin.console.Console
+import builtin.console.console
 
 func main(): int {
     var box = [1, 2, 3]

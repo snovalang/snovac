@@ -78,6 +78,19 @@ static SnType *wrap_array_suffix(P *p, SnType *inner) {
     return inner;
 }
 
+static void parse_function_effects(P *p, SnType *type) {
+    if (!at(p, SN_TOK_IDENT) || strcmp(cur(p)->text, "throws") != 0) return;
+    advance_p(p);
+    int parenthesized = accept(p, SN_TOK_LPAREN);
+    for (;;) {
+        SnType *effect = sn_parse_type(p);
+        if (effect) sn_list_push(p->arena, &type->throws_types, effect);
+        if (!accept(p, SN_TOK_COMMA)) break;
+        if (parenthesized && at(p, SN_TOK_RPAREN)) break;
+    }
+    if (parenthesized) expect(p, SN_TOK_RPAREN);
+}
+
 SnType *sn_parse_type(P *p) {
     SnSpan span = cur(p)->span;
 
@@ -130,6 +143,7 @@ SnType *sn_parse_type(P *p) {
             accept(p, SN_TOK_TILDE_ARROW)) {
             t->ret = sn_parse_type(p);
         }
+        parse_function_effects(p, t);
         return wrap_array_suffix(p, t);
     }
 
@@ -161,6 +175,7 @@ SnType *sn_parse_type(P *p) {
         /* `(T) ~> Channel<R>` is the pulsar-stream form of `(T) -> R`. */
         if (accept(p, SN_TOK_TILDE_ARROW) || accept(p, SN_TOK_ARROW)) {
             t->ret = sn_parse_type(p);
+            parse_function_effects(p, t);
             return wrap_array_suffix(p, t);
         }
         /* No arrow: `(K, V)` is a tuple type (`Option<(K, V)>`), and a single

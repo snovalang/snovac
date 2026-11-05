@@ -1,6 +1,6 @@
 package tests.extension_invocation
 
-import builtin.console.Console
+import builtin.console.console
 
 class Counter {
     private var value: Int

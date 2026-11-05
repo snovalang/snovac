@@ -25,6 +25,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "#include <string.h>\n");
   fprintf(f, "#include <stdint.h>\n");
   fprintf(f, "#include <stdbool.h>\n");
+  fprintf(f, "#include <errno.h>\n#include <sys/stat.h>\n");
 
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "#include <windows.h>\n");
@@ -121,7 +122,12 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "  if (cond.tag == VAL_BOOL) return cond.as.b != 0;\n");
   fprintf(f, "  if (cond.tag == VAL_INT) return cond.as.i != 0;\n");
   fprintf(f, "  return 0;\n}\n\n");
-  fprintf(f, "static Val g_ret;\n\n");
+  fprintf(f, "static Val g_ret;\n");
+  fprintf(f, "static int g_app_argc; static char **g_app_argv;\n\n");
+  fprintf(f,
+          "static char *sn_runtime_read_line(void) { size_t n = 0, cap = 128; char *s = malloc(cap); if (!s) return NULL; int c; while ((c = fgetc(stdin)) != EOF && c != '\\n') { if (n + 1 >= cap) { if (cap > ((size_t)-1) / 2) { free(s); return NULL; } cap *= 2; char *p = realloc(s, cap); if (!p) { free(s); return NULL; } s = p; } s[n++] = (char)c; } if (c == EOF && n == 0) { free(s); return NULL; } if (n && s[n - 1] == '\\r') n--; s[n] = 0; return s; }\n");
+  fprintf(f,
+          "static char *sn_runtime_read_text(const char *path) { FILE *p = fopen(path, \"rb\"); if (!p) return NULL; size_t n = 0, cap = 4096; char *s = malloc(cap + 1); if (!s) { fclose(p); return NULL; } for (;;) { if (n == cap) { if (cap > ((size_t)-1 - 1) / 2) { free(s); fclose(p); return NULL; } cap *= 2; char *g = realloc(s, cap + 1); if (!g) { free(s); fclose(p); return NULL; } s = g; } size_t r = fread(s + n, 1, cap - n, p); n += r; if (r == 0) { if (ferror(p)) { free(s); fclose(p); return NULL; } break; } } fclose(p); s[n] = 0; return s; }\n");
   fprintf(f, "static void print_val(Val v, int nl) {\n");
   fprintf(f, "  if (v.tag == VAL_STRING) printf(\"%%s\", v.as.str ? v.as.str : \"\");\n");
   fprintf(f, "  else if (v.tag == VAL_INT) printf(\"%%lld\", (long long)v.as.i);\n");

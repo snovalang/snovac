@@ -1,0 +1,11 @@
+package builtin.net.net
+
+extension TcpStream {
+    public method readAvailable(maxLength: int): string {
+        return this.read(maxLength)
+    }
+
+    public method writeText(data: string): int {
+        return this.write(data)
+    }
+}

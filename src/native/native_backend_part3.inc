@@ -224,6 +224,26 @@
   fprintf(f,
           "    case %d: { uint8_t nl = *ip++; Val v = pop(); print_val(v, nl); break; }\n",
           OP_PRINT);
+  fprintf(f,
+          "    case %d: { uint32_t call = read_u32(&ip), argc = read_u32(&ip); Val a1 = {0}, a0 = {0}, r = {0};\n"
+          "      if (argc > 2) { fputs(\"runtime API arity error\\n\", stderr); exit(70); }\n"
+          "      if (argc > 1) a1 = pop(); if (argc > 0) a0 = pop();\n"
+          "      switch (call) {\n"
+          "      case %u: { char *line = sn_runtime_read_line(); r.tag = VAL_STRING; r.as.str = line ? line : (char*)\"\"; break; }\n"
+          "      case %u: { struct stat st; r.tag = VAL_BOOL; r.as.b = a0.tag == VAL_STRING && stat(a0.as.str, &st) == 0 && S_ISREG(st.st_mode); break; }\n"
+          "      case %u: { char *text = a0.tag == VAL_STRING ? sn_runtime_read_text(a0.as.str) : NULL; if (!text) { fprintf(stderr, \"cannot read '%%s': %%s\\n\", a0.tag == VAL_STRING ? a0.as.str : \"\", strerror(errno)); exit(1); } r.tag = VAL_STRING; r.as.str = text; break; }\n"
+          "      case %u: { int ok = 0; if (a0.tag == VAL_STRING && a1.tag == VAL_STRING) { FILE *p = fopen(a0.as.str, \"wb\"); if (p) { size_t n = strlen(a1.as.str); ok = fwrite(a1.as.str, 1, n, p) == n && fflush(p) == 0; if (fclose(p) != 0) ok = 0; } } if (!ok) { fprintf(stderr, \"cannot write file: %%s\\n\", strerror(errno)); exit(1); } r.tag = VAL_BOOL; r.as.b = true; break; }\n"
+          "      case %u: { const char *v = a0.tag == VAL_STRING ? getenv(a0.as.str) : NULL; r.tag = VAL_STRING; r.as.str = (char*)(v ? v : \"\"); break; }\n"
+          "      case %u: r.tag = VAL_INT; r.as.i = g_app_argc; break;\n"
+          "      case %u: { const char *v = a0.tag == VAL_INT && a0.as.i >= 0 && a0.as.i < g_app_argc ? g_app_argv[a0.as.i] : NULL; r.tag = VAL_STRING; r.as.str = (char*)(v ? v : \"\"); break; }\n"
+          "      case %u: { struct stat st; r.tag = VAL_BOOL; r.as.b = a0.tag == VAL_STRING && stat(a0.as.str, &st) == 0; break; }\n"
+          "      default: fputs(\"unknown runtime API call\\n\", stderr); exit(70);\n"
+          "      } push(r); break; }\n",
+          OP_RUNTIME_API, (unsigned)SN_RUNTIME_CALL_READ_LINE,
+          (unsigned)SN_RUNTIME_CALL_FILE_EXISTS, (unsigned)SN_RUNTIME_CALL_READ_TEXT,
+          (unsigned)SN_RUNTIME_CALL_WRITE_TEXT, (unsigned)SN_RUNTIME_CALL_ENVIRONMENT,
+          (unsigned)SN_RUNTIME_CALL_ARGUMENT_COUNT, (unsigned)SN_RUNTIME_CALL_ARGUMENT,
+          (unsigned)SN_RUNTIME_CALL_PATH_EXISTS);
   fprintf(f, "    case %d: g_ret.tag = VAL_INT; g_ret.as.i = 0; return 0;\n", OP_HALT);
   sn_native_write_scope_ops(f, target->os == SN_OS_WINDOWS);
   fprintf(f, "    default: fprintf(stderr, \"error: unknown opcode %%u\\n\", (unsigned)op); exit(1);\n");
@@ -231,7 +251,7 @@
 
   /* Main entry */
   fprintf(f, "int main(int argc, char **argv) {\n");
-  fprintf(f, "  (void)argc; (void)argv;\n");
+  fprintf(f, "  g_app_argc = argc > 1 ? argc - 1 : 0; g_app_argv = argc > 1 ? argv + 1 : NULL;\n");
   if (target->os == SN_OS_WINDOWS) {
     /* Drain waits until this thread consumes the queue. Without it,
      * OP_SPAWN sleeps forever on the condition variable. */

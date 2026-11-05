@@ -3,8 +3,8 @@ package tests.packages.events
 
 import builtin.events.Events
 import builtin.json.Json
-import builtin.console.Console
-import builtin.async.Async
+import builtin.console.console
+import builtin.async.async
 
 
 @Json

@@ -137,6 +137,16 @@ static SnDecl *parse_constructor(P *p, SnSpan span) {
     if (accept(p, SN_TOK_COLON)) {
         c->ret = sn_parse_type(p);
     }
+    if (at(p, SN_TOK_IDENT) && strcmp(cur(p)->text, "throws") == 0) {
+        advance_p(p);
+        int paren = accept(p, SN_TOK_LPAREN);
+        for (;;) {
+            sn_list_push(p->arena, &c->throws_types, sn_parse_type(p));
+            if (!accept(p, SN_TOK_COMMA)) break;
+            if (paren && at(p, SN_TOK_RPAREN)) break;
+        }
+        if (paren) expect(p, SN_TOK_RPAREN);
+    }
     if (at(p, SN_TOK_LBRACE)) {
         c->body = sn_parse_block(p);
     }
@@ -154,6 +164,17 @@ static void parse_routine_signature_and_body(P *p, SnDecl *d) {
     if (accept(p, SN_TOK_COLON) || accept(p, SN_TOK_ARROW) ||
         accept(p, SN_TOK_TILDE_ARROW)) {
         d->ret = sn_parse_type(p);
+    }
+    /* Checked error effects: `throws Error` or `throws(Error, IoError)`. */
+    if (at(p, SN_TOK_IDENT) && strcmp(cur(p)->text, "throws") == 0) {
+        advance_p(p);
+        int paren = accept(p, SN_TOK_LPAREN);
+        for (;;) {
+            sn_list_push(p->arena, &d->throws_types, sn_parse_type(p));
+            if (!accept(p, SN_TOK_COMMA)) break;
+            if (paren && at(p, SN_TOK_RPAREN)) break;
+        }
+        if (paren) expect(p, SN_TOK_RPAREN);
     }
     if (at(p, SN_TOK_LBRACE)) {
         d->body = sn_parse_block(p);

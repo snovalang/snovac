@@ -1,6 +1,6 @@
 package tests.bootstrap.defer_order
 
-import builtin.console.Console
+import builtin.console.console
 
 func line(s: string): unit {
     Console.printline(s)

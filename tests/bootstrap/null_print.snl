@@ -1,6 +1,6 @@
 package tests.bootstrap.null_print
 
-import builtin.console.Console
+import builtin.console.console
 
 func main(): int {
     var p: &int? = null

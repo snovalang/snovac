@@ -1,0 +1,51 @@
+package builtin.util.concurrent.concurrent
+
+import builtin.errors.errors
+
+class Semaphore {
+    private var permits: int
+
+    public static method new(initialPermits: int): Semaphore {
+        if initialPermits < 0 {
+            throw IllegalArgumentException("Semaphore permits cannot be negative")
+        }
+        return Semaphore { permits: initialPermits }
+    }
+
+    public method available(): int {
+        return permits
+    }
+
+    public method tryAcquire(): bool {
+        if permits <= 0 {
+            return false
+        }
+        permits = permits - 1
+        return true
+    }
+
+    public method tryAcquireMany(amount: int): bool {
+        if amount <= 0 {
+            throw IllegalArgumentException("Semaphore acquisition amount must be positive")
+        }
+        if permits < amount {
+            return false
+        }
+        permits = permits - amount
+        return true
+    }
+
+    public method release(): unit {
+        this.releaseMany(1)
+    }
+
+    public method releaseMany(amount: int): unit {
+        if amount <= 0 {
+            throw IllegalArgumentException("Semaphore release amount must be positive")
+        }
+        if permits > 9223372036854775807 - amount {
+            throw ArithmeticException("Semaphore permit count overflow")
+        }
+        permits = permits + amount
+    }
+}

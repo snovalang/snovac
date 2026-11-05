@@ -1,0 +1,94 @@
+package builtin.net.http.types
+
+import builtin.collections.collections
+import builtin.memory.types
+import builtin.types
+
+struct Response {
+    status: int
+    headers: Array<Header>
+    body: ByteSpan
+
+    public method isSuccessful(): bool {
+        return status >= 200 && status < 300
+    }
+
+    public method isInformational(): bool {
+        return status >= 100 && status < 200
+    }
+
+    public method isRedirect(): bool {
+        return status >= 300 && status < 400
+    }
+
+    public method isClientError(): bool {
+        return status >= 400 && status < 500
+    }
+
+    public method isServerError(): bool {
+        return status >= 500 && status < 600
+    }
+
+    public method isError(): bool {
+        return this.isClientError() || this.isServerError()
+    }
+
+    public method isValidStatus(): bool {
+        return status >= 100 && status <= 599
+    }
+
+    public method headerCount(): int {
+        return headers.length()
+    }
+
+    public method hasHeader(name: string): bool {
+        var i = 0
+        while i < headers.length() {
+            if headers.get(i).isNamed(name) { return true }
+            i += 1
+        }
+        return false
+    }
+
+    public method header(name: string): Option<string> {
+        var i = 0
+        while i < headers.length() {
+            var item = headers.get(i)
+            if item.isNamed(name) { return Some(item.value) }
+            i += 1
+        }
+        return None
+    }
+
+    public method headerValues(name: string): Array<string> {
+        var result = Array<string>.new()
+        var i = 0
+        while i < headers.length() {
+            var item = headers.get(i)
+            if item.isNamed(name) {
+                result.push(item.value)
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method hasBody(): bool {
+        var zero: int64 = 0L as int64
+        return body.length > zero
+    }
+
+    public method isValid(): bool {
+        if this.isValidStatus() == false {
+            return false
+        }
+        var i = 0
+        while i < headers.length() {
+            if headers.get(i).isValid() == false {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+}

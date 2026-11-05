@@ -1,0 +1,385 @@
+package builtin.strings.strings
+
+import builtin.types
+
+public func parseInt(value: string): Result<int, string> {
+    return parseIntRadix(value, 10)
+}
+
+public func parseIntRadix(value: string, radix: int): Result<int, string> {
+    if radix < 2 || radix > 36 {
+        return Err("integer radix must be between 2 and 36")
+    }
+    var text = value.trim()
+    if text.isEmpty() {
+        return Err("cannot parse an empty integer")
+    }
+
+    var negative = false
+    var index = 0
+    if text.startsWith("-") {
+        negative = true
+        index = 1
+    } else if text.startsWith("+") {
+        index = 1
+    }
+    if index >= text.length() {
+        return Err("integer sign must be followed by digits")
+    }
+
+    var maximum: int = 9223372036854775807
+    var minimum: int = -9223372036854775807 - 1
+    var limit = -maximum
+    if negative {
+        limit = minimum
+    }
+    var multiplyLimit = limit / radix
+    var result = 0
+    var digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    while index < text.length() {
+        var character = text.charAt(index).toString().toLower()
+        var digit = digits.indexOf(character)
+        if digit < 0 || digit >= radix {
+            return Err("invalid digit in integer")
+        }
+        if result < multiplyLimit {
+            return Err("integer value overflows 64-bit range")
+        }
+        result = result * radix
+        if result < limit + digit {
+            return Err("integer value overflows 64-bit range")
+        }
+        result = result - digit
+        index += 1
+    }
+
+    if negative {
+        return Ok(result)
+    }
+    return Ok(-result)
+}
+
+public func parseLong(value: string): Result<long, string> {
+    return parseLongRadix(value, 10)
+}
+
+public func parseLongRadix(value: string, radix: int): Result<long, string> {
+    match parseIntRadix(value, radix) {
+        Ok(number) -> return Ok(number as long)
+        Err(error) -> return Err(error)
+    }
+    return Err("parseLongRadix reached an invalid state")
+}
+
+public func parseInt8(value: string): Result<int8, string> {
+    match parseInt(value) {
+        Ok(number) -> {
+            if number < -128 || number > 127 {
+                return Err("integer value is outside int8 range")
+            }
+            return Ok(number as int8)
+        }
+        Err(error) -> return Err(error)
+    }
+    return Err("parseInt8 reached an invalid state")
+}
+
+public func parseInt16(value: string): Result<int16, string> {
+    match parseInt(value) {
+        Ok(number) -> {
+            if number < -32768 || number > 32767 {
+                return Err("integer value is outside int16 range")
+            }
+            return Ok(number as int16)
+        }
+        Err(error) -> return Err(error)
+    }
+    return Err("parseInt16 reached an invalid state")
+}
+
+public func parseInt32(value: string): Result<int32, string> {
+    match parseInt(value) {
+        Ok(number) -> {
+            if number < -2147483648 || number > 2147483647 {
+                return Err("integer value is outside int32 range")
+            }
+            return Ok(number as int32)
+        }
+        Err(error) -> return Err(error)
+    }
+    return Err("parseInt32 reached an invalid state")
+}
+
+public func parseInt64(value: string): Result<int64, string> {
+    match parseInt(value) {
+        Ok(number) -> return Ok(number as int64)
+        Err(error) -> return Err(error)
+    }
+    return Err("parseInt64 reached an invalid state")
+}
+
+public func parseByte(value: string): Result<byte, string> {
+    match parseInt(value) {
+        Ok(number) -> {
+            if number < 0 || number > 255 {
+                return Err("integer value is outside byte range")
+            }
+            return Ok(number as byte)
+        }
+        Err(error) -> return Err(error)
+    }
+    return Err("parseByte reached an invalid state")
+}
+
+public func tryParseInt(value: string): Option<int> {
+    return tryParseIntRadix(value, 10)
+}
+
+public func tryParseIntRadix(value: string, radix: int): Option<int> {
+    match parseIntRadix(value, radix) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func tryParseLong(value: string): Option<long> {
+    match parseLong(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func tryParseInt8(value: string): Option<int8> {
+    match parseInt8(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func tryParseInt16(value: string): Option<int16> {
+    match parseInt16(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func tryParseInt32(value: string): Option<int32> {
+    match parseInt32(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func tryParseInt64(value: string): Option<int64> {
+    match parseInt64(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func tryParseByte(value: string): Option<byte> {
+    match parseByte(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func parseBool(value: string): Result<bool, string> {
+    match value.trim().toLower() {
+        "true" -> return Ok(true)
+        "false" -> return Ok(false)
+        _ -> return Err("boolean value must be true or false")
+    }
+}
+
+public func tryParseBool(value: string): Option<bool> {
+    match parseBool(value) {
+        Ok(parsed) -> return Some(parsed)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func parseDouble(value: string): Result<double, string> {
+    var text = value.trim()
+    if text.isEmpty() {
+        return Err("cannot parse an empty floating-point number")
+    }
+
+    var negative = false
+    var index = 0
+    if text.startsWith("-") {
+        negative = true
+        index = 1
+    } else if text.startsWith("+") {
+        index = 1
+    }
+    if index >= text.length() {
+        return Err("floating-point sign must be followed by digits")
+    }
+
+    var digits = "0123456789"
+    var mantissa: double = 0.0 as double
+    var keptDigits = 0
+    var droppedDigits = 0
+    var guardDigit = -1
+    var fractionalDigits = 0
+    var sawDigit = false
+    var sawSignificant = false
+    var afterDecimal = false
+
+    while index < text.length() {
+        var character = text.charAt(index).toString()
+        if character == "." && afterDecimal == false {
+            afterDecimal = true
+            index += 1
+        } else {
+            var digit = digits.indexOf(character)
+            if digit < 0 {
+                break
+            }
+            sawDigit = true
+            if afterDecimal {
+                fractionalDigits += 1
+            }
+            if digit != 0 || sawSignificant {
+                sawSignificant = true
+                if keptDigits < 17 {
+                    mantissa = mantissa * (10.0 as double) + (digit as double)
+                    keptDigits += 1
+                } else {
+                    if guardDigit < 0 {
+                        guardDigit = digit
+                    }
+                    droppedDigits += 1
+                }
+            }
+            index += 1
+        }
+    }
+
+    if sawDigit == false {
+        return Err("floating-point value contains no digits")
+    }
+
+    // Keep 17 significant digits and round half up with the first discarded digit.
+    if guardDigit >= 5 {
+        mantissa = mantissa + (1.0 as double)
+        if mantissa >= (100000000000000000.0 as double) {
+            mantissa = mantissa / (10.0 as double)
+            droppedDigits += 1
+        }
+    }
+
+    var explicitExponent = 0
+    if index < text.length() {
+        var marker = text.charAt(index).toString().toLower()
+        if marker != "e" {
+            return Err("invalid character in floating-point value")
+        }
+        index += 1
+        var exponentNegative = false
+        if index < text.length() && text.charAt(index).toString() == "-" {
+            exponentNegative = true
+            index += 1
+        } else if index < text.length() && text.charAt(index).toString() == "+" {
+            index += 1
+        }
+        var exponentDigits = 0
+        while index < text.length() {
+            var digit = digits.indexOf(text.charAt(index).toString())
+            if digit < 0 {
+                return Err("invalid exponent in floating-point value")
+            }
+            exponentDigits += 1
+            if explicitExponent <= 10000 {
+                explicitExponent = explicitExponent * 10 + digit
+            }
+            index += 1
+        }
+        if exponentDigits == 0 {
+            return Err("floating-point exponent requires digits")
+        }
+        if explicitExponent > 10000 {
+            return Err("floating-point exponent is out of range")
+        }
+        if exponentNegative {
+            explicitExponent = -explicitExponent
+        }
+    }
+
+    var power = explicitExponent - fractionalDigits + droppedDigits
+    var result = mantissa
+    var maximum: double = 1.7976931348623157e308
+    while power > 0 {
+        if result > maximum / (10.0 as double) {
+            return Err("floating-point value overflows double range")
+        }
+        result = result * (10.0 as double)
+        if result > maximum {
+            return Err("floating-point value overflows double range")
+        }
+        power -= 1
+    }
+    while power < 0 {
+        result = result / (10.0 as double)
+        power += 1
+    }
+    if negative {
+        result = -result
+    }
+    return Ok(result)
+}
+
+public func parseFloat(value: string): Result<float, string> {
+    match parseDouble(value) {
+        Ok(number) -> {
+            var maximum: double = 3.4028234663852886e38
+            if number > maximum || number < -maximum {
+                return Err("floating-point value overflows float range")
+            }
+            return Ok(number as float)
+        }
+        Err(error) -> return Err(error)
+    }
+    return Err("parseFloat reached an invalid state")
+}
+
+public func parseDecimal(value: string): Result<decimal, string> {
+    match parseDouble(value) {
+        Ok(number) -> return Ok(number as decimal)
+        Err(error) -> return Err(error)
+    }
+    return Err("parseDecimal reached an invalid state")
+}
+
+public func tryParseDouble(value: string): Option<double> {
+    match parseDouble(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func tryParseFloat(value: string): Option<float> {
+    match parseFloat(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}
+
+public func tryParseDecimal(value: string): Option<decimal> {
+    match parseDecimal(value) {
+        Ok(number) -> return Some(number)
+        Err(_) -> return None
+    }
+    return None
+}

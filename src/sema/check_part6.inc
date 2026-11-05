@@ -84,6 +84,7 @@
         break;
     }
     case SN_EXPR_STRUCT_LIT: {
+        result = sn_type_error(c->types);
         SnSymbol *sym = NULL;
         if (e->lhs && e->lhs->text) {
             /* Scope lookup compares interned pointers. The type name on the
@@ -93,9 +94,35 @@
                                             sn_intern_cstr(c->intern, e->lhs->text));
         }
         if (sym && sym->kind == SN_SYM_TYPE) {
-            result = sn_type_named(c->types, sym, NULL, 0);
             const SnDecl *td = sym->decl;
             if (td) {
+                SnScope type_params_scope;
+                SnScope *previous_type_params = c->type_params;
+                if (previous_type_params && c->enclosing_type == td) {
+                    /* A literal inside its own generic declaration shares the
+                     * same type variables as its fields and return signature. */
+                    c->type_params = previous_type_params;
+                } else {
+                    sn_scope_init(&type_params_scope, c->arena, previous_type_params);
+                    define_type_params(c, &type_params_scope, td);
+                    c->type_params = &type_params_scope;
+                }
+
+                uint32_t generic_count = (uint32_t)td->generics.len;
+                SnTypeRep **generic_args = generic_count
+                    ? (SnTypeRep **)sn_arena_alloc(c->arena,
+                        generic_count * sizeof(SnTypeRep *)) : NULL;
+                uint8_t *generic_known = generic_count
+                    ? (uint8_t *)sn_arena_calloc(c->arena, generic_count) : NULL;
+                for (uint32_t gi = 0; gi < generic_count; gi++) {
+                    generic_args[gi] = sn_type_any(c->types);
+                    if (e->lhs && gi < e->lhs->type_args.len) {
+                        generic_args[gi] = sn_check_resolve_type(c,
+                            SN_LIST_AT(e->lhs->type_args, SnType, gi));
+                        generic_known[gi] = 1;
+                    }
+                }
+
                 int saw_named = 0;
                 int saw_pos = 0;
                 for (size_t i = 0; i < e->field_names.len; i++) {
@@ -108,6 +135,7 @@
                 if (saw_named && saw_pos) {
                     sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, e->span,
                                 "struct literal mixes named and positional values");
+                    c->type_params = previous_type_params;
                     break;
                 }
                 if (saw_pos) {
@@ -127,6 +155,7 @@
                     if (e->args.len < required || e->args.len > total) {
                         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARITY_MISMATCH, e->span,
                                     "expected %zu argument(s), found %zu", required, e->args.len);
+                        c->type_params = previous_type_params;
                         break;
                     }
                     size_t ai = 0;
@@ -144,11 +173,18 @@
                             arg_ty = decl_ty;
                         } else {
                             arg_ty = sn_check_expr(c, local, arg);
-                            if (decl_ty) {
+                            if (decl_ty && !generic_count)
                                 arg_ty = adopt_literal_type(c, arg, arg_ty, decl_ty);
-                            }
                         }
-                        if (decl_ty && types_clash(c, arg_ty, decl_ty)) {
+                        if (decl_ty && generic_count)
+                            infer_struct_generic(c, td, decl_ty, arg_ty,
+                                                 generic_args, generic_known, e->span);
+                        SnTypeRep *expected = generic_count
+                            ? sn_type_subst_names(c->types, decl_ty,
+                                (const char *const *)td->generics.items,
+                                generic_args, generic_count)
+                            : decl_ty;
+                        if (expected && types_clash(c, arg_ty, expected)) {
                             sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH,
                                          arg ? arg->span : e->span,
                                          "cannot assign incompatible value to field `%s`",
@@ -156,13 +192,16 @@
                         }
                         ai++;
                     }
+                    result = sn_type_named(c->types, sym, generic_args, generic_count);
+                    c->type_params = previous_type_params;
                     break;
                 }
                 for (size_t i = 0; i < e->field_names.len; i++) {
                     const char *fname = SN_LIST_AT(e->field_names, const char, i);
                     SnExpr *arg = SN_LIST_AT(e->args, SnExpr, i);
                     SnSymbol *fsym = lookup_member_with_inheritance(c, td, sn_intern_cstr(c->intern, fname));
-                    SnTypeRep *decl_ty = fsym ? symbol_type(c, fsym) : NULL;
+                    SnTypeRep *decl_ty = fsym
+                        ? resolve_declared_type(c, sym, fsym->decl->type) : NULL;
                     SnTypeRep *arg_ty;
                     /* `field: []` on an `int[]` field uses the field type the
                      * same way `var xs: int[] = []` uses the binding. Checked
@@ -174,20 +213,29 @@
                         arg_ty = decl_ty;
                     } else {
                         arg_ty = sn_check_expr(c, local, arg);
-                        if (decl_ty) {
+                        if (decl_ty && !generic_count)
                             arg_ty = adopt_literal_type(c, arg, arg_ty, decl_ty);
-                        }
                     }
+                    if (decl_ty && generic_count)
+                        infer_struct_generic(c, td, decl_ty, arg_ty,
+                                             generic_args, generic_known, e->span);
+                    SnTypeRep *expected = generic_count
+                        ? sn_type_subst_names(c->types, decl_ty,
+                            (const char *const *)td->generics.items,
+                            generic_args, generic_count)
+                        : decl_ty;
                     if (!fsym) {
                         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNKNOWN_MEMBER,
                                      arg ? arg->span : e->span,
                                      "type `%s` has no field named `%s`", td->name, fname);
-                    } else if (decl_ty && types_clash(c, arg_ty, decl_ty)) {
+                    } else if (expected && types_clash(c, arg_ty, expected)) {
                         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH,
                                      arg ? arg->span : e->span,
                                      "cannot assign incompatible value to field `%s`", fname);
                     }
                 }
+                result = sn_type_named(c->types, sym, generic_args, generic_count);
+                c->type_params = previous_type_params;
             }
         } else {
             result = sn_type_error(c->types);
@@ -202,6 +250,38 @@
 
     e->resolved_type = result;
     return result;
+}
+
+static void infer_struct_generic(SnChecker *c, const SnDecl *owner,
+                                 const SnTypeRep *expected, SnTypeRep *actual,
+                                 SnTypeRep **args, uint8_t *known, SnSpan span) {
+    if (!expected || !actual || !owner || !args || !known) return;
+    if (expected->tag == SN_T_TYPEVAR && expected->decl && expected->decl->name) {
+        for (size_t i = 0; i < owner->generics.len; i++) {
+            const char *name = SN_LIST_AT(owner->generics, const char, i);
+            if (strcmp(name, expected->decl->name) != 0) continue;
+            if (!known[i]) {
+                args[i] = actual;
+                known[i] = 1;
+            } else if (types_clash(c, args[i], actual)) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARG_TYPE_MISMATCH, span,
+                             "generic field values infer incompatible types for `%s`", name);
+            }
+            return;
+        }
+    }
+    if (expected->tag == SN_T_ARRAY && actual->tag == SN_T_ARRAY &&
+        expected->nargs && actual->nargs) {
+        infer_struct_generic(c, owner, expected->args[0], actual->args[0],
+                             args, known, span);
+        return;
+    }
+    if (expected->tag == SN_T_NAMED && actual->tag == SN_T_NAMED &&
+        expected->decl == actual->decl && expected->nargs == actual->nargs) {
+        for (uint32_t i = 0; i < expected->nargs; i++)
+            infer_struct_generic(c, owner, expected->args[i], actual->args[i],
+                                 args, known, span);
+    }
 }
 
 static void check_match_exhaustiveness(SnChecker *c, const SnTypeRep *target_ty,
@@ -220,11 +300,11 @@ static void check_match_exhaustiveness(SnChecker *c, const SnTypeRep *target_ty,
     if (target_ty->tag == SN_T_NAMED && target_ty->decl && target_ty->decl->decl &&
         target_ty->decl->decl->kind == SN_DECL_ENUM) {
         const SnDecl *enum_decl = target_ty->decl->decl;
-        size_t total_variants = enum_decl->members.len;
+        size_t total_variants = enum_decl->variants.len;
         if (total_variants == 0) return;
 
         for (size_t vi = 0; vi < total_variants; vi++) {
-            const SnDecl *v = SN_LIST_AT(enum_decl->members, SnDecl, vi);
+            const SnDecl *v = SN_LIST_AT(enum_decl->variants, SnDecl, vi);
             int covered = 0;
             for (size_t ai = 0; ai < arms->len; ai++) {
                 const SnMatchArm *arm = SN_LIST_AT(*arms, SnMatchArm, ai);

@@ -302,9 +302,9 @@ int sn_driver_find_builtin_root(const char *start_dir, char *out, size_t out_sz)
     }
 
     char candidate[SNOVAC_PATH_MAX + 128];
+    struct stat builtin_st;
     snprintf(candidate, sizeof(candidate), "%s/builtin", cur);
-    struct stat st;
-    if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
+    if (stat(candidate, &builtin_st) == 0 && S_ISDIR(builtin_st.st_mode)) {
       sn_driver_normalize_path(candidate, out, out_sz);
       return 1;
     }

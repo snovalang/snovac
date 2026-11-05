@@ -2,7 +2,7 @@ package tests.packages.builtin_prelude_no_import
 
 // Proves the builtin prelude (Collections/DateTime/Types, folded in
 // unconditionally by `Resolver::include_builtin_prelude`) resolves with
-// zero `import` statements — no `import builtin.collections.Collections`,
+// zero `import` statements — no `import builtin.collections.collections`,
 // `import builtin.datetime.DateTime`, or anything naming `Option`/`Result`
 // appears anywhere in this file. See
 // specs/20260711/builtin-prelude-types/llm.md.

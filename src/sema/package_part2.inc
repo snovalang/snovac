@@ -242,8 +242,8 @@ size_t sn_pkggraph_scan_root_fallback(SnPackageGraph *g, const char *root) {
 /* Resolves one import target to the package that provides it.
  *
  * An import names either a package outright or a SYMBOL inside one, and the
- * corpus uses both spellings against the same graph: `builtin.console.Console`
- * is a whole package (builtin/Console.snl declares exactly that), while
+ * corpus uses both spellings against the same graph: `builtin.console.console`
+ * is a whole package (builtin/console/console/Console.snl declares exactly that), while
  * `builtin.auth.Auth.OAuth2` and `stdlib.sonar.serialization.Json` name a
  * symbol inside packages `builtin.auth.Auth` and `stdlib.sonar.serialization`.
  * Nothing in the syntax distinguishes the two, so resolution is longest-match:

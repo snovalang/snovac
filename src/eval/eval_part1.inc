@@ -21,6 +21,28 @@ void sn_rt_error(SnEvalInterp *in, int code, SnSpan span, const char *fmt, ...) 
     in->flow = FLOW_RETURN;
 }
 
+void sn_rt_throw_exception(SnEvalInterp *in, const char *type_name,
+                           const char *message, SnSpan span) {
+    if (!in || in->failed || in->flow == FLOW_THROW) return;
+    const SnDecl *cls = sn_eval_find_type(in, type_name);
+    if (!cls) {
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span, "%s", message ? message : "runtime failure");
+        return;
+    }
+    SnEvalObject *exception = sn_eval_instantiate(in, cls, NULL, NULL,
+                                                  in->globals, span);
+    SnEvalValue *detail = sn_eval_object_field(exception, "detail");
+    if (!detail) {
+        sn_rt_error(in, SNOVA_TYPE_ERROR, span,
+                    "runtime exception `%s` has no `detail` field", type_name);
+        return;
+    }
+    *detail = v_str(message ? message : "runtime failure");
+    in->thrown.kind = V_OBJECT;
+    in->thrown.as.o = exception;
+    in->flow = FLOW_THROW;
+}
+
 /* ── environment ──────────────────────────────────────────────────────────── */
 
 SnEvalEnv *sn_eval_env_new(SnEvalInterp *in, SnEvalEnv *parent) {
@@ -73,6 +95,18 @@ char *sn_eval_str_concat(SnEvalInterp *in, const char *a, const char *b) {
     return out;
 }
 
+SnEvalValue sn_eval_call_value(SnEvalInterp *in, SnEvalValue callable, SnList *args,
+                               SnEvalEnv *caller, SnSpan span) {
+    if (callable.kind == V_LAMBDA && callable.as.lam) {
+        return sn_eval_call_lambda(in, callable.as.lam, args, caller, span);
+    }
+    if (callable.kind == V_FUNCTION && callable.as.func) {
+        return sn_eval_call_function(in, callable.as.func, args, caller, NULL, span);
+    }
+    sn_rt_error(in, SNOVA_NOT_CALLABLE, span, "value is not callable");
+    return v_unit();
+}
+
 const char *sn_eval_to_string(SnEvalInterp *in, SnEvalValue v, SnSpan span) {
     switch (v.kind) {
     case V_UNIT:   return "unit";
@@ -87,9 +121,9 @@ const char *sn_eval_to_string(SnEvalInterp *in, SnEvalValue v, SnSpan span) {
         return s;
     }
     case V_OBJECT: {
-        /* Printing an object uses its `asString()`, matching the convention the
-         * corpus relies on (tests/run-pass/counter.snl). */
-        const SnDecl *m = sn_eval_find_member(v.as.o->cls, "asString");
+        /* Object's inherited toString() is the default; concrete classes may
+         * override it. */
+        const SnDecl *m = sn_eval_find_member_inherited(in, v.as.o->cls, "toString");
         if (m && m->body) {
             SnList none = {0};
             SnEvalValue s = sn_eval_call_method(in, v.as.o, m, &none, NULL, span);
@@ -120,6 +154,8 @@ const char *sn_eval_to_string(SnEvalInterp *in, SnEvalValue v, SnSpan span) {
     }
     case V_LAMBDA:
         return "<lambda>";
+    case V_FUNCTION:
+        return "<function>";
     case V_ARRAY: {
         const char *out = "[";
         for (size_t i = 0; i < v.as.arr->items.len; i++) {
@@ -140,8 +176,14 @@ const char *sn_eval_to_string(SnEvalInterp *in, SnEvalValue v, SnSpan span) {
 /* ── variants and equality ────────────────────────────────────────────────── */
 
 SnEvalValue sn_eval_variant(SnEvalInterp *in, const char *name, SnList payload) {
+    return sn_eval_variant_typed(in, name, payload, NULL);
+}
+
+SnEvalValue sn_eval_variant_typed(SnEvalInterp *in, const char *name, SnList payload,
+                                  const SnDecl *owner_type) {
     VariantVal *vt = (VariantVal *)sn_arena_calloc(in->arena, sizeof(VariantVal));
     vt->name = name;
+    vt->owner_type = owner_type;
     vt->payload = payload;
     SnEvalValue v;
     v.kind = V_VARIANT;
@@ -149,7 +191,26 @@ SnEvalValue sn_eval_variant(SnEvalInterp *in, const char *name, SnList payload) 
     return v;
 }
 
+const SnDecl *sn_eval_find_variant_owner(const SnEvalInterp *in, const char *name) {
+    if (!in || !in->unit || !name) return NULL;
+    const char *vname = strrchr(name, '.');
+    vname = vname ? vname + 1 : name;
+    for (size_t i = 0; i < in->unit->decls.len; i++) {
+        const SnDecl *decl = (const SnDecl *)in->unit->decls.items[i];
+        if (decl->kind != SN_DECL_ENUM) continue;
+        for (size_t j = 0; j < decl->variants.len; j++) {
+            const SnDecl *variant = (const SnDecl *)decl->variants.items[j];
+            if (variant->name && strcmp(variant->name, vname) == 0) return decl;
+        }
+    }
+    return NULL;
+}
+
 int sn_eval_value_equals(SnEvalValue a, SnEvalValue b) {
+    if (a.kind == V_FUNCTION && b.kind == V_FUNCTION) return a.as.func == b.as.func;
+    if (a.kind == V_LAMBDA && b.kind == V_LAMBDA) return a.as.lam == b.as.lam;
+    if (a.kind == V_OBJECT && b.kind == V_OBJECT) return a.as.o == b.as.o;
+    if (a.kind == V_ARRAY && b.kind == V_ARRAY) return a.as.arr == b.as.arr;
     if (a.kind == V_INT && b.kind == V_INT) return a.as.i == b.as.i;
     if (a.kind == V_BOOL && b.kind == V_BOOL) return a.as.b == b.as.b;
     if (a.kind == V_DOUBLE && b.kind == V_DOUBLE) return a.as.d == b.as.d;
@@ -209,6 +270,12 @@ const SnDecl *sn_eval_find_member_inherited(const SnEvalInterp *in, const SnDecl
                 const SnDecl *pm = sn_eval_find_member_inherited(in, parent, name);
                 if (pm) return pm;
             }
+        }
+    }
+    if (cls->name && strcmp(cls->name, "Object") != 0) {
+        const SnDecl *root = sn_eval_find_type(in, "Object");
+        if (root && root != cls) {
+            return sn_eval_find_member_inherited(in, root, name);
         }
     }
     return NULL;

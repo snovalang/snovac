@@ -349,7 +349,7 @@ static void test_variant_construction(const char *tmp) {
     snprintf(dir, sizeof(dir), "%s/variant", tmp);
     mkdir(dir, 0755);
     write_file(dir, "types.snl",
-              "package builtin.types.Types\n\n"
+              "package builtin.types\n\n"
               "enum Option {\n"
               "    Some(value: int),\n"
               "    None,\n"

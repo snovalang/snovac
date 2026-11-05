@@ -1,6 +1,6 @@
 package tests.run_pass.own_defer_use
 
-import builtin.console.Console
+import builtin.console.console
 
 func lenOf(xs: Array<int>): int {
     Console.printline(xs.len())

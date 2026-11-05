@@ -13,6 +13,7 @@
 #define SNOVAC_EVAL_INTERNAL_H
 
 #include "eval.h"
+#include "runtime_api.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -32,7 +33,7 @@
 
 typedef enum {
     V_UNIT, V_INT, V_DOUBLE, V_BOOL, V_STRING, V_CHAR, V_OBJECT, V_VARIANT,
-    V_LAMBDA, V_ARRAY, V_REF
+    V_LAMBDA, V_FUNCTION, V_ARRAY, V_REF
 } ValKind;
 
 typedef struct SnEvalObject SnEvalObject;
@@ -58,6 +59,7 @@ typedef struct {
         SnEvalObject *o;
         VariantVal *vt;
         SnEvalLambda *lam;
+        const SnDecl *func;
         ArrayVal *arr;
         RefVal *ref;
     } as;
@@ -83,6 +85,7 @@ struct SnEvalObject {
  * holds the constructor arguments in order (SnEvalValue*). */
 struct VariantVal {
     const char *name;
+    const SnDecl *owner_type; /* declared enum, NULL for runtime-intrinsic variants */
     SnList payload; /* SnEvalValue* */
     uint64_t visit_epoch; /* temporary escape traversal guard */
 };
@@ -147,6 +150,8 @@ static inline SnEvalValue v_str(const char *s) { SnEvalValue v; v.kind = V_STRIN
 /* ── eval.c ───────────────────────────────────────────────────────────────── */
 
 void sn_rt_error(SnEvalInterp *in, int code, SnSpan span, const char *fmt, ...);
+void sn_rt_throw_exception(SnEvalInterp *in, const char *type_name,
+                           const char *message, SnSpan span);
 
 SnEvalEnv *sn_eval_env_new(SnEvalInterp *in, SnEvalEnv *parent);
 SnEvalValue *sn_eval_env_lookup(SnEvalEnv *e, const char *name);
@@ -180,8 +185,13 @@ int sn_native_try_dispatch(SnEvalInterp *in, const SnDecl *fn, SnList *args, SnE
 /* ── variants, lambdas and pattern matching ───────────────────────────────── */
 
 SnEvalValue sn_eval_variant(SnEvalInterp *in, const char *name, SnList payload);
+SnEvalValue sn_eval_variant_typed(SnEvalInterp *in, const char *name, SnList payload,
+                                  const SnDecl *owner_type);
+const SnDecl *sn_eval_find_variant_owner(const SnEvalInterp *in, const char *name);
 SnEvalValue sn_eval_call_lambda(SnEvalInterp *in, const SnEvalLambda *lam, SnList *args, SnEvalEnv *caller,
                   SnSpan span);
+SnEvalValue sn_eval_call_value(SnEvalInterp *in, SnEvalValue callable, SnList *args,
+                               SnEvalEnv *caller, SnSpan span);
 int sn_eval_value_equals(SnEvalValue a, SnEvalValue b);
 /* Attempts to match `subject` against `pat`; bindings are defined in `env`.
  * Returns 1 on match. Bindings from a failed partial match may remain in

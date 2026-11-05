@@ -1,0 +1,103 @@
+package builtin.text.text
+
+import builtin.errors.errors
+
+import builtin.collections.collections
+
+class Text {
+    public static method concat(left: string, right: string): string {
+        return left + right
+    }
+
+    public static method isEmpty(value: string): bool {
+        return value.length() == 0
+    }
+
+    public static method hasPrefix(value: string, prefix: string): bool {
+        return value.startsWith(prefix)
+    }
+
+    public static method hasSuffix(value: string, suffix: string): bool {
+        return value.endsWith(suffix)
+    }
+
+    public static method contains(value: string, part: string): bool {
+        return value.contains(part)
+    }
+
+    public static method trim(value: string): string {
+        return value.trim()
+    }
+
+    public static method upper(value: string): string {
+        return value.toUpper()
+    }
+
+    public static method lower(value: string): string {
+        return value.toLower()
+    }
+
+    public static method isBlank(value: string): bool {
+        return Text.trim(value).isEmpty()
+    }
+
+    public static method repeat(value: string, count: int): string {
+        if count < 0 {
+            throw IllegalArgumentException("Text.repeat count cannot be negative")
+        }
+        var result = ""
+        var i = 0
+        while i < count {
+            result = result + value
+            i += 1
+        }
+        return result
+    }
+
+    public static method replace(value: string, search: string, replacement: string): string {
+        if search.isEmpty() {
+            throw IllegalArgumentException("Text.replace search value cannot be empty")
+        }
+        return value.replace(search, replacement)
+    }
+
+    public static method split(value: string, separator: string): Array<string> {
+        if separator.isEmpty() {
+            throw IllegalArgumentException("Text.split separator cannot be empty")
+        }
+        return value.split(separator)
+    }
+
+    public static method padLeft(value: string, width: int, fill: string): string {
+        if fill.length() != 1 {
+            throw IllegalArgumentException("Text.padLeft fill must contain exactly one character")
+        }
+        if width <= value.length() {
+            return value
+        }
+        return Text.repeat(fill, width - value.length()) + value
+    }
+
+    public static method padRight(value: string, width: int, fill: string): string {
+        if fill.length() != 1 {
+            throw IllegalArgumentException("Text.padRight fill must contain exactly one character")
+        }
+        if width <= value.length() {
+            return value
+        }
+        return value + Text.repeat(fill, width - value.length())
+    }
+
+    public static method join(values: Array<string>, separator: string): string {
+        var result = ""
+        var i = 0
+        while i < values.length() {
+            if i > 0 {
+                result = result + separator
+            }
+            result = result + values.get(i)
+            i += 1
+        }
+        return result
+    }
+}

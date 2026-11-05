@@ -1,7 +1,7 @@
 package tests.counter
 
 
-import builtin.console.Console
+import builtin.console.console
 
 
 class Counter {
@@ -9,7 +9,7 @@ class Counter {
 
     method increment(): unit { value += 1 }
     method get(): int = value
-    method asString(): string = "counter"
+    override method toString(): string = "counter"
 }
 
 func main(): int {

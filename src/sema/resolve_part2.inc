@@ -135,7 +135,7 @@ size_t sn_resolver_collect(SnResolver *r) {
 
 
 /* Option/Result's own variants (Some/None/Ok/Err) are also usable with no
- * import — builtin/Types.snl's own doc comment says so explicitly
+ * import — builtin/types/Option.snl's own doc comment says so explicitly
  * ("construction (Some(v), None, Ok(v), Err(e))... is usable in every
  * Snovalang program with no import"). Found while testing variant
  * construction (`Some(1)`) against the checker: registering only the type
@@ -186,8 +186,8 @@ void sn_resolver_build_prelude(SnResolver *r) {
     /* The prelude's membership is already decided elsewhere in this repo, and
      * this mirrors that decision rather than inventing one:
      * crates/snovalang/src/modules/resolve.rs folds `builtin.datetime.DateTime`
-     * and `builtin.types.Types` in unconditionally (BUILTIN_PRELUDE_PACKAGES)
-     * and `builtin.collections.Collections` on demand
+     * and `builtin.types` in unconditionally (BUILTIN_PRELUDE_PACKAGES)
+     * and `builtin.collections.collections` on demand
      * (COLLECTIONS_PRELUDE_PACKAGE), and
      * specs/20260711/builtin-prelude-types/ plus
      * tests/compile-pass/packages/builtin_prelude_no_import.snl state the
@@ -202,11 +202,11 @@ void sn_resolver_build_prelude(SnResolver *r) {
      * is unchanged either way.
      *
      * Free functions are NOT folded in: `parseInt` lives in
-     * `builtin.strings.Strings`, which no prelude list names, so calling it
+     * `builtin.strings.strings`, which no prelude list names, so calling it
      * without an import stays an error. */
     add_package_types_to_prelude(r, SN_PRELUDE_PACKAGE);
     add_package_types_to_prelude(r, "builtin.datetime.DateTime");
-    add_package_types_to_prelude(r, "builtin.collections.Collections");
+    add_package_types_to_prelude(r, "builtin.collections.collections");
 
     /* Option/Result additionally publish their VARIANTS into the prelude. */
     SnScope *types_pkg =
@@ -329,6 +329,16 @@ SnSymbol *sn_resolve_ident(SnResolver *r, const char *current_package,
                 pkg_scope ? sn_scope_lookup_local(pkg_scope, super_name) : NULL;
             cur = (super_sym && super_sym->kind == SN_SYM_TYPE) ? super_sym->decl : NULL;
             depth++;
+        }
+        if (enclosing_type->name && strcmp(enclosing_type->name, "Object") != 0 &&
+            r->prelude_scope) {
+            SnSymbol *object = sn_scope_lookup_local(
+                r->prelude_scope, sn_intern_cstr(r->intern, "Object"));
+            SnScope *object_members = object && object->kind == SN_SYM_TYPE
+                ? sn_resolver_type_scope(r, object->decl) : NULL;
+            SnSymbol *member = object_members
+                ? sn_scope_lookup_local(object_members, iname) : NULL;
+            if (member) return member;
         }
     }
 

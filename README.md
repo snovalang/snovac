@@ -77,6 +77,33 @@ If the latest GitHub release has no prebuilt archive, the script clones this rep
 - **Bytecode and native compilation**: Ahead-of-time bytecode emission and native linking. `snl run` executes the checked program with the tree-walking interpreter.
 - **Pulsar Concurrency**: Actor model and streaming concurrency support.
 
+## Builtin runtime API
+
+Builtin declarations live in `builtin/` as Snovalang source, separated into
+files by class or data type. Package names remain stable across those files;
+for example, HTTP declarations use `builtin.net.http.types`. See
+[`builtin/readme.md`](builtin/readme.md) for the module catalog and the current
+runtime support boundary. `Runtime` and `FileSystem` expose standard input,
+text file access, environment values, and process arguments; `Args`, `Env`,
+and `Console` are available as focused facades.
+`snl run app.snl -- one two` forwards `one` and `two` to
+`Runtime.argumentCount()` and `Runtime.argument(index)`.
+
+`src/eval/runtime_api.h` is the host C ABI used by embedders. Its operations
+return `SnRuntimeStatus`, and buffers returned by file and stdin reads are
+released with `sn_runtime_free`. The API resolves file paths when the program
+runs, so a missing runtime file is reported then. Missing source files and
+imports are diagnosed during compilation.
+
+The `builtin.memory.types` module provides checked byte spans backed by shared
+Snovalang arrays and an opaque `Address` value. A span can be sliced and
+mutated without copying; `Address` does not expose dereferencing. The compiler
+does not currently expose raw pointer arithmetic or explicit C struct layout.
+
+The math, text, and utility modules contain Snovalang implementations. The
+network, async, and time modules currently provide source-level API and type
+surfaces; their runtime support is documented in `builtin/readme.md`.
+
 ## Building from Source
 
 ### Prerequisites

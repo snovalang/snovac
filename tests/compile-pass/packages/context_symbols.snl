@@ -1,8 +1,8 @@
 package tests.packages.context_symbols
 
 
-import builtin.context.Context
-import builtin.async.Async
+import builtin.context.context
+import builtin.async.async
 
 
 async func fetchData(ctx: Context, url: string): Task<string> {

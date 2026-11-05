@@ -1,8 +1,8 @@
 package tests.packages.channels_select_symbols
 
 
-import builtin.channels.Channels
-import builtin.console.Console
+import builtin.channels.channels
+import builtin.console.console
 
 
 async func main(): Task<int> {

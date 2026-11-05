@@ -1,0 +1,106 @@
+package builtin.util.concurrent.concurrent
+
+import builtin.errors.errors
+
+class Mutex<T> {
+    private var value: T
+    private var closed: bool = false
+    private let handle: int = NativeMutex.mutexCreate()
+
+    public static method new(value: T): Mutex<T> {
+        var mutex = Mutex { value: value }
+        if mutex.handle < 0 {
+            throw RuntimeException("could not allocate OS mutex")
+        }
+        return mutex
+    }
+
+    public method lock(): unit {
+        this.ensureOpen()
+        NativeMutex.mutexLock(handle)
+    }
+
+    public method tryLock(): bool {
+        this.ensureOpen()
+        return NativeMutex.mutexTryLock(handle)
+    }
+
+    public method unlock(): unit {
+        this.ensureOpen()
+        NativeMutex.mutexUnlock(handle)
+    }
+
+    public method get(): T {
+        this.lock()
+        try {
+            var result = value
+            this.unlock()
+            return result
+        } catch (error: any) {
+            this.unlock()
+            throw error
+        }
+        throw IllegalStateException("Mutex.get reached an invalid state")
+    }
+
+    public method set(next: T): unit {
+        this.lock()
+        try {
+            value = next
+            this.unlock()
+        } catch (error: any) {
+            this.unlock()
+            throw error
+        }
+    }
+
+    public method update(transform: (T) -> T): T {
+        this.lock()
+        try {
+            var next = transform(value)
+            value = next
+            this.unlock()
+            return next
+        } catch (error: any) {
+            this.unlock()
+            throw error
+        }
+        throw IllegalStateException("Mutex.update reached an invalid state")
+    }
+
+    public method close(): unit {
+        if closed == false {
+            NativeMutex.mutexDestroy(handle)
+            closed = true
+        }
+    }
+
+    public method isClosed(): bool {
+        return closed
+    }
+
+    private method ensureOpen(): unit {
+        if closed {
+            throw IllegalStateException("Mutex is closed")
+        }
+    }
+}
+
+// Host boundary: these operations provide cross-thread atomicity. All value
+// handling and lock lifecycle policy lives in the Snovalang Mutex<T> above.
+class NativeMutex {
+    @Native
+    public static method mutexCreate(): int
+
+    @Native
+    public static method mutexLock(handle: int): unit
+
+    @Native
+    public static method mutexTryLock(handle: int): bool
+
+    @Native
+    public static method mutexUnlock(handle: int): unit
+
+    @Native
+    public static method mutexDestroy(handle: int): unit
+}

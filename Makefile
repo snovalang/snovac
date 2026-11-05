@@ -87,7 +87,7 @@ SRCS = src/driver/main.c src/driver/driver_utils.c src/driver/project.c \
        src/parse/parse_decl.c src/parse/parse_decl_parts.c src/parse/parse_ptr.c \
        src/eval/eval.c src/eval/eval_expr.c src/eval/eval_stmt.c \
        src/eval/eval_string.c src/eval/rt_mem.c src/eval/rt_ptr.c src/eval/rt_defer.c \
-       src/eval/socket_abi.c src/eval/native_dispatch.c \
+       src/eval/socket_abi.c src/eval/native_dispatch.c src/eval/runtime_api.c \
        src/base/diag.c src/base/arena.c src/base/intern.c \
        src/sema/symbol.c src/sema/package.c src/sema/types.c src/sema/resolve.c \
        src/sema/builtins.c src/sema/check.c src/sema/check_ptr.c \

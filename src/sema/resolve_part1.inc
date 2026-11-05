@@ -6,7 +6,7 @@
 #include "parse.h"
 
 /* Option/Result's real package (see resolve.h note 3). */
-#define SN_PRELUDE_PACKAGE "builtin.types.Types"
+#define SN_PRELUDE_PACKAGE "builtin.types"
 
 void sn_resolver_init(SnResolver *r, SnArena *a, SnInternTable *it,
                        SnDiagSink *diag, SnPackageGraph *graph,
@@ -19,6 +19,7 @@ void sn_resolver_init(SnResolver *r, SnArena *a, SnInternTable *it,
     r->prelude_scope = NULL;
     r->packages = NULL;
     r->type_scopes = NULL;
+    r->primitive_extensions = NULL;
     r->current_origin = NULL;
 }
 
@@ -75,6 +76,17 @@ SnScope *sn_resolver_type_scope(const SnResolver *r, const SnDecl *type_decl) {
         if (e->type_decl == type_decl) {
             return e->member_scope;
         }
+    }
+    return NULL;
+}
+
+SnScope *sn_resolver_primitive_extension_scope(const SnResolver *r,
+                                                const char *primitive_name) {
+    if (!r || !primitive_name) return NULL;
+    const char *name = sn_intern_cstr(r->intern, primitive_name);
+    for (SnPrimitiveExtensionEntry *entry = r->primitive_extensions; entry;
+         entry = entry->next) {
+        if (entry->primitive == name) return entry->member_scope;
     }
     return NULL;
 }
@@ -224,12 +236,20 @@ static int ast_type_eq(const SnType *a, const SnType *b) {
         return 1;
     }
     case SN_TYPE_FUNC:
-        if (a->params.len != b->params.len || !ast_type_eq(a->ret, b->ret)) {
+        if (a->params.len != b->params.len ||
+            a->throws_types.len != b->throws_types.len ||
+            !ast_type_eq(a->ret, b->ret)) {
             return 0;
         }
         for (size_t i = 0; i < a->params.len; i++) {
             if (!ast_type_eq(SN_LIST_AT(a->params, SnType, i),
                              SN_LIST_AT(b->params, SnType, i))) {
+                return 0;
+            }
+        }
+        for (size_t i = 0; i < a->throws_types.len; i++) {
+            if (!ast_type_eq(SN_LIST_AT(a->throws_types, SnType, i),
+                             SN_LIST_AT(b->throws_types, SnType, i))) {
                 return 0;
             }
         }
@@ -305,7 +325,7 @@ static void collect_member(SnResolver *r, SnScope *member_scope, const SnDecl *o
 
     /* A private backing field and its same-named public accessor method
      * (`private let path: Path` + `method path(): Path { return path }`,
-     * both real, in builtin/FileSystem.snl's `File`) is a legitimate,
+     * both real, in builtin/filesystem/filesystem/FileSystem.snl's `File`) is a legitimate,
      * idiomatic pattern — not a collision. Found while running this
      * collector against the real corpus (2026-07-25); not one of plan.md
      * §7's ratified ambiguities, so treated as its own narrow rule: a
@@ -369,6 +389,22 @@ static void collect_extension_members(SnResolver *r, const ExtEntry *ee) {
     SnSymbol *target_sym =
         pkg_scope ? sn_scope_lookup_local(pkg_scope, target_name) : NULL;
     if (!target_sym || target_sym->kind != SN_SYM_TYPE) {
+        if (!sn_builtin_is_primitive_name(target_name)) return;
+        SnPrimitiveExtensionEntry *entry = r->primitive_extensions;
+        while (entry && entry->primitive != target_name) entry = entry->next;
+        if (!entry) {
+            entry = (SnPrimitiveExtensionEntry *)sn_arena_calloc(
+                r->arena, sizeof(SnPrimitiveExtensionEntry));
+            entry->primitive = target_name;
+            entry->member_scope = (SnScope *)sn_arena_alloc(r->arena, sizeof(SnScope));
+            sn_scope_init(entry->member_scope, r->arena, NULL);
+            entry->next = r->primitive_extensions;
+            r->primitive_extensions = entry;
+        }
+        for (size_t j = 0; j < ee->decl->members.len; j++) {
+            SnDecl *m = SN_LIST_AT(ee->decl->members, SnDecl, j);
+            collect_member(r, entry->member_scope, ee->decl, m, ee->decl->name);
+        }
         return;
     }
     SnScope *member_scope = sn_resolver_type_scope(r, target_sym->decl);

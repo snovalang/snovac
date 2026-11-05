@@ -1,9 +1,9 @@
 package tests.packages.run_pass_builtin_prelude_no_import
 
-import builtin.console.Console
+import builtin.console.console
 
 // Proves `Duration`/`Instant` (builtin.datetime.DateTime) and `Option`/`Result`
-// (builtin.types.Types) actually run — not just type-check — with zero
+// (builtin.types) actually run — not just type-check — with zero
 // import for any of them. `Console` is imported only to print output; it is
 // unrelated to the builtin prelude under test.
 

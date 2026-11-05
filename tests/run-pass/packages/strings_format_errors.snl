@@ -1,10 +1,10 @@
 package tests.packages.strings
 
 
-import builtin.console.Console
-import builtin.errors.Errors
+import builtin.console.console
+import builtin.errors.errors
 import builtin.format.Format
-import builtin.strings.Strings
+import builtin.strings.strings
 
 
 func main(): int {

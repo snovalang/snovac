@@ -307,7 +307,7 @@ static void test_extension_merging_and_prelude(const char *tmp) {
     snprintf(dir, sizeof(dir), "%s/prelude", tmp);
     mkdir(dir, 0755);
     write_file(dir, "types.snl",
-              "package builtin.types.Types\n\n"
+              "package builtin.types\n\n"
               "enum Option {\n    Some(value: int),\n    None,\n}\n\n"
               "extension Option {\n"
               "    method isSome(): bool\n"
@@ -320,12 +320,12 @@ static void test_extension_merging_and_prelude(const char *tmp) {
     sn_resolver_collect(&w.resolver);
     sn_resolver_build_prelude(&w.resolver);
 
-    const char *builtin_types = sn_intern_cstr(&w.intern, "builtin.types.Types");
+    const char *builtin_types = sn_intern_cstr(&w.intern, "builtin.types");
     SnScope *pkg_scope = sn_resolver_package_scope(&w.resolver, builtin_types);
     SnSymbol *option_sym =
         pkg_scope ? sn_scope_lookup_local(pkg_scope, sn_intern_cstr(&w.intern, "Option"))
                   : NULL;
-    CHECK("prelude: Option is collected in builtin.types.Types", option_sym != NULL);
+    CHECK("prelude: Option is collected in builtin.types", option_sym != NULL);
 
     SnSymbol *some_variant = sn_resolve_ident(
         &w.resolver, builtin_types, NULL, option_sym ? option_sym->decl : NULL, NULL,

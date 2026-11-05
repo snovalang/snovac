@@ -26,7 +26,8 @@ static uint64_t mix_u32(uint64_t h, uint32_t v) {
 
 static uint64_t hash_shape(SnTypeTag tag, const SnSymbol *decl,
                             SnTypeRep *const *args, uint32_t nargs,
-                            const SnTypeRep *ret) {
+                            const SnTypeRep *ret,
+                            SnTypeRep *const *throws_types, uint32_t nthrows) {
     uint64_t h = 1469598103934665603ULL;
     h = mix_u32(h, (uint32_t)tag);
     h = mix_ptr(h, decl);
@@ -35,20 +36,28 @@ static uint64_t hash_shape(SnTypeTag tag, const SnSymbol *decl,
         h = mix_ptr(h, args[i]);
     }
     h = mix_ptr(h, ret);
+    h = mix_u32(h, nthrows);
+    for (uint32_t i = 0; i < nthrows; i++) {
+        h = mix_ptr(h, throws_types[i]);
+    }
     return h;
 }
 
 static int shape_equals(const SnTypeRep *ty, SnTypeTag tag,
                          const SnSymbol *decl, SnTypeRep *const *args,
-                         uint32_t nargs, const SnTypeRep *ret) {
+                         uint32_t nargs, const SnTypeRep *ret,
+                         SnTypeRep *const *throws_types, uint32_t nthrows) {
     if (ty->tag != tag || ty->decl != decl || ty->nargs != nargs ||
-        ty->ret != ret) {
+        ty->ret != ret || ty->nthrows != nthrows) {
         return 0;
     }
     for (uint32_t i = 0; i < nargs; i++) {
         if (ty->args[i] != args[i]) {
             return 0;
         }
+    }
+    for (uint32_t i = 0; i < nthrows; i++) {
+        if (ty->throws_types[i] != throws_types[i]) return 0;
     }
     return 1;
 }
@@ -77,11 +86,13 @@ static void rehash(SnTypeTable *t) {
 
 static SnTypeRep *intern_shape(SnTypeTable *t, SnTypeTag tag, SnSymbol *decl,
                                 SnTypeRep **args, uint32_t nargs,
-                                SnTypeRep *ret) {
-    uint64_t h = hash_shape(tag, decl, args, nargs, ret);
+                                SnTypeRep *ret, SnTypeRep **throws_types,
+                                uint32_t nthrows) {
+    uint64_t h = hash_shape(tag, decl, args, nargs, ret, throws_types, nthrows);
     size_t idx = bucket_of(h, t->nbuckets);
     for (SnTypeInternEntry *e = t->buckets[idx]; e; e = e->next) {
-        if (e->hash == h && shape_equals(e->ty, tag, decl, args, nargs, ret)) {
+        if (e->hash == h && shape_equals(e->ty, tag, decl, args, nargs, ret,
+                                         throws_types, nthrows)) {
             return e->ty;
         }
     }
@@ -97,12 +108,21 @@ static SnTypeRep *intern_shape(SnTypeTable *t, SnTypeTag tag, SnSymbol *decl,
     ty->decl = decl;
     ty->nargs = nargs;
     ty->ret = ret;
+    ty->nthrows = nthrows;
     if (nargs) {
         ty->args =
             (SnTypeRep **)sn_arena_alloc(t->arena, nargs * sizeof(SnTypeRep *));
         memcpy(ty->args, args, nargs * sizeof(SnTypeRep *));
     } else {
         ty->args = NULL;
+    }
+    if (nthrows) {
+        ty->throws_types = (SnTypeRep **)sn_arena_alloc(
+            t->arena, nthrows * sizeof(SnTypeRep *));
+        memcpy(ty->throws_types, throws_types,
+               nthrows * sizeof(SnTypeRep *));
+    } else {
+        ty->throws_types = NULL;
     }
 
     SnTypeInternEntry *e =
@@ -126,23 +146,23 @@ void sn_types_init(SnTypeTable *t, SnArena *a) {
      * decl=NULL, ret=NULL differ only by tag) and then cached directly, since
      * every caller wants the one instance of each and there is no reason to
      * make them look the constructors up repeatedly. */
-    t->error_ty = intern_shape(t, SN_T_ERROR, NULL, NULL, 0, NULL);
-    t->unit_ty = intern_shape(t, SN_T_UNIT, NULL, NULL, 0, NULL);
-    t->bool_ty = intern_shape(t, SN_T_BOOL, NULL, NULL, 0, NULL);
-    t->int_ty = intern_shape(t, SN_T_INT, NULL, NULL, 0, NULL);
-    t->long_ty = intern_shape(t, SN_T_LONG, NULL, NULL, 0, NULL);
-    t->double_ty = intern_shape(t, SN_T_DOUBLE, NULL, NULL, 0, NULL);
-    t->decimal_ty = intern_shape(t, SN_T_DECIMAL, NULL, NULL, 0, NULL);
-    t->string_ty = intern_shape(t, SN_T_STRING, NULL, NULL, 0, NULL);
-    t->char_ty = intern_shape(t, SN_T_CHAR, NULL, NULL, 0, NULL);
-    t->float_ty = intern_shape(t, SN_T_FLOAT, NULL, NULL, 0, NULL);
-    t->byte_ty = intern_shape(t, SN_T_BYTE, NULL, NULL, 0, NULL);
-    t->any_ty = intern_shape(t, SN_T_ANY, NULL, NULL, 0, NULL);
-    t->int8_ty = intern_shape(t, SN_T_INT8, NULL, NULL, 0, NULL);
-    t->int16_ty = intern_shape(t, SN_T_INT16, NULL, NULL, 0, NULL);
-    t->int32_ty = intern_shape(t, SN_T_INT32, NULL, NULL, 0, NULL);
-    t->int64_ty = intern_shape(t, SN_T_INT64, NULL, NULL, 0, NULL);
-    t->int128_ty = intern_shape(t, SN_T_INT128, NULL, NULL, 0, NULL);
+    t->error_ty = intern_shape(t, SN_T_ERROR, NULL, NULL, 0, NULL, NULL, 0);
+    t->unit_ty = intern_shape(t, SN_T_UNIT, NULL, NULL, 0, NULL, NULL, 0);
+    t->bool_ty = intern_shape(t, SN_T_BOOL, NULL, NULL, 0, NULL, NULL, 0);
+    t->int_ty = intern_shape(t, SN_T_INT, NULL, NULL, 0, NULL, NULL, 0);
+    t->long_ty = intern_shape(t, SN_T_LONG, NULL, NULL, 0, NULL, NULL, 0);
+    t->double_ty = intern_shape(t, SN_T_DOUBLE, NULL, NULL, 0, NULL, NULL, 0);
+    t->decimal_ty = intern_shape(t, SN_T_DECIMAL, NULL, NULL, 0, NULL, NULL, 0);
+    t->string_ty = intern_shape(t, SN_T_STRING, NULL, NULL, 0, NULL, NULL, 0);
+    t->char_ty = intern_shape(t, SN_T_CHAR, NULL, NULL, 0, NULL, NULL, 0);
+    t->float_ty = intern_shape(t, SN_T_FLOAT, NULL, NULL, 0, NULL, NULL, 0);
+    t->byte_ty = intern_shape(t, SN_T_BYTE, NULL, NULL, 0, NULL, NULL, 0);
+    t->any_ty = intern_shape(t, SN_T_ANY, NULL, NULL, 0, NULL, NULL, 0);
+    t->int8_ty = intern_shape(t, SN_T_INT8, NULL, NULL, 0, NULL, NULL, 0);
+    t->int16_ty = intern_shape(t, SN_T_INT16, NULL, NULL, 0, NULL, NULL, 0);
+    t->int32_ty = intern_shape(t, SN_T_INT32, NULL, NULL, 0, NULL, NULL, 0);
+    t->int64_ty = intern_shape(t, SN_T_INT64, NULL, NULL, 0, NULL, NULL, 0);
+    t->int128_ty = intern_shape(t, SN_T_INT128, NULL, NULL, 0, NULL, NULL, 0);
 }
 
 SnTypeRep *sn_type_error(SnTypeTable *t) { return t->error_ty; }
@@ -225,31 +245,38 @@ const char *sn_type_name(const SnTypeRep *t) {
 
 SnTypeRep *sn_type_named(SnTypeTable *t, SnSymbol *decl, SnTypeRep **args,
                           uint32_t nargs) {
-    return intern_shape(t, SN_T_NAMED, decl, args, nargs, NULL);
+    return intern_shape(t, SN_T_NAMED, decl, args, nargs, NULL, NULL, 0);
 }
 
 SnTypeRep *sn_type_typevar(SnTypeTable *t, SnSymbol *decl) {
-    return intern_shape(t, SN_T_TYPEVAR, decl, NULL, 0, NULL);
+    return intern_shape(t, SN_T_TYPEVAR, decl, NULL, 0, NULL, NULL, 0);
 }
 
 SnTypeRep *sn_type_func(SnTypeTable *t, SnTypeRep **params, uint32_t nparams,
                          SnTypeRep *ret) {
-    return intern_shape(t, SN_T_FUNC, NULL, params, nparams, ret);
+    return sn_type_func_effect(t, params, nparams, ret, NULL, 0);
+}
+
+SnTypeRep *sn_type_func_effect(SnTypeTable *t, SnTypeRep **params,
+                                uint32_t nparams, SnTypeRep *ret,
+                                SnTypeRep **throws_types, uint32_t nthrows) {
+    return intern_shape(t, SN_T_FUNC, NULL, params, nparams, ret,
+                        throws_types, nthrows);
 }
 
 SnTypeRep *sn_type_array(SnTypeTable *t, SnTypeRep *elem) {
     SnTypeRep *args[1];
     args[0] = elem;
-    return intern_shape(t, SN_T_ARRAY, NULL, args, 1u, NULL);
+    return intern_shape(t, SN_T_ARRAY, NULL, args, 1u, NULL, NULL, 0);
 }
 
 SnTypeRep *sn_type_ref(SnTypeTable *t, SnTypeRep *pointee, int nullable) {
     if (!nullable) {
-        return intern_shape(t, SN_T_REF, NULL, NULL, 0u, pointee);
+        return intern_shape(t, SN_T_REF, NULL, NULL, 0u, pointee, NULL, 0);
     }
     /* nargs must be backed by a real args array: intern hashes each slot. */
     SnTypeRep *flag = sn_type_unit(t);
-    return intern_shape(t, SN_T_REF, NULL, &flag, 1u, pointee);
+    return intern_shape(t, SN_T_REF, NULL, &flag, 1u, pointee, NULL, 0);
 }
 
 int sn_type_is_ref(const SnTypeRep *t) { return t && t->tag == SN_T_REF; }
@@ -314,6 +341,7 @@ SnTypeRep *sn_type_subst_names(SnTypeTable *t, SnTypeRep *ty,
     }
     if (ty->tag == SN_T_FUNC) {
         SnTypeRep **new_params = NULL;
+        SnTypeRep **new_throws = NULL;
         int changed = 0;
         if (ty->nargs > 0) {
             new_params = (SnTypeRep **)sn_arena_alloc(
@@ -331,10 +359,20 @@ SnTypeRep *sn_type_subst_names(SnTypeTable *t, SnTypeRep *ty,
         if (new_ret != ty->ret) {
             changed = 1;
         }
+        if (ty->nthrows) {
+            new_throws = (SnTypeRep **)sn_arena_alloc(
+                t->arena, ty->nthrows * sizeof(SnTypeRep *));
+            for (uint32_t i = 0; i < ty->nthrows; i++) {
+                new_throws[i] = sn_type_subst_names(t, ty->throws_types[i],
+                                                    param_names, arg_types, count);
+                if (new_throws[i] != ty->throws_types[i]) changed = 1;
+            }
+        }
         if (!changed) {
             return ty;
         }
-        return sn_type_func(t, new_params, ty->nargs, new_ret);
+        return sn_type_func_effect(t, new_params, ty->nargs, new_ret,
+                                   new_throws, ty->nthrows);
     }
     return ty;
 }

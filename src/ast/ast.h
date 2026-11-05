@@ -56,6 +56,7 @@ struct SnType {
     const char *name; /* NAME: dotted, e.g. "builtin.collections.List" */
     SnList args;      /* NAME: SnType* generic arguments */
     SnList params;    /* FUNC: SnType* parameter types */
+    SnList throws_types; /* FUNC: checked error effects */
     SnType *ret;      /* FUNC: return type */
     SnType *pointee;  /* REF: type behind & */
     uint8_t is_optional; /* T? optional syntax */
@@ -240,6 +241,7 @@ struct SnDecl {
 
     SnList decorators;   /* SnDecorator* */
     SnList generics;     /* const char* type parameter names */
+    SnList throws_types; /* SnType*: checked errors declared by a routine */
     SnList params;       /* FUNC / METHOD / VARIANT: SnParam* */
     SnType *ret;         /* FUNC / METHOD return type, may be NULL */
     SnType *type;        /* FIELD / CONST type, may be NULL */
