@@ -55,6 +55,9 @@ static void sn_borrow_scan_expr(SnBorrowCx *cx, SnExpr *e);
 static void sn_borrow_add_local(SnBorrowCx *cx, const char *name) {
     if (name && cx->nscan < SN_BORROW_MAX) {
         cx->scan_locals[cx->nscan++] = name;
+    } else if (name) {
+        sn_borrow_fail(cx, SNOVA_BORROW_LIMIT, (SnSpan){0},
+                       "task capture exceeds the ownership checker's local-scope capacity");
     }
 }
 

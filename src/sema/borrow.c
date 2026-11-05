@@ -41,6 +41,8 @@ static int var_index(SnBorrowCx *cx, SnBorrowVar *v) {
 
 int sn_borrow_define(SnBorrowCx *cx, const char *name, SnTypeRep *ty, int mut, SnExpr *init) {
     if (cx->nv >= SN_BORROW_MAX) {
+        sn_borrow_fail(cx, SNOVA_BORROW_LIMIT, init ? init->span : (SnSpan){0},
+                       "function exceeds the ownership checker's local-variable capacity");
         return -1;
     }
     SnBorrowVar *v = &cx->vars[cx->nv];
@@ -123,6 +125,11 @@ void sn_borrow_borrow_place(SnBorrowCx *cx, SnBorrowVar *place, int holder, SnSp
         cx->holds[cx->nh].vi = var_index(cx, place);
         cx->holds[cx->nh].excl = excl;
         cx->nh++;
+    } else {
+        if (excl) place->exclusive = 0;
+        else if (place->shared > 0) place->shared--;
+        sn_borrow_fail(cx, SNOVA_BORROW_LIMIT, span,
+                       "expression exceeds the ownership checker's active-borrow capacity");
     }
 }
 

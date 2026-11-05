@@ -14,6 +14,7 @@
 #define SNOVA_NULL_DEREF          245
 #define SNOVA_INDEX_OOB           246
 #define SNOVA_DEFER_UNSOUND       247
+#define SNOVA_BORROW_LIMIT        248
 
 void sn_borrow_func(SnChecker *c, const SnDecl *decl);
 
