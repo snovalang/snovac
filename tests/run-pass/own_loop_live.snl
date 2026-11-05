@@ -1,6 +1,6 @@
 package tests.run_pass.own_loop_live
 
-import builtin.console.console
+import builtin.io.console.output
 
 func main(): int {
     var i = 0

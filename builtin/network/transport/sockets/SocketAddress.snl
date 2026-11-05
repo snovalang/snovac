@@ -1,0 +1,39 @@
+package builtin.network.transport.sockets
+
+import builtin.errors.hierarchy.types
+
+import builtin.core.types.values
+
+struct SocketAddress {
+    host: string
+    port: int
+
+    public static method create(host: string, port: int): SocketAddress {
+        match SocketAddress.tryCreate(host, port) {
+            Ok(address) -> return address
+            Err(error) -> throw RuntimeException(error)
+        }
+    }
+
+    public static method tryCreate(host: string, port: int): Result<SocketAddress, string> {
+        if host.isEmpty() {
+            return Err("socket address host cannot be empty")
+        }
+        if port < 0 || port > 65535 {
+            return Err("socket address port must be between 0 and 65535")
+        }
+        return Ok(SocketAddress { host: host, port: port })
+    }
+
+    public method isValid(): bool {
+        return host.isEmpty() == false && this.isPortValid()
+    }
+
+    public method isPortValid(): bool {
+        return port >= 0 && port <= 65535
+    }
+
+    public method isConnectable(): bool {
+        return host.isEmpty() == false && port > 0 && port <= 65535
+    }
+}

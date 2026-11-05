@@ -1,7 +1,7 @@
 package tests.string_comment
 
 
-import builtin.console.console
+import builtin.io.console.output
 
 
 // Verifies that `//` inside a string literal is NOT treated as a line comment.

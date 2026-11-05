@@ -1,0 +1,15 @@
+package builtin.io.filesystem.streams.extensions
+
+import builtin.io.filesystem.streams.contracts
+
+extension InputStream {
+    public method readAll(): string {
+        var result = ""
+        var chunk = this.read(4096)
+        while chunk.isEmpty() == false {
+            result = result + chunk
+            chunk = this.read(4096)
+        }
+        return result
+    }
+}

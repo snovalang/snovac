@@ -1,0 +1,37 @@
+package builtin.process.arguments.values
+
+import builtin.errors.hierarchy.types
+
+import builtin.runtime.host.api
+import builtin.collections.collections.types
+import builtin.core.types.values
+
+class Args {
+    public static method count(): int {
+        return Runtime.argumentCount()
+    }
+
+    public static method get(index: int): string {
+        if index < 0 || index >= Runtime.argumentCount() {
+            throw IndexOutOfBoundsException("argument index out of bounds")
+        }
+        return Runtime.argument(index)
+    }
+
+    public static method tryGet(index: int): Option<string> {
+        if index < 0 || index >= Runtime.argumentCount() {
+            return None
+        }
+        return Some(Runtime.argument(index))
+    }
+
+    public static method all(): Array<string> {
+        var result = Array<string>.new()
+        var i = 0
+        while i < Runtime.argumentCount() {
+            result.push(Runtime.argument(i))
+            i += 1
+        }
+        return result
+    }
+}

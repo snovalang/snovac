@@ -1,0 +1,232 @@
+package builtin.collections.collections.types
+
+import builtin.core.types.values
+
+// Equality-based set with insertion order and linear lookup.
+class Set<T> {
+    private var _items: Array<T> = Array<T>.new()
+
+    public static method new(): Set<T> {
+        return Set<T>()
+    }
+
+    public method length(): int = _items.length()
+
+    public method isEmpty(): bool = _items.isEmpty()
+
+    public method contains(value: T): bool {
+        var i = 0
+        while i < _items.length() {
+            if _items.get(i) == value {
+                return true
+            }
+            i += 1
+        }
+        return false
+    }
+
+    // Returns true only when the value was newly added.
+    public method add(value: T): bool {
+        if this.contains(value) {
+            return false
+        }
+        _items.push(value)
+        return true
+    }
+
+    // Returns true only when the value was present.
+    public method remove(value: T): bool {
+        var i = 0
+        while i < _items.length() {
+            if _items.get(i) == value {
+                var j = i
+                while j + 1 < _items.length() {
+                    _items.set(j, _items.get(j + 1))
+                    j += 1
+                }
+                _items.pop()
+                return true
+            }
+            i += 1
+        }
+        return false
+    }
+
+    public method removeAndGet(value: T): Option<T> {
+        var i = 0
+        while i < _items.length() {
+            if _items.get(i) == value {
+                var removed = _items.get(i)
+                var j = i
+                while j + 1 < _items.length() {
+                    _items.set(j, _items.get(j + 1))
+                    j += 1
+                }
+                _items.pop()
+                return Some(removed)
+            }
+            i += 1
+        }
+        return None
+    }
+
+    // Removes and returns the most recently inserted member.
+    public method pop(): Option<T> {
+        return _items.tryPop()
+    }
+
+    public method clear(): unit {
+        _items.clear()
+    }
+
+    public method values(): Array<T> {
+        var result = Array<T>.new()
+        var i = 0
+        while i < _items.length() {
+            result.push(_items.get(i))
+            i += 1
+        }
+        return result
+    }
+
+    public method forEach(action: (T) -> unit): unit {
+        var snapshot = Array<T>.new()
+        var i = 0
+        while i < _items.length() {
+            snapshot.push(_items.get(i))
+            i += 1
+        }
+        i = 0
+        while i < snapshot.length() {
+            action(snapshot.get(i))
+            i += 1
+        }
+    }
+
+    public method map<U>(transform: (T) -> U): Array<U> {
+        var result = Array<U>.new()
+        var snapshot = Array<T>.new()
+        var i = 0
+        while i < _items.length() {
+            snapshot.push(_items.get(i))
+            i += 1
+        }
+        i = 0
+        while i < snapshot.length() {
+            result.push(transform(snapshot.get(i)))
+            i += 1
+        }
+        return result
+    }
+
+    public method filter(predicate: (T) -> bool): Set<T> {
+        var result = Set<T>.new()
+        var snapshot = Array<T>.new()
+        var i = 0
+        while i < _items.length() {
+            snapshot.push(_items.get(i))
+            i += 1
+        }
+        i = 0
+        while i < snapshot.length() {
+            var value = snapshot.get(i)
+            if predicate(value) {
+                result.add(value)
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method union(other: Set<T>): Set<T> {
+        var result = Set<T>.new()
+        var i = 0
+        while i < _items.length() {
+            result.add(_items.get(i))
+            i += 1
+        }
+        i = 0
+        while i < other.length() {
+            result.add(other._items.get(i))
+            i += 1
+        }
+        return result
+    }
+
+    public method intersection(other: Set<T>): Set<T> {
+        var result = Set<T>.new()
+        var i = 0
+        while i < _items.length() {
+            var value = _items.get(i)
+            if other.contains(value) {
+                result.add(value)
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method difference(other: Set<T>): Set<T> {
+        var result = Set<T>.new()
+        var i = 0
+        while i < _items.length() {
+            var value = _items.get(i)
+            if other.contains(value) == false {
+                result.add(value)
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method symmetricDifference(other: Set<T>): Set<T> {
+        var result = Set<T>.new()
+        var i = 0
+        while i < _items.length() {
+            var value = _items.get(i)
+            if other.contains(value) == false {
+                result.add(value)
+            }
+            i += 1
+        }
+        i = 0
+        while i < other.length() {
+            var value = other._items.get(i)
+            if this.contains(value) == false {
+                result.add(value)
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method isDisjoint(other: Set<T>): bool {
+        var i = 0
+        while i < _items.length() {
+            if other.contains(_items.get(i)) {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+
+    public method isSubsetOf(other: Set<T>): bool {
+        var i = 0
+        while i < _items.length() {
+            if other.contains(_items.get(i)) == false {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+
+    public method isSupersetOf(other: Set<T>): bool {
+        return other.isSubsetOf(this)
+    }
+
+    public method equals(other: Set<T>): bool {
+        return this.length() == other.length() && this.isSubsetOf(other)
+    }
+}

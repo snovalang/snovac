@@ -1,0 +1,39 @@
+package builtin.network.transport.sockets
+
+import builtin.errors.hierarchy.types
+
+import builtin.core.types.values
+
+class TcpListener {
+    private let handle: int
+    private var closed: bool = false
+
+    public method accept(): TcpStream {
+        match this.tryAccept() {
+            Ok(stream) -> return stream
+            Err(error) -> throw RuntimeException(error)
+        }
+    }
+
+    public method tryAccept(): Result<TcpStream, string> {
+        if closed {
+            return Err("TcpListener is closed")
+        }
+        var accepted = Socket.accept(handle)
+        if accepted < 0 {
+            return Err("TcpListener.accept failed")
+        }
+        return Ok(TcpStream { handle: accepted })
+    }
+
+    public method isClosed(): bool {
+        return closed
+    }
+
+    public method close(): unit {
+        if closed == false {
+            Socket.close(handle)
+            closed = true
+        }
+    }
+}

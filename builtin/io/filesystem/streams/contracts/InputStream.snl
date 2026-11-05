@@ -1,0 +1,7 @@
+package builtin.io.filesystem.streams.contracts
+
+interface InputStream {
+    method read(maxLength: int): string
+    method isClosed(): bool
+    method close(): unit
+}

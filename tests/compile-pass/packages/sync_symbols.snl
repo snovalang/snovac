@@ -2,7 +2,7 @@ package tests.packages.sync_symbols
 
 
 import builtin.sync.Sync
-import builtin.async.async
+import builtin.concurrent.async.tasks
 
 
 async func main(): Task<int> {

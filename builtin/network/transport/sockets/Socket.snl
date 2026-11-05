@@ -1,0 +1,33 @@
+package builtin.network.transport.sockets
+
+class Socket {
+    @Native
+    public static method listen(host: string, port: int): int
+
+    @Native
+    public static method connect(host: string, port: int): int
+
+    @Native
+    public static method accept(handle: int): int
+
+    @Native
+    public static method receive(handle: int, maxLength: int): string
+
+    @Native
+    public static method send(handle: int, data: string): int
+
+    @Native
+    public static method close(handle: int): unit
+
+    @Native
+    public static method udpBind(host: string, port: int): int
+
+    @Native
+    public static method udpSendTo(handle: int, host: string, port: int, data: string): int
+
+    @Native
+    public static method udpReceive(handle: int, maxLength: int): string
+
+    @Native
+    public static method resolve(host: string): Array<string>
+}

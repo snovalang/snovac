@@ -81,7 +81,7 @@ If the latest GitHub release has no prebuilt archive, the script clones this rep
 
 Builtin declarations live in `builtin/` as Snovalang source, separated into
 files by class or data type. Package names remain stable across those files;
-for example, HTTP declarations use `builtin.net.http.types`. See
+for example, HTTP declarations use `builtin.network.http.data.types`. See
 [`builtin/readme.md`](builtin/readme.md) for the module catalog and the current
 runtime support boundary. `Runtime` and `FileSystem` expose standard input,
 text file access, environment values, and process arguments; `Args`, `Env`,
@@ -95,7 +95,7 @@ released with `sn_runtime_free`. The API resolves file paths when the program
 runs, so a missing runtime file is reported then. Missing source files and
 imports are diagnosed during compilation.
 
-The `builtin.memory.types` module provides checked byte spans backed by shared
+The `builtin.memory.addressing.types` module provides checked byte spans backed by shared
 Snovalang arrays and an opaque `Address` value. A span can be sliced and
 mutated without copying; `Address` does not expose dereferencing. The compiler
 does not currently expose raw pointer arithmetic or explicit C struct layout.

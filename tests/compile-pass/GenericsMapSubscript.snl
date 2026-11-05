@@ -1,7 +1,7 @@
 package tests.generics_map_subscript
 
 
-import builtin.console.console
+import builtin.io.console.output
 
 
 // Regression: a `Map<K, V>` receiver (declared as a nested-generic parameter

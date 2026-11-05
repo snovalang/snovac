@@ -1,6 +1,6 @@
 package snova.compiler
 
-import builtin.console.console
+import builtin.io.console.output
 
 // Snova compiler for the slice this file is written in.
 // bootstrap/src/join.sh concatenates the part_*.snl files with compiler.snl.

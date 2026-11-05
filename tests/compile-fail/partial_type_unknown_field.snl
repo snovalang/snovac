@@ -1,6 +1,6 @@
 package tests.bad
 
-import builtin.console.console
+import builtin.io.console.output
 
 // error[SNOVA028]: `Partial<User>`'s field surface is exactly `User`'s field
 // surface — `User` has no `email` field, so `.email` is not a valid member of

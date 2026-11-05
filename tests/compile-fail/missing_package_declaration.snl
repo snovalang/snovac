@@ -1,4 +1,4 @@
-import builtin.console.console
+import builtin.io.console.output
 
 func main(): int {
     return 0

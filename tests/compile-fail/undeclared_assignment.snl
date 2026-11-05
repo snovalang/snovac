@@ -1,6 +1,6 @@
 package tests.bad
 
-import builtin.console.console
+import builtin.io.console.output
 
 // error[SNOVA023]: `todoId` is assigned without a prior declaration.
 // Every binding must be introduced with `let`/`var`/`const`, a parameter, or a

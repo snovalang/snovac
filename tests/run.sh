@@ -86,18 +86,18 @@ snova "1.0.0"
 EOF
 cat > "$BUILTIN_PROJECT/src/app/Main.snl" <<'EOF'
 package app
-import builtin.async.async
-import builtin.args.args
-import builtin.collections.collections
-import builtin.env.env
-import builtin.filesystem.filesystem
-import builtin.math.math
-import builtin.net.net
-import builtin.text.text
-import builtin.time.time
-import builtin.types
-import builtin.util.util
-import builtin.util.concurrent.concurrent
+import builtin.concurrent.async.tasks
+import builtin.process.arguments.values
+import builtin.collections.collections.types
+import builtin.process.environment.values
+import builtin.io.filesystem.operations
+import builtin.math.arithmetic.operations
+import builtin.network.transport.sockets
+import builtin.text.text.values
+import builtin.time.clock.values
+import builtin.core.types.values
+import builtin.util.general.types
+import builtin.concurrent.synchronization.primitives
 
 func main(): int {
     let some: Option<int> = Some(7)

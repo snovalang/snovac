@@ -1,0 +1,3 @@
+package builtin.collections.collections.types
+
+type Partial<T> = T

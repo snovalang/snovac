@@ -6,7 +6,7 @@
 #include "parse.h"
 
 /* Option/Result's real package (see resolve.h note 3). */
-#define SN_PRELUDE_PACKAGE "builtin.types"
+#define SN_PRELUDE_PACKAGE "builtin.core.types.values"
 
 void sn_resolver_init(SnResolver *r, SnArena *a, SnInternTable *it,
                        SnDiagSink *diag, SnPackageGraph *graph,
@@ -325,7 +325,7 @@ static void collect_member(SnResolver *r, SnScope *member_scope, const SnDecl *o
 
     /* A private backing field and its same-named public accessor method
      * (`private let path: Path` + `method path(): Path { return path }`,
-     * both real, in builtin/filesystem/filesystem/FileSystem.snl's `File`) is a legitimate,
+     * both real, in builtin/io/filesystem/operations/FileSystem.snl's `File`) is a legitimate,
      * idiomatic pattern — not a collision. Found while running this
      * collector against the real corpus (2026-07-25); not one of plan.md
      * §7's ratified ambiguities, so treated as its own narrow rule: a

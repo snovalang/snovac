@@ -47,7 +47,7 @@ static void infer_struct_generic(SnChecker *c, const SnDecl *owner,
 
 static SnSymbol *array_type_symbol(SnChecker *c) {
     SnScope *pkg = sn_resolver_package_scope(
-        c->resolver, sn_intern_cstr(c->intern, "builtin.collections.collections"));
+        c->resolver, sn_intern_cstr(c->intern, "builtin.collections.collections.types"));
     SnSymbol *sym = pkg ? sn_scope_lookup_local(pkg, sn_intern_cstr(c->intern, "Array")) : NULL;
     if (!sym && c->resolver->prelude_scope)
         sym = sn_scope_lookup_local(c->resolver->prelude_scope, sn_intern_cstr(c->intern, "Array"));
@@ -84,7 +84,7 @@ static SnTypeRep *array_source_member_type(SnChecker *c, SnSymbol *member,
 /* True when `sym` was declared in a file other than the one being checked.
  * Resolving such a symbol's declared types re-runs name resolution in the
  * CURRENT context, where the other file's imports and type parameters do not
- * exist — `T` in builtin/errors/errors/Errors.snl's `func try<T, E>` is not in scope at a
+ * exist — `T` in builtin/errors/hierarchy/types/Errors.snl's `func try<T, E>` is not in scope at a
  * call site in a fixture. Whatever it reports there would be both wrong and
  * attributed to the wrong file, and the real problem (if any) is reported
  * where that declaration's own body is checked. */

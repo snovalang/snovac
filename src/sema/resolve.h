@@ -30,19 +30,18 @@
  *    ladder `int8` through `int128` — before any scope lookup.
  *
  * 3. `Option`/`Result` come from one specific, hardcoded package name:
- *    `builtin.types`, whose path deliberately avoids a redundant `types`
- *    segment. If that package
+ *    `builtin.core.types.values`, the package for core value types. If that package
  *    is ever renamed, sn_resolver_build_prelude() silently finds nothing —
  *    it does not search the whole graph for a package that happens to
  *    declare Option/Result. Their VARIANTS (`Some`/`None`/`Ok`/`Err`) are
  *    also added to the prelude scope directly, not just the two type names
- *    — builtin/types/Option.snl's own doc comment says construction is "usable
+ *    — builtin/core/types/values/Option.snl's own doc comment says construction is "usable
  *    in every Snovalang program with no import"; found this the hard way
  *    when `Some(1)` failed to resolve during check.c testing.
  *
  * 4. A FIELD and a METHOD with the same name in one type do NOT collide
  *    (SNOVA_DUPLICATE_DECL is not raised) — `private let path: Path` plus
- *    `method path(): Path` are supported, as shown in builtin/filesystem/filesystem/FileSystem.snl's
+ *    `method path(): Path` are supported, as shown in builtin/io/filesystem/operations/FileSystem.snl's
  *    `File`, an idiomatic backing-field/accessor pair. Whichever is
  *    collected first wins the name; disambiguating "the field" from "a call
  *    to the method" at a use site needs call syntax, which belongs to

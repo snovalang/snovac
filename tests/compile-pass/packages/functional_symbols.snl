@@ -1,9 +1,9 @@
 package tests.packages.functional_symbols
 
 
-import builtin.functional.functional
+import builtin.functional.collections.operations
 import builtin.parallel.Parallel
-import builtin.console.console
+import builtin.io.console.output
 
 
 async func main(): Task<int> {

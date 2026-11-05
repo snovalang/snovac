@@ -1,8 +1,8 @@
 package tests.packages.async_scope_symbols
 
 
-import builtin.async.async
-import builtin.console.console
+import builtin.concurrent.async.tasks
+import builtin.io.console.output
 
 
 async func main(): Task<int> {

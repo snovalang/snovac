@@ -7,7 +7,7 @@
 
 static SnSymbol *array_type_symbol(SnChecker *c) {
     SnScope *pkg = sn_resolver_package_scope(
-        c->resolver, sn_intern_cstr(c->intern, "builtin.collections.collections"));
+        c->resolver, sn_intern_cstr(c->intern, "builtin.collections.collections.types"));
     SnSymbol *sym = pkg ? sn_scope_lookup_local(pkg, sn_intern_cstr(c->intern, "Array")) : NULL;
     return sym && sym->kind == SN_SYM_TYPE ? sym : NULL;
 }

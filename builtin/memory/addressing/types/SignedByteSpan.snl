@@ -1,0 +1,164 @@
+package builtin.memory.addressing.types
+
+import builtin.errors.hierarchy.types
+
+import builtin.collections.collections.types
+import builtin.core.types.values
+
+struct SignedByteSpan {
+    private let storage: Array<int8>
+    private let offset: int
+    public let length: int64
+
+    public static method empty(): SignedByteSpan {
+        return SignedByteSpan {
+            storage: Array<int8>.new(),
+            offset: 0,
+            length: 0L as int64
+        }
+    }
+
+    public static method fromArray(bytes: Array<int8>): SignedByteSpan {
+        return SignedByteSpan {
+            storage: bytes,
+            offset: 0,
+            length: bytes.length() as int64
+        }
+    }
+
+    public static method view(bytes: Array<int8>, start: int, count: int): SignedByteSpan {
+        if start < 0 || count < 0 || start > bytes.length() || count > bytes.length() - start {
+            throw IndexOutOfBoundsException("SignedByteSpan.view range is out of bounds")
+        }
+        return SignedByteSpan {
+            storage: bytes,
+            offset: start,
+            length: count as int64
+        }
+    }
+
+    public method isEmpty(): bool {
+        var zero: int64 = 0L as int64
+        return length == zero
+    }
+
+    public method len(): int {
+        return length as int
+    }
+
+    public method get(index: int): int8 {
+        if index < 0 || (index as int64) >= length {
+            throw IndexOutOfBoundsException("SignedByteSpan index out of bounds")
+        }
+        return storage.get(offset + index)
+    }
+
+    public method tryGet(index: int): Option<int8> {
+        if index < 0 || (index as int64) >= length {
+            return None
+        }
+        return Some(storage.get(offset + index))
+    }
+
+    public method set(index: int, value: int8): unit {
+        if index < 0 || (index as int64) >= length {
+            throw IndexOutOfBoundsException("SignedByteSpan index out of bounds")
+        }
+        storage.set(offset + index, value)
+    }
+
+    public method trySet(index: int, value: int8): bool {
+        if index < 0 || (index as int64) >= length {
+            return false
+        }
+        storage.set(offset + index, value)
+        return true
+    }
+
+    public method slice(start: int, count: int): SignedByteSpan {
+        if start < 0 || count < 0 || (start as int64) > length ||
+            (count as int64) > length - (start as int64) {
+            throw IndexOutOfBoundsException("SignedByteSpan.slice range is out of bounds")
+        }
+        return SignedByteSpan {
+            storage: storage,
+            offset: offset + start,
+            length: count as int64
+        }
+    }
+
+    public method toArray(): Array<int8> {
+        var result = Array<int8>.new()
+        var i = 0
+        while (i as int64) < length {
+            result.push(storage.get(offset + i))
+            i += 1
+        }
+        return result
+    }
+
+    public method copyTo(target: SignedByteSpan, targetOffset: int): unit {
+        this.copyRangeTo(target, 0, targetOffset, this.len())
+    }
+
+    public method copyRangeTo(target: SignedByteSpan, sourceOffset: int,
+                              targetOffset: int, count: int): unit {
+        if sourceOffset < 0 || count < 0 || sourceOffset > this.len() ||
+            count > this.len() - sourceOffset {
+            throw IndexOutOfBoundsException("SignedByteSpan.copyRangeTo source range is out of bounds")
+        }
+        if targetOffset < 0 || targetOffset > target.len() ||
+            count > target.len() - targetOffset {
+            throw IndexOutOfBoundsException("SignedByteSpan.copyTo range is out of bounds")
+        }
+        var sourceStart = offset + sourceOffset
+        var targetStart = target.offset + targetOffset
+        if storage == target.storage && targetStart > sourceStart &&
+            targetStart < sourceStart + count {
+            var i = count - 1
+            while i >= 0 {
+                target.set(targetOffset + i, storage.get(sourceStart + i))
+                i -= 1
+            }
+        } else {
+            var i = 0
+            while i < count {
+                target.set(targetOffset + i, storage.get(sourceStart + i))
+                i += 1
+            }
+        }
+    }
+
+    public method contentEquals(other: SignedByteSpan): bool {
+        if length != other.length {
+            return false
+        }
+        var i = 0
+        while (i as int64) < length {
+            if this.get(i) != other.get(i) {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+
+    public method indexOf(value: int8): int {
+        var i = 0
+        while (i as int64) < length {
+            if this.get(i) == value {
+                return i
+            }
+            i += 1
+        }
+        return -1
+    }
+
+    public method fill(value: int8): unit {
+        var i = 0
+        while (i as int64) < length {
+            this.set(i, value)
+            i += 1
+        }
+    }
+}

@@ -1,14 +1,14 @@
 package tests.packages.layer01
 
-import builtin.args.args
-import builtin.console.console
-import builtin.env.env
-import builtin.errors.errors
-import builtin.filesystem.filesystem
+import builtin.process.arguments.values
+import builtin.io.console.output
+import builtin.process.environment.values
+import builtin.errors.hierarchy.types
+import builtin.io.filesystem.operations
 import builtin.format.Format
 import builtin.inout.InOut
-import builtin.math.math
-import builtin.strings.strings
+import builtin.math.arithmetic.operations
+import builtin.text.parsing.results
 import builtin.utils.Utils
 
 struct Path {}

@@ -1,6 +1,6 @@
 package tests.bootstrap.ownership_replacement
 
-import builtin.console.console
+import builtin.io.console.output
 
 func makeBox(n: int): Array<int> {
     return [n, n, n, n]

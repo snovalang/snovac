@@ -1,0 +1,43 @@
+package builtin.concurrent.synchronization.primitives
+
+import builtin.errors.hierarchy.types
+
+class WaitGroup {
+    private var count: int
+
+    public static method new(): WaitGroup {
+        return WaitGroup { count: 0 }
+    }
+
+    public method add(amount: int): unit {
+        if amount < 0 && count + amount < 0 {
+            throw IllegalArgumentException("WaitGroup count cannot become negative")
+        }
+        if amount > 0 && count > 9223372036854775807 - amount {
+            throw ArithmeticException("WaitGroup count overflow")
+        }
+        count = count + amount
+    }
+
+    public method done(): unit {
+        this.doneMany(1)
+    }
+
+    public method doneMany(amount: int): unit {
+        if amount <= 0 {
+            throw IllegalArgumentException("WaitGroup.doneMany amount must be positive")
+        }
+        if count < amount {
+            throw IllegalStateException("WaitGroup completion exceeds outstanding work")
+        }
+        count = count - amount
+    }
+
+    public method isComplete(): bool {
+        return count == 0
+    }
+
+    public method outstanding(): int {
+        return count
+    }
+}

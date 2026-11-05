@@ -2,7 +2,7 @@ package tests.packages.inout_symbols
 
 
 import builtin.inout.InOut
-import builtin.async.async
+import builtin.concurrent.async.tasks
 
 
 async func main(): Task<int> {

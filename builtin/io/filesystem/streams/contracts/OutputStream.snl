@@ -1,0 +1,7 @@
+package builtin.io.filesystem.streams.contracts
+
+interface OutputStream {
+    method write(data: string): int
+    method isClosed(): bool
+    method close(): unit
+}

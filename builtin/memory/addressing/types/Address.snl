@@ -1,0 +1,26 @@
+package builtin.memory.addressing.types
+
+struct Address {
+    private let value: NativeWord
+
+    public static method null(): Address {
+        return Address { value: 0L as NativeWord }
+    }
+
+    public static method fromNativeWord(value: NativeWord): Address {
+        return Address { value: value }
+    }
+
+    public method toNativeWord(): NativeWord {
+        return value
+    }
+
+    public method isNull(): bool {
+        var zero: NativeWord = 0L as NativeWord
+        return value == zero
+    }
+
+    public method equals(other: Address): bool {
+        return value == other.value
+    }
+}

@@ -1,0 +1,70 @@
+package builtin.network.http.data.types
+
+enum Method {
+    Get,
+    Head,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Options,
+    Trace,
+    Connect,
+
+    public override method toString(): string {
+        return match this {
+            Get -> "GET"
+            Head -> "HEAD"
+            Post -> "POST"
+            Put -> "PUT"
+            Patch -> "PATCH"
+            Delete -> "DELETE"
+            Options -> "OPTIONS"
+            Trace -> "TRACE"
+            Connect -> "CONNECT"
+        }
+    }
+
+    public method isSafe(): bool {
+        return match this {
+            Get -> true
+            Head -> true
+            Options -> true
+            Trace -> true
+            Post -> false
+            Put -> false
+            Patch -> false
+            Delete -> false
+            Connect -> false
+        }
+    }
+
+    public method isIdempotent(): bool {
+        return match this {
+            Get -> true
+            Head -> true
+            Put -> true
+            Delete -> true
+            Options -> true
+            Trace -> true
+            Post -> false
+            Patch -> false
+            Connect -> false
+        }
+    }
+
+    public static method fromString(value: string): Option<Method> {
+        match value.toUpper() {
+            "GET" -> return Some(Get)
+            "HEAD" -> return Some(Head)
+            "POST" -> return Some(Post)
+            "PUT" -> return Some(Put)
+            "PATCH" -> return Some(Patch)
+            "DELETE" -> return Some(Delete)
+            "OPTIONS" -> return Some(Options)
+            "TRACE" -> return Some(Trace)
+            "CONNECT" -> return Some(Connect)
+            _ -> return None
+        }
+    }
+}

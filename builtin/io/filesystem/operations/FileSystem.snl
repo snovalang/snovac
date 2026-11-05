@@ -1,0 +1,49 @@
+package builtin.io.filesystem.operations
+
+import builtin.errors.hierarchy.types
+import builtin.runtime.host.api
+import builtin.core.types.values
+
+class FileSystem {
+    public static method exists(path: string): bool {
+        return Runtime.fileExists(path)
+    }
+
+    public static method tryExists(path: string): Result<bool, any> {
+        try {
+            return Ok(Runtime.fileExists(path))
+        } catch (error: any) {
+            return Err(error)
+        }
+        return Err(RuntimeException("FileSystem.tryExists reached an invalid state"))
+    }
+
+    public static method readText(path: string): string {
+        return Runtime.readText(path)
+    }
+
+    public static method tryReadText(path: string): Result<string, any> {
+        try {
+            return Ok(Runtime.readText(path))
+        } catch (error: any) {
+            return Err(error)
+        }
+        return Err(RuntimeException("FileSystem.tryReadText reached an invalid state"))
+    }
+
+    public static method writeText(path: string, text: string): bool {
+        return Runtime.writeText(path, text)
+    }
+
+    public static method tryWriteText(path: string, text: string): Result<bool, any> {
+        try {
+            if Runtime.writeText(path, text) {
+                return Ok(true)
+            }
+            return Err("FileSystem.writeText did not complete successfully")
+        } catch (error: any) {
+            return Err(error)
+        }
+        return Err(RuntimeException("FileSystem.tryWriteText reached an invalid state"))
+    }
+}

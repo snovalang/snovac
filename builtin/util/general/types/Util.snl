@@ -1,0 +1,11 @@
+package builtin.util.general.types
+
+class Util {
+    public static method identity<T>(value: T): T {
+        return value
+    }
+
+    public static method pair<A, B>(first: A, second: B): Pair<A, B> {
+        return Pair{ first: first, second: second }
+    }
+}

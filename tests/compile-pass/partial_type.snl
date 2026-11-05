@@ -1,7 +1,7 @@
 package tests.partial_type
 
 
-import builtin.console.console
+import builtin.io.console.output
 
 
 // `Partial<T>` is a compiler intrinsic generic alias whose members come from T.

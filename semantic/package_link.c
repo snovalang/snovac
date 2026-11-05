@@ -15,7 +15,7 @@
 /* Resolves one import target to the package that provides it.
  *
  * An import names either a package outright or a SYMBOL inside one, and the
- * corpus uses both spellings against the same graph: `builtin.console.console`
+ * corpus uses both spellings against the same graph: `builtin.io.console.output`
  * is a whole package (builtin/Console.snova declares exactly that), while
  * `builtin.auth.Auth.OAuth2` and `stdlib.sonar.serialization.Json` name a
  * symbol inside packages `builtin.auth.Auth` and `stdlib.sonar.serialization`.

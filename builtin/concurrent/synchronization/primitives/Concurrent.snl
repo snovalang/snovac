@@ -1,0 +1,11 @@
+package builtin.concurrent.synchronization.primitives
+
+class Concurrent {
+    public static method semaphore(permits: int): Semaphore {
+        return Semaphore.new(permits)
+    }
+
+    public static method waitGroup(): WaitGroup {
+        return WaitGroup.new()
+    }
+}

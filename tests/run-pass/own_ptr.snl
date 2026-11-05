@@ -1,6 +1,6 @@
 package tests.run_pass.own_ptr
 
-import builtin.console.console
+import builtin.io.console.output
 
 func main(): int {
     var n = 7

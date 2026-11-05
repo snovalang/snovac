@@ -1,6 +1,6 @@
 package tests.run_pass.overload_show
 
-import builtin.console.console
+import builtin.io.console.output
 
 class Box {
     method show(value: int): string {

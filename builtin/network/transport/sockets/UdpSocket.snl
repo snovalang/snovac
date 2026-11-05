@@ -1,0 +1,70 @@
+package builtin.network.transport.sockets
+
+import builtin.errors.hierarchy.types
+
+import builtin.core.types.values
+
+class UdpSocket {
+    private let handle: int
+    private var closed: bool = false
+
+    public static method bind(host: string, port: int): UdpSocket {
+        match UdpSocket.tryBind(host, port) {
+            Ok(socket) -> return socket
+            Err(error) -> throw RuntimeException(error)
+        }
+    }
+
+    public static method tryBind(host: string, port: int): Result<UdpSocket, string> {
+        if port < 0 || port > 65535 {
+            return Err("UDP bind port must be between 0 and 65535")
+        }
+        var handle = Socket.udpBind(host, port)
+        if handle < 0 {
+            return Err("could not bind UDP socket")
+        }
+        return Ok(UdpSocket { handle: handle })
+    }
+
+    public method trySendTo(host: string, port: int, data: string): Result<int, string> {
+        if closed {
+            return Err("UdpSocket is closed")
+        }
+        if host.isEmpty() || port < 1 || port > 65535 {
+            return Err("UDP destination requires a host and a port between 1 and 65535")
+        }
+        var sent = Socket.udpSendTo(handle, host, port, data)
+        if sent < 0 {
+            return Err("UDP send failed")
+        }
+        return Ok(sent)
+    }
+
+    public method sendTo(host: string, port: int, data: string): int {
+        match this.trySendTo(host, port, data) {
+            Ok(sent) -> return sent
+            Err(error) -> throw RuntimeException(error)
+        }
+    }
+
+    public method receive(maxLength: int): string {
+        if closed {
+            throw IllegalStateException("UdpSocket is closed")
+        }
+        if maxLength <= 0 {
+            throw IllegalArgumentException("UdpSocket.receive length must be positive")
+        }
+        return Socket.udpReceive(handle, maxLength)
+    }
+
+    public method isClosed(): bool {
+        return closed
+    }
+
+    public method close(): unit {
+        if closed == false {
+            Socket.close(handle)
+            closed = true
+        }
+    }
+}

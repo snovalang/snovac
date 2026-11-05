@@ -1,8 +1,8 @@
 package tests.packages.args
 
 
-import builtin.args.args
-import builtin.console.console
+import builtin.process.arguments.values
+import builtin.io.console.output
 
 
 func main(args: Array<string>): int {

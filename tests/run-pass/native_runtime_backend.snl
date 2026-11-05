@@ -1,7 +1,7 @@
 package tests.run_pass.native_runtime_backend
 
-import builtin.console.console
-import builtin.runtime.runtime
+import builtin.io.console.output
+import builtin.runtime.host.api
 
 func main(): int {
     let cfg = RuntimeConfig.forProfile(RuntimeProfile.Console)

@@ -1,7 +1,7 @@
 package tests.run_pass.quick_sort
 
 
-import builtin.console.console
+import builtin.io.console.output
 
 
 func partition(arr: Array<int>, lo: int, hi: int): int {

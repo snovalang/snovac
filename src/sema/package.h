@@ -22,7 +22,7 @@
  *     and `packages/unknown_package` (SNOVA017) reference `Snovalang.Console`
  *     / `Snovalang.LegacyDatabase`, a capitalized prefix that does not match
  *     any `package` declaration actually found under `builtin` today (those
- *     declare `builtin.console.console`, `builtin.filesystem.filesystem`,
+ *     declare `builtin.io.console.output`, `builtin.io.filesystem.operations`,
  *     etc., lowercase). This is a real naming mismatch between
  *     those two fixtures and the current builtin/ layout — flagged, not
  *     resolved, here. Only SNOVA050 ("import target does not exist as any

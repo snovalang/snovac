@@ -1,7 +1,7 @@
 package tests.run_pass.json_array_completion
 
 
-import builtin.console.console
+import builtin.io.console.output
 
 
 // Smoke test: `inferredBindingType` must return "Array<Item>" for the `.json<T>()`

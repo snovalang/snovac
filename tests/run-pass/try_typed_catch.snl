@@ -1,6 +1,6 @@
 package tests.run_pass.try_typed_catch
 
-import builtin.console.console
+import builtin.io.console.output
 
 func fail(): unit {
     throw "caught-value"

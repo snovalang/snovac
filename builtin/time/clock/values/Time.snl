@@ -1,0 +1,9 @@
+package builtin.time.clock.values
+
+class Time {
+    @Native
+    public static method now(): Instant
+
+    @Native
+    public static method sleep(duration: Duration): unit
+}

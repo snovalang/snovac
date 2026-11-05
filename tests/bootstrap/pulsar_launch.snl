@@ -1,6 +1,6 @@
 package tests.bootstrap.pulsar_launch
 
-import builtin.console.console
+import builtin.io.console.output
 
 pulsar func worker(): unit {
     Console.printline("p")

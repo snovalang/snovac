@@ -42,7 +42,7 @@ typedef enum {
      * blob. SN_T_CHAR is not an integer. */
     SN_T_INT8, SN_T_INT16, SN_T_INT32, SN_T_INT64, SN_T_INT128,
     SN_T_ANY,     /* the corpus's escape hatch — `func printline(value: any)`
-                    * in builtin/console/console/Console.snl. A real, resolvable type, but
+                    * in builtin/io/console/output/Console.snl. A real, resolvable type, but
                     * one that never takes part in a mismatch (sn_type_is_any) */
     SN_T_NAMED,   /* class/struct/enum/interface, with generic args */
     SN_T_TYPEVAR, /* type parameter T within a generic scope */

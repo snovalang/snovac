@@ -1,9 +1,0 @@
-package builtin.time.time
-
-class Time {
-    @Native
-    public static method now(): Instant
-
-    @Native
-    public static method sleep(duration: Duration): unit
-}

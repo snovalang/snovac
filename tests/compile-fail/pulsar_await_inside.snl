@@ -1,6 +1,6 @@
 package tests.pulsar_await_inside
 
-import builtin.channels.channels
+import builtin.concurrent.channels.queues
 
 pulsar func worker(ch: Channel<int>): unit {
     let v = await ch.receive()

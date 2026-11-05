@@ -1,8 +1,8 @@
 package tests.packages.context_cancel_symbols
 
 
-import builtin.context.context
-import builtin.console.console
+import builtin.context.scoped.values
+import builtin.io.console.output
 
 
 func main(): int {

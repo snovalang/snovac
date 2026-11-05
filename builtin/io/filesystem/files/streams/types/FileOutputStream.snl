@@ -1,0 +1,37 @@
+package builtin.io.filesystem.files.streams.types
+
+import builtin.errors.hierarchy.types
+import builtin.io.filesystem.streams.contracts
+import builtin.runtime.host.api
+
+// Buffered text output; close() replaces the destination with the buffered text.
+class FileOutputStream : OutputStream {
+    private let path: string
+    private var contents: string = ""
+    private var closed: bool = false
+
+    public constructor(path: string) {
+        this.path = path
+    }
+
+    public method isClosed(): bool {
+        return closed
+    }
+
+    public method write(data: string): int {
+        if closed {
+            throw IllegalStateException("FileOutputStream is closed")
+        }
+        contents = contents + data
+        return data.length()
+    }
+
+    public method close(): unit {
+        if closed == false {
+            if Runtime.writeText(path, contents) == false {
+                throw RuntimeException("FileOutputStream could not write the destination")
+            }
+            closed = true
+        }
+    }
+}

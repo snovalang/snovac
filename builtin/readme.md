@@ -1,28 +1,38 @@
 # Builtin library
 
 All language-level builtin declarations are kept in this directory as `.snl`
-source. Files are split by class or data type; package names remain stable, so
-splitting a file does not change imports. For example, `Option.snl` and
-`Result.snl` both belong to `builtin.types`.
+source. Package names follow `builtin.<general>.<abstraction>.<concrete>.<Stem>`:
+the concrete segment names a specific area such as `data/types`, not the
+literal word `concrete`, and the `.snl` filename uses the declaration's stem.
+For example, HTTP response data lives at
+`builtin/network/http/data/types/Response.snl` in package
+`builtin.network.http.data.types`.
 
 | Area | Package | Files |
 | --- | --- | --- |
-| Collections | `builtin.collections.collections` | `collections/collections/{Array,Map,Partial,Set}.snl` |
-| Core types and object model | `builtin.types` | `types/{Object,Option,PrimitiveExtensions,Result}.snl` |
-| Error hierarchy | `builtin.errors.errors` | `errors/errors/Errors.snl` |
-| Console and files | `builtin.console.console`, `builtin.filesystem.filesystem` | `console/console/Console.snl`, `filesystem/filesystem/FileSystem.snl` |
-| Process | `builtin.args.args`, `builtin.env.env`, `builtin.runtime.runtime` | `args/args/Args.snl`, `env/env/Env.snl`, `runtime/runtime/Runtime.snl` |
-| Text and math | `builtin.text.text`, `builtin.math.math` | `text/text/Text.snl`, `math/math/Math.snl` |
-| String parsing | `builtin.strings.strings` | `strings/strings/Strings.snl` |
-| Functional | `builtin.functional.functional` | `functional/functional/Functional.snl` |
-| Time | `builtin.time.time` | `time/time/{Duration,Instant,Time}.snl` |
-| Networking | `builtin.net.net` | `net/net/{Net,Socket,SocketAddress,TcpListener,TcpStream,TcpStreamExtensions,UdpSocket}.snl` |
-| HTTP data | `builtin.net.http.types` | `net/http/types/{Method,Header,Request,Response}.snl` |
-| Async and concurrency | `builtin.async.async`, `builtin.util.concurrent.concurrent` | `async/async/*.snl`, `util/concurrent/concurrent/*.snl` |
-| Channels | `builtin.channels.channels` | `channels/channels/Channel.snl` |
-| Context | `builtin.context.context` | `context/context/Context.snl` |
-| Memory types | `builtin.memory.types` | `memory/types/{Address,ByteSpan,NativeWord,SignedByteSpan}.snl` |
-| Utilities | `builtin.util.util` | `util/util/{Pair,Util}.snl` |
+| Collections | `builtin.collections.collections.types` | `collections/collections/types/{Array,Map,Partial,Set}.snl` |
+| Core types and object model | `builtin.core.types.values` | `core/types/values/{Object,Option,PrimitiveExtensions,Result}.snl` |
+| Error hierarchy | `builtin.errors.hierarchy.types` | `errors/hierarchy/types/Errors.snl` |
+| Console and filesystem operations | `builtin.io.console.output`, `builtin.io.filesystem.operations` | `io/console/output/Console.snl`, `io/filesystem/operations/FileSystem.snl` |
+| File streams | `builtin.io.filesystem.streams.contracts`, `builtin.io.filesystem.files.streams.types`, `builtin.io.filesystem.streams.extensions` | `io/filesystem/streams/contracts/*.snl`, `io/filesystem/files/streams/types/{FileInputStream,FileOutputStream}.snl`, `io/filesystem/streams/extensions/FileStreamExtensions.snl` |
+| Process and host runtime | `builtin.process.arguments.values`, `builtin.process.environment.values`, `builtin.runtime.host.api` | `process/arguments/values/Args.snl`, `process/environment/values/Env.snl`, `runtime/host/api/Runtime.snl` |
+| Text and math | `builtin.text.text.values`, `builtin.math.arithmetic.operations` | `text/text/values/Text.snl`, `math/arithmetic/operations/Math.snl` |
+| String parsing | `builtin.text.parsing.results` | `text/parsing/results/Strings.snl` |
+| Functional | `builtin.functional.collections.operations` | `functional/collections/operations/Functional.snl` |
+| Time | `builtin.time.clock.values` | `time/clock/values/{Duration,Instant,Time}.snl` |
+| Networking | `builtin.network.transport.sockets` | `network/transport/sockets/{Net,Socket,SocketAddress,TcpListener,TcpStream,TcpStreamExtensions,UdpSocket}.snl` |
+| HTTP data | `builtin.network.http.data.types` | `network/http/data/types/{Method,Header,Request,Response}.snl` |
+| Async and synchronization | `builtin.concurrent.async.tasks`, `builtin.concurrent.synchronization.primitives` | `concurrent/async/tasks/*.snl`, `concurrent/synchronization/primitives/*.snl` |
+| Channels | `builtin.concurrent.channels.queues` | `concurrent/channels/queues/Channel.snl` |
+| Context | `builtin.context.scoped.values` | `context/scoped/values/Context.snl` |
+| Memory types | `builtin.memory.addressing.types` | `memory/addressing/types/{Address,ByteSpan,NativeWord,SignedByteSpan}.snl` |
+| Utilities | `builtin.util.general.types` | `util/general/types/{Pair,Util}.snl` |
+
+Contracts, shared abstractions, data types, and implementation helpers use
+specific package names under their domain. Contracts live under
+`streams.contracts`, file stream types under `files.streams.types`, and stream
+extensions under `streams.extensions`. This makes the package path describe
+what a type does and what it depends on.
 
 `@Native` marks a host boundary and requires a runtime implementation. The
 interpreter and generated native runner provide console output, basic array
@@ -33,8 +43,8 @@ those socket calls in Snovalang. Generated native programs do not currently
 expose socket, clock, or mutex calls.
 
 Method signatures for strings and scalar primitives live in
-`types/PrimitiveExtensions.snl`; generic array signatures and source
-implementations live in `collections/collections/Array.snl`. The semantic
+`core/types/values/PrimitiveExtensions.snl`; generic array signatures and
+source implementations live in `collections/collections/types/Array.snl`. The semantic
 checker reads those declarations instead of maintaining a parallel method
 catalog. `Object` supplies default `toString()`, identity `equals(Object)`,
 and `hashCode()` methods to declared object types. `Error` and its subclasses
@@ -51,7 +61,17 @@ over the runtime boundary. File operations return their host exception through
 `Result` in the `try*` variants; `writeText` also reports a false runtime
 result as an error.
 
-`builtin.strings.strings` parses signed integers with radix and overflow
+`builtin.io.filesystem.streams.contracts` defines `InputStream` and
+`OutputStream`; `builtin.io.filesystem.files.streams.types` provides text file
+stream implementations, and `builtin.io.filesystem.streams.extensions` adds
+`readAll()` on `InputStream`.
+The current native boundary exposes whole-file text reads and writes, so
+`FileInputStream` buffers the file contents at construction and
+`FileOutputStream` buffers writes until `close()`, which replaces the target
+file. These APIs are text-oriented and do not provide byte streams or
+incremental host I/O yet.
+
+`builtin.text.parsing.results` parses signed integers with radix and overflow
 validation, bounded integer widths, floating-point values, decimals, and
 booleans into `Result` values. Its `tryParse*` helpers convert parse failures
 into `Option.None`.

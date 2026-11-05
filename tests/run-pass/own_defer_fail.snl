@@ -1,6 +1,6 @@
 package tests.run_pass.own_defer_fail
 
-import builtin.console.console
+import builtin.io.console.output
 
 func say(s: string): int {
     Console.printline(s)

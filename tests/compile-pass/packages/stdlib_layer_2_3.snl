@@ -1,12 +1,12 @@
 package tests.packages.layer23
 
-import builtin.async.async
-import builtin.channels.channels
-import builtin.context.context
+import builtin.concurrent.async.tasks
+import builtin.concurrent.channels.queues
+import builtin.context.scoped.values
 import builtin.database.Database
 import builtin.http.Http
 import builtin.http.HttpRequest
-import builtin.net.net
+import builtin.network.transport.sockets
 import builtin.sync.Sync
 import builtin.unsafe.Unsafe
 

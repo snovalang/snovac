@@ -1,8 +1,8 @@
 package tests.packages.net_udp_symbols
 
 
-import builtin.net.net
-import builtin.console.console
+import builtin.network.transport.sockets
+import builtin.io.console.output
 
 
 async func main(): Task<int> {

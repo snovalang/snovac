@@ -2,8 +2,8 @@ package tests.packages.interceptor
 
 
 import builtin.events.Events
-import builtin.console.console
-import builtin.context.context
+import builtin.io.console.output
+import builtin.context.scoped.values
 
 
 func logBefore(): unit {

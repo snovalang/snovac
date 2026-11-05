@@ -1,0 +1,46 @@
+package builtin.io.filesystem.files.streams.types
+
+import builtin.errors.hierarchy.types
+import builtin.io.filesystem.streams.contracts
+import builtin.runtime.host.api
+
+// Buffered text input backed by the current whole-file runtime API.
+class FileInputStream : InputStream {
+    private let path: string
+    private let contents: string
+    private var position: int = 0
+    private var closed: bool = false
+
+    public constructor(path: string) {
+        this.path = path
+        this.contents = Runtime.readText(path)
+    }
+
+    public method isClosed(): bool {
+        return closed
+    }
+
+    public method read(maxLength: int): string {
+        if closed {
+            throw IllegalStateException("FileInputStream is closed")
+        }
+        if maxLength < 0 {
+            throw IllegalArgumentException("FileInputStream.read length cannot be negative")
+        }
+        if maxLength == 0 || position >= contents.length() {
+            return ""
+        }
+
+        var end = position + maxLength
+        if end > contents.length() {
+            end = contents.length()
+        }
+        let chunk = contents.substring(position, end)
+        position = end
+        return chunk
+    }
+
+    public method close(): unit {
+        closed = true
+    }
+}

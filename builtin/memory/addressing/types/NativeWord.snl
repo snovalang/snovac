@@ -1,0 +1,3 @@
+package builtin.memory.addressing.types
+
+type NativeWord = int64

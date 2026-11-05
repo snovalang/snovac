@@ -51,7 +51,7 @@ void sn_pkggraph_load_native_manifest(SnPackageGraph *g, const char *builtin_dir
     static const char *const DEFAULT_NATIVES[] = {
         "builtin.metadata.Documented",
         "builtin.syntax.Syntax",
-        "builtin.console.console"
+        "builtin.io.console.output"
     };
     for (size_t i = 0; i < sizeof(DEFAULT_NATIVES) / sizeof(DEFAULT_NATIVES[0]); i++) {
         const char *name = sn_intern_cstr(g->intern, DEFAULT_NATIVES[i]);

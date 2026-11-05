@@ -1,0 +1,44 @@
+package builtin.concurrent.async.tasks
+
+import builtin.errors.hierarchy.types
+import builtin.core.types.values
+
+// Class identity makes cancellation visible to every holder of the token.
+class CancellationToken {
+    private var cancelled: bool = false
+    private var reason: string = ""
+
+    public static method new(): CancellationToken {
+        return CancellationToken()
+    }
+
+    public method cancel(): bool {
+        return this.cancelWith("cancelled")
+    }
+
+    public method cancelWith(message: string): bool {
+        if cancelled {
+            return false
+        }
+        reason = message
+        cancelled = true
+        return true
+    }
+
+    public method cancellationReason(): Option<string> {
+        if cancelled {
+            return Some(reason)
+        }
+        return None
+    }
+
+    public method throwIfCancelled(): unit {
+        if cancelled {
+            throw CancellationException(reason)
+        }
+    }
+
+    public method isCancelled(): bool {
+        return cancelled
+    }
+}
