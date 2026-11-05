@@ -71,8 +71,3 @@ void eval_region_end(Interp *in, EvalRegion *region) {
         eval_region_recycle(in, region);
     }
 }
-
-void eval_region_mark_current(Interp *in) {
-    if (in && in->current_region) in->current_region->may_escape = 1;
-}
-

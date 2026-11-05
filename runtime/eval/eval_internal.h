@@ -164,7 +164,6 @@ void eval_region_pool_free(Interp *in);
 int eval_value_is_heap_owned(Value value);
 
 Env *env_new(Interp *in, Env *parent);
-void eval_region_mark_current(Interp *in);
 void eval_value_mark_escaping(Interp *in, Value value);
 Value *env_lookup(Env *e, const char *name);
 Value *env_lookup_owned(Env *e, const char *name, EvalRegion **owner_region);
