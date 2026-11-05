@@ -2,11 +2,13 @@
 
 The official, reference compiler for **Snovalang** written in pure, zero-dependency **ISO C11**.
 
-[![Release](https://github.com/supernovalang/snovac/actions/workflows/release.yml/badge.svg)](https://github.com/supernovalang/snovac/actions/workflows/release.yml)
+[![Release](https://github.com/snovalang/snovac/actions/workflows/release.yml/badge.svg)](https://github.com/snovalang/snovac/actions/workflows/release.yml)
 
 ## Quick Install
 
 The installers put the `snl` command on `PATH`. With no extra arguments, `install.sh` and `install.ps1` install `snl` when it is missing and update it when it is already installed. Pass `update` / `--update` (sh) or `-Update` (PowerShell) to update explicitly. That downloads the latest release, or clones this repository and builds it with `make`, so you do not pull and rebuild by hand.
+
+Verify the installation with `snl --version`.
 
 The subcommands (`run`, `build`, `check`, `get`, `tidy`, and the `--emit` / `--check-*` flags) stay the same.
 
