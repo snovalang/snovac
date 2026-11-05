@@ -2,6 +2,8 @@
  * frame drops. The compiler arena is not used for these blocks. */
 #include "eval_internal.h"
 
+#include <limits.h>
+
 #define RT_POOL (1u << 20)
 
 typedef struct MemBlock {
@@ -21,11 +23,25 @@ struct SnEvalMemFrame {
 static char g_pool[RT_POOL];
 static size_t g_pool_used;
 static MemBlock *g_free_stack;
-static int g_heap_allocs;
-static int g_heap_live;
-static int g_stack_allocs;
-static int g_bounds;
+static size_t g_heap_allocs;
+static size_t g_heap_live;
+static size_t g_stack_allocs;
+static size_t g_bounds;
 static uint64_t g_visit_epoch;
+
+static void count_inc(size_t *counter) {
+    if (*counter < SIZE_MAX) (*counter)++;
+}
+
+static int count_export(size_t count) {
+    return count > (size_t)INT_MAX ? INT_MAX : (int)count;
+}
+
+static void runtime_oom(size_t requested) {
+    fprintf(stderr, "snovac: fatal: runtime allocation failed for %zu bytes\n",
+            requested);
+    exit(70);
+}
 
 void sn_rt_mem_reset(SnEvalInterp *in) {
     g_pool_used = 0;
@@ -209,6 +225,9 @@ void sn_rt_frame_pop(SnEvalInterp *in, SnEvalEnv *keep_env, SnEvalValue extra) {
 }
 
 void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
+    if (!in || !in->mem || nbytes > SIZE_MAX - sizeof(MemBlock)) {
+        runtime_oom(nbytes);
+    }
     size_t bytes = sizeof(MemBlock) + nbytes;
     MemBlock *b = NULL;
     if (!heap) {
@@ -222,7 +241,7 @@ void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
         }
         if (!b) {
             size_t align = (g_pool_used + 15u) & ~15u;
-            if (align + bytes <= RT_POOL) {
+            if (align <= RT_POOL && bytes <= RT_POOL - align) {
                 b = (MemBlock *)(void *)(g_pool + align);
                 g_pool_used = align + bytes;
             } else {
@@ -232,13 +251,11 @@ void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
     }
     if (heap) {
         b = (MemBlock *)malloc(bytes);
-        g_heap_allocs++;
-        g_heap_live++;
+        if (!b) runtime_oom(nbytes);
+        count_inc(&g_heap_allocs);
+        count_inc(&g_heap_live);
     } else if (b) {
-        g_stack_allocs++;
-    }
-    if (!b) {
-        return NULL;
+        count_inc(&g_stack_allocs);
     }
     b->size = nbytes;
     b->owner = in->mem;
@@ -256,24 +273,24 @@ void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
 
 void sn_rt_list_push(SnEvalInterp *in, SnList *l, void *item, int heap) {
     if (l->len == l->cap) {
+        if (l->cap > SIZE_MAX / 2u) runtime_oom(SIZE_MAX);
         size_t ncap = l->cap ? l->cap * 2 : 4;
+        if (ncap > SIZE_MAX / sizeof(void *)) runtime_oom(SIZE_MAX);
         void **nd = (void **)sn_rt_alloc(in, ncap * sizeof(void *), heap);
-        if (l->items && nd) {
+        if (l->items) {
             memcpy(nd, l->items, l->len * sizeof(void *));
         }
         l->items = nd;
         l->cap = ncap;
     }
-    if (l->items) {
-        l->items[l->len++] = item;
-    }
+    l->items[l->len++] = item;
 }
 
-int sn_rt_heap_allocs(void) { return g_heap_allocs; }
-int sn_rt_heap_live(void) { return g_heap_live; }
-int sn_rt_stack_allocs(void) { return g_stack_allocs; }
-int sn_rt_bounds_checks(void) { return g_bounds; }
-void sn_rt_bounds_hit(void) { g_bounds++; }
+int sn_rt_heap_allocs(void) { return count_export(g_heap_allocs); }
+int sn_rt_heap_live(void) { return count_export(g_heap_live); }
+int sn_rt_stack_allocs(void) { return count_export(g_stack_allocs); }
+int sn_rt_bounds_checks(void) { return count_export(g_bounds); }
+void sn_rt_bounds_hit(void) { count_inc(&g_bounds); }
 
 int sn_eval_probe_name(const char *name) {
     if (!name) {
