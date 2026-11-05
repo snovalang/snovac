@@ -153,34 +153,3 @@ Value v_variant(Interp *in, const char *name, SnList payload) {
     v.as.vt = vt;
     return v;
 }
-
-int value_equals(Value a, Value b) {
-    if (a.kind == V_INT && b.kind == V_INT) return a.as.i == b.as.i;
-    if (a.kind == V_BOOL && b.kind == V_BOOL) return a.as.b == b.as.b;
-    if (a.kind == V_DOUBLE && b.kind == V_DOUBLE) return a.as.d == b.as.d;
-    if ((a.kind == V_INT && b.kind == V_DOUBLE) ||
-        (a.kind == V_DOUBLE && b.kind == V_INT)) {
-        double x = (a.kind == V_DOUBLE) ? a.as.d : (double)a.as.i;
-        double y = (b.kind == V_DOUBLE) ? b.as.d : (double)b.as.i;
-        return x == y;
-    }
-    if (a.kind == V_STRING && b.kind == V_STRING) {
-        return strcmp(a.as.str.data, b.as.str.data) == 0;
-    }
-    if (a.kind == V_UNIT && b.kind == V_UNIT) return 1;
-    if (a.kind == V_VARIANT && b.kind == V_VARIANT) {
-        if (strcmp(a.as.vt->name, b.as.vt->name) != 0 ||
-            a.as.vt->payload.len != b.as.vt->payload.len) {
-            return 0;
-        }
-        for (size_t i = 0; i < a.as.vt->payload.len; i++) {
-            if (!value_equals(*(const Value *)a.as.vt->payload.items[i],
-                              *(const Value *)b.as.vt->payload.items[i])) {
-                return 0;
-            }
-        }
-        return 1;
-    }
-    return 0;
-}
-
