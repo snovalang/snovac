@@ -16,6 +16,7 @@
 #define SNOVA_DEFER_UNSOUND       247
 #define SNOVA_BORROW_LIMIT        248
 #define SNOVA_BORROW_BRANCH       249
+#define SNOVA_BORROW_LOOP         250
 
 void sn_borrow_func(SnChecker *c, const SnDecl *decl);
 

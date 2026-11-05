@@ -31,6 +31,7 @@ A integração com `master` adotou a árvore ativa `src/`; os nomes antigos `fro
 - `src/sema/borrow*.c` implementa verificações de move/borrow para os fluxos cobertos pelo checker atual. Isso não deve ser descrito como verificação completa de lifetimes/CFG sem auditoria adicional.
 - O checker mantém limites estáticos de 96 variáveis/borrows ativos por função/expressão. Ao atingir a capacidade, agora emite erro semântico explícito em vez de continuar compilando com verificações incompletas; aumentar/remover esses limites requer armazenamento dinâmico no contexto de borrow.
 - Em `if`, cada braço é analisado a partir do mesmo snapshot. Movimentos/escapes/defer são unidos conservadoramente, holds temporários são encerrados no limite do braço e rebindings de referência para lugares divergentes são rejeitados até existir uma representação de pontos múltiplos/CFG.
+- Loops são analisados considerando que podem executar zero vezes: estado de move e empréstimos locais volta ao snapshot de entrada, moves do owner dentro do corpo geram erro e rebindings que mudam o destino do borrow são rejeitados como loop-carried até haver análise de pontos fixos/CFG.
 - `src/eval/async.c` permite transferir cleanup para tarefas. `src/eval/pulsar.c` oferece `sn_pulsar_pool_submit_owned`; o cleanup é executado após a função ou no caminho de falha de submissão.
 - A compilação atual foi verificada com `make -j2`. As suites de testes não foram executadas nesta integração.
 

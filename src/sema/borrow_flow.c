@@ -97,24 +97,25 @@ void sn_borrow_if(SnBorrowCx *cx, SnStmt *s) {
 }
 
 void sn_borrow_loop(SnBorrowCx *cx, SnStmt *body) {
-    int moved[SN_BORROW_MAX];
-    int shared[SN_BORROW_MAX];
-    int excl[SN_BORROW_MAX];
     int n = cx->nv;
-    for (int i = 0; i < n; i++) {
-        moved[i] = cx->vars[i].moved;
-        shared[i] = cx->vars[i].shared;
-        excl[i] = cx->vars[i].exclusive;
-    }
+    SnBorrowVar before[SN_BORROW_MAX];
+    memcpy(before, cx->vars, (size_t)n * sizeof(*before));
     sn_borrow_stmt(cx, body);
     for (int i = 0; i < n; i++) {
-        if (!moved[i] && cx->vars[i].moved) {
+        SnBorrowVar after = cx->vars[i];
+        if (!before[i].moved && after.moved) {
             sn_borrow_fail(cx, SNOVA_USE_AFTER_MOVE,
                      cx->vars[i].init ? cx->vars[i].init->span : (SnSpan){0},
                      "value moved in a loop");
         }
-        cx->vars[i].moved = moved[i];
-        cx->vars[i].shared = shared[i];
-        cx->vars[i].exclusive = excl[i];
+        if (before[i].points != after.points ||
+            before[i].hold_excl != after.hold_excl) {
+            sn_borrow_fail(cx, SNOVA_BORROW_LOOP,
+                           body ? body->span : (SnSpan){0},
+                           "reference is rebound across a loop iteration; loop-carried borrows are not supported");
+        }
+        cx->vars[i] = before[i];
+        cx->vars[i].escapes = before[i].escapes || after.escapes;
+        cx->vars[i].defer_hold = before[i].defer_hold || after.defer_hold;
     }
 }
