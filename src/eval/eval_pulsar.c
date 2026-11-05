@@ -115,7 +115,7 @@ static int name_add(const char **names, size_t *n, const char *name) {
 }
 
 static int collect_stmt(const SnStmt *s, const char **bound, size_t nbound,
-                        const char **free_names, size_t *nfree);
+                        const char **free_names, size_t *nfree, SnArena *persist);
 
 static int collect_pattern(const SnPattern *p, const char **bound, size_t *nbound) {
     if (!p) return 1;
@@ -130,7 +130,7 @@ static int collect_pattern(const SnPattern *p, const char **bound, size_t *nboun
 }
 
 static int collect_expr(const SnExpr *e, const char **bound, size_t nbound,
-                        const char **free_names, size_t *nfree) {
+                        const char **free_names, size_t *nfree, SnArena *persist) {
     if (!e) return 1;
     if (e->kind == SN_EXPR_IDENT) {
         return name_has(bound, nbound, e->text)
@@ -148,6 +148,14 @@ static int collect_expr(const SnExpr *e, const char **bound, size_t nbound,
             n -= 2;
         }
         for (size_t i = 0; i < n; i++) {
+            if (raw[i] == '\\' && i + 1 < n) {
+                i++;
+                continue;
+            }
+            if (raw[i] == '$' && i + 1 < n && raw[i + 1] == '$') {
+                i++;
+                continue;
+            }
             if (raw[i] == '$' && i + 1 < n && raw[i + 1] == '{') {
                 size_t start = i + 2;
                 int depth = 1;
@@ -167,10 +175,18 @@ static int collect_expr(const SnExpr *e, const char **bound, size_t nbound,
                 sn_diag_init(&diag, "", buf, j - start);
                 SnTokenVec toks;
                 int ok = 1;
+                const char *saved_names[SN_PULSAR_NAME_MAX];
+                size_t nsaved = 0;
                 if (sn_lex(&arena, &diag, buf, j - start, &toks) == 0) {
                     SnExpr *interp = sn_parse_expr_only(&arena, &diag, &toks);
-                    if (interp && !collect_expr(interp, bound, nbound, free_names, nfree))
+                    if (interp && !collect_expr(interp, bound, nbound, saved_names, &nsaved, &arena))
                         ok = 0;
+                }
+                if (ok) {
+                    for (size_t k = 0; k < nsaved; k++) {
+                        const char *copy = sn_arena_strndup(persist, saved_names[k], strlen(saved_names[k]));
+                        if (!copy || !name_add(free_names, nfree, copy)) { ok = 0; break; }
+                    }
                 }
                 sn_arena_free(&arena);
                 free(buf);
@@ -186,24 +202,24 @@ static int collect_expr(const SnExpr *e, const char **bound, size_t nbound,
         for (size_t i = 0; i < e->params.len; i++) {
             const SnParam *p = (const SnParam *)e->params.items[i];
             if (p) {
-                if (p->def && !collect_expr(p->def, bound, nbound, free_names, nfree))
+                if (p->def && !collect_expr(p->def, bound, nbound, free_names, nfree, persist))
                     return 0;
                 if (!name_add(inner, &ni, p->name)) return 0;
             }
         }
-        return collect_expr(e->value, inner, ni, free_names, nfree) &&
-               collect_stmt(e->body, inner, ni, free_names, nfree);
+        return collect_expr(e->value, inner, ni, free_names, nfree, persist) &&
+               collect_stmt(e->body, inner, ni, free_names, nfree, persist);
     }
-    if (!collect_expr(e->lhs, bound, nbound, free_names, nfree) ||
-        !collect_expr(e->rhs, bound, nbound, free_names, nfree) ||
-        !collect_expr(e->value, bound, nbound, free_names, nfree) ||
-        !collect_stmt(e->body, bound, nbound, free_names, nfree) ||
-        !collect_stmt(e->else_body, bound, nbound, free_names, nfree)) {
+    if (!collect_expr(e->lhs, bound, nbound, free_names, nfree, persist) ||
+        !collect_expr(e->rhs, bound, nbound, free_names, nfree, persist) ||
+        !collect_expr(e->value, bound, nbound, free_names, nfree, persist) ||
+        !collect_stmt(e->body, bound, nbound, free_names, nfree, persist) ||
+        !collect_stmt(e->else_body, bound, nbound, free_names, nfree, persist)) {
         return 0;
     }
     for (size_t i = 0; i < e->args.len; i++) {
         if (!collect_expr((const SnExpr *)e->args.items[i], bound, nbound,
-                          free_names, nfree)) return 0;
+                          free_names, nfree, persist)) return 0;
     }
     for (size_t i = 0; i < e->arms.len; i++) {
         const SnMatchArm *arm = (const SnMatchArm *)e->arms.items[i];
@@ -212,20 +228,20 @@ static int collect_expr(const SnExpr *e, const char **bound, size_t nbound,
         size_t narm = nbound;
         memcpy(arm_bound, bound, nbound * sizeof(*bound));
         if (!collect_pattern(arm->pattern, arm_bound, &narm) ||
-            !collect_expr(arm->guard, arm_bound, narm, free_names, nfree) ||
-            !collect_expr(arm->value, arm_bound, narm, free_names, nfree) ||
-            !collect_stmt(arm->body, arm_bound, narm, free_names, nfree)) return 0;
+            !collect_expr(arm->guard, arm_bound, narm, free_names, nfree, persist) ||
+            !collect_expr(arm->value, arm_bound, narm, free_names, nfree, persist) ||
+            !collect_stmt(arm->body, arm_bound, narm, free_names, nfree, persist)) return 0;
     }
     return 1;
 }
 
 static int collect_stmt(const SnStmt *s, const char **bound, size_t nbound,
-                        const char **free_names, size_t *nfree) {
+                        const char **free_names, size_t *nfree, SnArena *persist) {
     if (!s) return 1;
     const char *inner[SN_PULSAR_NAME_MAX];
     size_t ni = nbound > SN_PULSAR_NAME_MAX ? SN_PULSAR_NAME_MAX : nbound;
     memcpy(inner, bound, ni * sizeof(*inner));
-    if (!collect_expr(s->expr, inner, ni, free_names, nfree)) return 0;
+    if (!collect_expr(s->expr, inner, ni, free_names, nfree, persist)) return 0;
     if ((s->kind == SN_STMT_LET || s->kind == SN_STMT_VAR ||
          s->kind == SN_STMT_FOR) && s->name) {
         if (!name_add(inner, &ni, s->name)) return 0;
@@ -233,12 +249,12 @@ static int collect_stmt(const SnStmt *s, const char **bound, size_t nbound,
     for (size_t i = 0; i < s->extra_names.len; i++) {
         if (!name_add(inner, &ni, (const char *)s->extra_names.items[i])) return 0;
     }
-    if (!collect_stmt(s->then_br, inner, ni, free_names, nfree) ||
-        !collect_stmt(s->else_br, inner, ni, free_names, nfree) ||
-        !collect_stmt(s->finally_br, inner, ni, free_names, nfree)) return 0;
+    if (!collect_stmt(s->then_br, inner, ni, free_names, nfree, persist) ||
+        !collect_stmt(s->else_br, inner, ni, free_names, nfree, persist) ||
+        !collect_stmt(s->finally_br, inner, ni, free_names, nfree, persist)) return 0;
     for (size_t i = 0; i < s->stmts.len; i++) {
         const SnStmt *child = (const SnStmt *)s->stmts.items[i];
-        if (!collect_stmt(child, inner, ni, free_names, nfree)) return 0;
+        if (!collect_stmt(child, inner, ni, free_names, nfree, persist)) return 0;
         if (child && (child->kind == SN_STMT_LET || child->kind == SN_STMT_VAR) &&
             child->name && !name_add(inner, &ni, child->name)) return 0;
     }
@@ -249,9 +265,9 @@ static int collect_stmt(const SnStmt *s, const char **bound, size_t nbound,
         size_t narm = ni;
         memcpy(arm_bound, inner, ni * sizeof(*inner));
         if (!collect_pattern(arm->pattern, arm_bound, &narm) ||
-            !collect_expr(arm->guard, arm_bound, narm, free_names, nfree) ||
-            !collect_expr(arm->value, arm_bound, narm, free_names, nfree) ||
-            !collect_stmt(arm->body, arm_bound, narm, free_names, nfree)) return 0;
+            !collect_expr(arm->guard, arm_bound, narm, free_names, nfree, persist) ||
+            !collect_expr(arm->value, arm_bound, narm, free_names, nfree, persist) ||
+            !collect_stmt(arm->body, arm_bound, narm, free_names, nfree, persist)) return 0;
     }
     for (size_t i = 0; i < s->catches.len; i++) {
         const SnStmt *handler = (const SnStmt *)s->catches.items[i];
@@ -260,7 +276,7 @@ static int collect_stmt(const SnStmt *s, const char **bound, size_t nbound,
         memcpy(catch_bound, inner, ni * sizeof(*inner));
         if (handler && handler->name && !name_add(catch_bound, &ncatch, handler->name))
             return 0;
-        if (!collect_stmt(handler, catch_bound, ncatch, free_names, nfree)) return 0;
+        if (!collect_stmt(handler, catch_bound, ncatch, free_names, nfree, persist)) return 0;
     }
     return 1;
 }
@@ -363,8 +379,8 @@ static int capture_used_env(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s,
             if (p && !name_add(bound, &nbound, p->name)) return 0;
         }
     }
-    if (!collect_stmt(body, bound, nbound, free_names, &nfree) ||
-        !collect_expr(expr, bound, nbound, free_names, &nfree)) {
+    if (!collect_stmt(body, bound, nbound, free_names, &nfree, in->arena) ||
+        !collect_expr(expr, bound, nbound, free_names, &nfree, in->arena)) {
         sn_rt_error(in, SNOVA_OUT_OF_MEMORY, s->span,
                     "pulsar capture list is too large");
         return 0;
