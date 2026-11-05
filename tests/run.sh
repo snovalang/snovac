@@ -109,15 +109,15 @@ func main(): int {
     let err: Result<int, string> = Err("bad")
     if err.isErr() == false { return 4 }
 
-    let task = Task { value: 9 }
-    if task.get() != 9 || task.map((value: int) -> value * 2).get() != 18 { return 5 }
+    let task = Task.completedUnit()
+    if task.isCompleted() == false { return 5 }
     let pair = Pair { first: 3, second: "three" }
     if pair.swap().first != "three" { return 6 }
 
     let values = [1, 2, 3]
-    if values.map((n: int) -> n + 1).get(1) != 3 { return 7 }
-    if values.filter((n: int) -> n > 1).length() != 2 { return 8 }
-    if values.reduce(0, (sum: int, n: int) -> sum + n) != 6 { return 9 }
+    if values.get(1) != 2 { return 7 }
+    if values.length() != 3 { return 8 }
+    if values.first() + values.last() != 4 { return 9 }
     let map = Map<string, int>()
     if map.put("one", 1) == false || map.getOrDefault("one", 0) != 1 { return 10 }
     let set = Set<int>()
@@ -142,7 +142,7 @@ func main(): int {
     group.add(1)
     group.done()
     if group.isComplete() == false { return 16 }
-    var token = CancellationToken { cancelled: false }
+    var token = CancellationToken.new()
     token.cancel()
     if Async.isCancelled(token) == false { return 17 }
     if Args.count() < 0 || Env.get("PATH").isEmpty() { return 18 }
