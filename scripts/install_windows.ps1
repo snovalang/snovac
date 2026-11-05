@@ -7,7 +7,7 @@ param(
     [string]$IncDir = "",
     [string]$Bin = "",
     [string]$LibRt = "",
-    [string]$Version = "0.0.1-p3"
+    [string]$Version = "0.0.1-p4"
 )
 
 $ErrorActionPreference = "Stop"

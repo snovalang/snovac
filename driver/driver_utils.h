@@ -7,7 +7,7 @@
 #include <stdio.h>
 
 #ifndef SNOVAC_VERSION
-#define SNOVAC_VERSION "0.0.1-p3"
+#define SNOVAC_VERSION "0.0.1-p4"
 #endif
 
 #define SNOVAC_PATH_MAX 1024

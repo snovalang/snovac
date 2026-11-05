@@ -3,10 +3,10 @@ set -e
 
 # ==============================================================================
 # Snovalang Compiler (snovac) Universal One-Line Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | bash
 # ==============================================================================
 
-REPO="supernovalang/snovac"
+REPO="snovalang/snovac"
 INSTALL_DIR="${SNOVA_INSTALL_DIR:-$HOME/.snova/bin}"
 
 # Text formatting

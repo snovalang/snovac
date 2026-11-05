@@ -1,13 +1,13 @@
 # ==============================================================================
 # Snovalang Compiler (snovac) Universal Windows One-Line Installer
-# Usage: irm https://raw.githubusercontent.com/supernovalang/snovac/master/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/snovalang/snovac/master/install.ps1 | iex
 # Or:    powershell -ExecutionPolicy Bypass -File install.ps1
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "supernovalang/snovac"
-$Version = "0.0.1-p3"
+$Repo = "snovalang/snovac"
+$Version = "0.0.1-p4"
 $InstallPrefix = if (-not [string]::IsNullOrEmpty($env:SNOVA_INSTALL_DIR)) {
     $env:SNOVA_INSTALL_DIR
 } else {

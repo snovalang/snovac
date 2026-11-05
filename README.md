@@ -2,7 +2,7 @@
 
 The official, reference compiler for **Snovalang** written in pure, zero-dependency **ISO C11**.
 
-[![Release](https://github.com/supernovalang/snovac/actions/workflows/release.yml/badge.svg)](https://github.com/supernovalang/snovac/actions/workflows/release.yml)
+[![Release](https://github.com/snovalang/snovac/actions/workflows/release.yml/badge.svg)](https://github.com/snovalang/snovac/actions/workflows/release.yml)
 
 ## Quick Install
 
@@ -11,7 +11,7 @@ The official, reference compiler for **Snovalang** written in pure, zero-depende
 Install `snovac` natively on Windows with a single PowerShell command:
 
 ```powershell
-irm https://raw.githubusercontent.com/supernovalang/snovac/master/install.ps1 | iex
+irm https://raw.githubusercontent.com/snovalang/snovac/master/install.ps1 | iex
 ```
 
 Or from an existing clone:
@@ -24,12 +24,12 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 Install `snovac` instantly on macOS or Linux with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | bash
 ```
 
 Or using `wget`:
 ```bash
-wget -qO- https://raw.githubusercontent.com/supernovalang/snovac/master/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | bash
 ```
 
 ## Features
@@ -48,7 +48,7 @@ wget -qO- https://raw.githubusercontent.com/supernovalang/snovac/master/install.
 
 ### Build Command
 ```bash
-git clone https://github.com/supernovalang/snovac.git
+git clone https://github.com/snovalang/snovac.git
 cd snovac
 make
 ```
