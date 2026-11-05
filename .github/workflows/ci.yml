@@ -35,8 +35,13 @@ jobs:
       - name: Install Mull
         run: |
           sudo apt-get install -y clang-18 curl ca-certificates
-          curl -1sLf 'https://dl.cloudsmith.io/public/mull-project/mull-stable/setup.deb.sh' | sudo bash
-          sudo apt-get install -y mull-18
+          package=Mull-18-0.34.1-LLVM-18.1.3-ubuntu-amd64-24.04.deb
+          curl -fsSL --retry 3 \
+            "https://github.com/mull-project/mull/releases/download/0.34.1/$package" \
+            -o "/tmp/$package"
+          echo '983ea9c84ecab621414d5442a66c1a1ce4127491b79d42fd5e2fd6fe01d02699  /tmp/'"$package" \
+            | sha256sum --check --strict
+          sudo apt-get install -y "/tmp/$package"
           mull-runner-18 --version
 
       - name: Run Mull mutation tests
