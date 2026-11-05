@@ -17,6 +17,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -81,6 +82,7 @@ struct SnEvalObject {
 struct VariantVal {
     const char *name;
     SnList payload; /* SnEvalValue* */
+    uint64_t visit_epoch; /* temporary escape traversal guard */
 };
 
 typedef enum {
@@ -93,6 +95,7 @@ typedef struct SnEvalEnv {
     struct SnEvalEnv *parent;
     SnList names; /* const char* */
     SnList slots; /* SnEvalValue* — boxed so assignment is visible to inner scopes */
+    uint64_t visit_epoch; /* temporary escape traversal guard */
 } SnEvalEnv;
 
 typedef struct SnEvalDefer {
@@ -108,6 +111,7 @@ typedef struct SnEvalDefer {
 struct SnEvalLambda {
     const SnExpr *expr; /* SN_EXPR_LAMBDA node (params, value/body) */
     SnEvalEnv *env;           /* captured lexical environment */
+    uint64_t visit_epoch; /* temporary escape traversal guard */
 };
 
 typedef struct {

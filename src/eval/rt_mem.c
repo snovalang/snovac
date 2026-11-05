@@ -91,14 +91,17 @@ static void mark_value(SnEvalMemFrame *frame, SnEvalValue v, uint64_t epoch) {
             }
         }
     } else if (v.kind == V_STRING) {
-        (void)mark_ptr(frame, v.as.s, epoch);
+        /* Evaluator strings live in the compilation arena, not MemBlocks. */
     } else if (v.kind == V_VARIANT && v.as.vt) {
+        if (v.as.vt->visit_epoch == epoch) return;
+        v.as.vt->visit_epoch = epoch;
         for (size_t i = 0; i < v.as.vt->payload.len; i++) {
             SnEvalValue *slot = (SnEvalValue *)v.as.vt->payload.items[i];
             if (slot) mark_value(frame, *slot, epoch);
         }
     } else if (v.kind == V_LAMBDA && v.as.lam) {
-        if (!mark_ptr(frame, v.as.lam, epoch)) return;
+        if (v.as.lam->visit_epoch == epoch) return;
+        v.as.lam->visit_epoch = epoch;
         mark_env(frame, v.as.lam->env, epoch);
     }
 }
@@ -114,6 +117,8 @@ static int mark_ptr(SnEvalMemFrame *frame, const void *p, uint64_t epoch) {
 
 static void mark_env(SnEvalMemFrame *frame, SnEvalEnv *env, uint64_t epoch) {
     for (; env; env = env->parent) {
+        if (env->visit_epoch == epoch) return;
+        env->visit_epoch = epoch;
         for (size_t i = 0; i < env->slots.len; i++) {
             SnEvalValue *slot = (SnEvalValue *)env->slots.items[i];
             if (slot) {
