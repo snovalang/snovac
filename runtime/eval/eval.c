@@ -1,6 +1,6 @@
-/* eval.c — interpreter entry point, environments, object model and calls.
- * Expressions, statements and string decoding live in their own files; see
- * eval_internal.h for the split. */
+/* eval.c — interpreter entry point and function invocation.
+ * Expression, statement, lookup, ownership and value operations live in
+ * focused translation units; see eval_internal.h for the shared contracts. */
 #include "eval_internal.h"
 #include "sn_native_dispatch.h"
 
@@ -24,59 +24,6 @@ void rt_error(Interp *in, int code, SnSpan span, const char *fmt, ...) {
 }
 
 /* ── environment ──────────────────────────────────────────────────────────── */
-
-/* ── declaration lookup ───────────────────────────────────────────────────── */
-
-const SnDecl *find_member(const SnDecl *cls, const char *name) {
-    if (!cls) {
-        return NULL;
-    }
-    for (size_t i = 0; i < cls->members.len; i++) {
-        const SnDecl *m = (const SnDecl *)cls->members.items[i];
-        if (m->name && strcmp(m->name, name) == 0) {
-            return m;
-        }
-    }
-    return NULL;
-}
-
-const SnDecl *find_member_inherited(const Interp *in, const SnDecl *cls, const char *name) {
-    if (!cls) return NULL;
-    const SnDecl *m = find_member(cls, name);
-    if (m) return m;
-    for (size_t i = 0; i < cls->supertypes.len; i++) {
-        const SnType *st = (const SnType *)cls->supertypes.items[i];
-        if (st && st->name) {
-            const SnDecl *parent = find_type(in, st->name);
-            if (parent) {
-                const SnDecl *pm = find_member_inherited(in, parent, name);
-                if (pm) return pm;
-            }
-        }
-    }
-    return NULL;
-}
-
-const SnDecl *find_top(const Interp *in, const char *name, SnDeclKind k) {
-    for (size_t i = 0; i < in->unit->decls.len; i++) {
-        const SnDecl *d = (const SnDecl *)in->unit->decls.items[i];
-        if (d->kind == k && d->name && strcmp(d->name, name) == 0) {
-            return d;
-        }
-    }
-    return NULL;
-}
-
-const SnDecl *find_type(const Interp *in, const char *name) {
-    for (size_t i = 0; i < in->unit->decls.len; i++) {
-        const SnDecl *d = (const SnDecl *)in->unit->decls.items[i];
-        if ((d->kind == SN_DECL_CLASS || d->kind == SN_DECL_STRUCT) &&
-            d->name && strcmp(d->name, name) == 0) {
-            return d;
-        }
-    }
-    return NULL;
-}
 
 void sn_eval_merge_extensions(SnArena *arena, SnUnit *unit) {
     for (size_t i = 0; i < unit->decls.len; i++) {
