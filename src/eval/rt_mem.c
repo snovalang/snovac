@@ -9,6 +9,7 @@ typedef struct MemBlock {
     size_t size;
     int heap;
     int marked;
+    uint64_t visit_epoch;
 } MemBlock;
 
 struct SnEvalMemFrame {
@@ -23,11 +24,16 @@ static int g_heap_allocs;
 static int g_heap_live;
 static int g_stack_allocs;
 static int g_bounds;
+static uint64_t g_visit_epoch;
 
-static MemBlock *payload_block(SnEvalMemFrame *frame, const void *p) {
-    for (MemBlock *b = frame ? frame->blocks : NULL; b; b = b->next) {
-        if ((char *)(b + 1) == (const char *)p) {
-            return b;
+static MemBlock *payload_block(SnEvalMemFrame *frame, const void *p,
+                               SnEvalMemFrame **owner) {
+    for (SnEvalMemFrame *f = frame; f; f = f->parent) {
+        for (MemBlock *b = f->blocks; b; b = b->next) {
+            if ((char *)(b + 1) == (const char *)p) {
+                if (owner) *owner = f;
+                return b;
+            }
         }
     }
     return NULL;
@@ -40,6 +46,7 @@ void sn_rt_mem_reset(SnEvalInterp *in) {
     g_heap_live = 0;
     g_stack_allocs = 0;
     g_bounds = 0;
+    g_visit_epoch = 0;
     in->mem = NULL;
     in->defers = NULL;
 }
@@ -55,51 +62,62 @@ void sn_rt_frame_push(SnEvalInterp *in) {
     in->mem = f;
 }
 
-static void mark_ptr(SnEvalMemFrame *frame, const void *p);
+static int mark_ptr(SnEvalMemFrame *frame, const void *p, uint64_t epoch);
+static void mark_env(SnEvalMemFrame *frame, SnEvalEnv *env, uint64_t epoch);
 
-static void mark_value(SnEvalMemFrame *frame, SnEvalValue v) {
+static void mark_value(SnEvalMemFrame *frame, SnEvalValue v, uint64_t epoch) {
     if (v.kind == V_ARRAY && v.as.arr) {
-        mark_ptr(frame, v.as.arr);
-        mark_ptr(frame, v.as.arr->items.items);
+        if (!mark_ptr(frame, v.as.arr, epoch)) return;
+        (void)mark_ptr(frame, v.as.arr->items.items, epoch);
         for (size_t i = 0; i < v.as.arr->items.len; i++) {
             SnEvalValue *slot = (SnEvalValue *)v.as.arr->items.items[i];
-            mark_ptr(frame, slot);
-            if (slot) {
-                mark_value(frame, *slot);
+            if (slot && mark_ptr(frame, slot, epoch)) {
+                mark_value(frame, *slot, epoch);
             }
         }
     } else if (v.kind == V_OBJECT && v.as.o) {
-        mark_ptr(frame, v.as.o);
+        if (!mark_ptr(frame, v.as.o, epoch)) return;
         for (size_t i = 0; i < v.as.o->slots.len; i++) {
             SnEvalValue *slot = (SnEvalValue *)v.as.o->slots.items[i];
-            if (slot) {
-                mark_value(frame, *slot);
+            if (slot && mark_ptr(frame, slot, epoch)) {
+                mark_value(frame, *slot, epoch);
             }
         }
     } else if (v.kind == V_REF && v.as.ref) {
-        mark_ptr(frame, v.as.ref);
+        if (!mark_ptr(frame, v.as.ref, epoch)) return;
         if (v.as.ref->slot && !v.as.ref->is_null) {
-            mark_ptr(frame, v.as.ref->slot);
-            mark_value(frame, *v.as.ref->slot);
+            if (mark_ptr(frame, v.as.ref->slot, epoch)) {
+                mark_value(frame, *v.as.ref->slot, epoch);
+            }
         }
     } else if (v.kind == V_STRING) {
-        mark_ptr(frame, v.as.s);
+        (void)mark_ptr(frame, v.as.s, epoch);
+    } else if (v.kind == V_VARIANT && v.as.vt) {
+        for (size_t i = 0; i < v.as.vt->payload.len; i++) {
+            SnEvalValue *slot = (SnEvalValue *)v.as.vt->payload.items[i];
+            if (slot) mark_value(frame, *slot, epoch);
+        }
+    } else if (v.kind == V_LAMBDA && v.as.lam) {
+        if (!mark_ptr(frame, v.as.lam, epoch)) return;
+        mark_env(frame, v.as.lam->env, epoch);
     }
 }
 
-static void mark_ptr(SnEvalMemFrame *frame, const void *p) {
-    MemBlock *b = payload_block(frame, p);
-    if (b) {
-        b->marked = 1;
-    }
+static int mark_ptr(SnEvalMemFrame *frame, const void *p, uint64_t epoch) {
+    SnEvalMemFrame *owner = NULL;
+    MemBlock *b = payload_block(frame, p, &owner);
+    if (!b || b->visit_epoch == epoch) return 0;
+    b->visit_epoch = epoch;
+    if (owner == frame) b->marked = 1;
+    return 1;
 }
 
-static void mark_env(SnEvalMemFrame *frame, SnEvalEnv *env) {
+static void mark_env(SnEvalMemFrame *frame, SnEvalEnv *env, uint64_t epoch) {
     for (; env; env = env->parent) {
         for (size_t i = 0; i < env->slots.len; i++) {
             SnEvalValue *slot = (SnEvalValue *)env->slots.items[i];
             if (slot) {
-                mark_value(frame, *slot);
+                mark_value(frame, *slot, epoch);
             }
         }
     }
@@ -122,10 +140,18 @@ void sn_rt_frame_pop(SnEvalInterp *in, SnEvalEnv *keep_env, SnEvalValue extra) {
     if (!frame) {
         return;
     }
-    mark_env(frame, keep_env);
-    mark_env(frame, in->globals);
-    mark_value(frame, extra);
-    mark_value(frame, in->ret);
+    if (++g_visit_epoch == 0) {
+        for (SnEvalMemFrame *f = in->mem; f; f = f->parent) {
+            for (MemBlock *block = f->blocks; block; block = block->next) {
+                block->visit_epoch = 0;
+            }
+        }
+        g_visit_epoch = 1;
+    }
+    mark_env(frame, keep_env, g_visit_epoch);
+    mark_env(frame, in->globals, g_visit_epoch);
+    mark_value(frame, extra, g_visit_epoch);
+    mark_value(frame, in->ret, g_visit_epoch);
     MemBlock *b = frame->blocks;
     while (b) {
         MemBlock *next = b->next;
@@ -177,6 +203,7 @@ void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
     b->size = nbytes;
     b->heap = heap;
     b->marked = 0;
+    b->visit_epoch = 0;
     b->next = in->mem ? in->mem->blocks : NULL;
     if (in->mem) {
         in->mem->blocks = b;
