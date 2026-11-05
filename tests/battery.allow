@@ -10,9 +10,10 @@
 compile-pass/GenericsMapSubscript.snl
 compile-pass/enums.snl
 compile-pass/enums_and_match.snl
+compile-pass/match_guard_arrow.snl
+compile-pass/optional_chaining.snl
 compile-pass/p1_syntax_additions.snl
 compile-pass/package_function_call_coloncolon.snl
-compile-pass/postfix_question_newline_dot.snl
 compile-pass/result_type.snl
 
 compile-fail/import_cycle_self.snl

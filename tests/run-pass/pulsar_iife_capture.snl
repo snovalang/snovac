@@ -1,0 +1,11 @@
+package tests.run_pass.pulsar_iife_capture
+
+import builtin.io.console.output
+
+func main(): int {
+    let msg = "ok"
+    pulsar (() -> {
+        Console.printline(msg)
+    })()
+    return 0
+}

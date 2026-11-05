@@ -1,0 +1,13 @@
+package tests.run_pass.pulsar_spawn_string
+
+import builtin.io.console.output
+
+pulsar func worker(s: string): unit {
+    Console.printline(s)
+}
+
+func main(): int {
+    let prefix = "hel"
+    pulsar worker(prefix + "lo")
+    return 0
+}

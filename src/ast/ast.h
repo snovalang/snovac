@@ -272,6 +272,7 @@ typedef struct {
     SnSpan package_span;
     SnList imports;       /* const char* */
     SnList decls;         /* SnDecl* */
+    SnList decl_files;    /* optional SnDiagFile*, parallel to decls for merged units */
 } SnUnit;
 
 #endif /* SNOVAC_AST_H */

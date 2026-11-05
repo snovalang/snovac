@@ -44,14 +44,29 @@ fi
 RP="$DIR/run-pass"
 [ -d "$RP" ] || RP="$DIR/../../tests/run-pass"
 for name in hello string_comment_url array_field_access counter extension_invocation \
-  own_ptr own_stack own_loop_live own_replace_returned_array try_typed_catch own_defer_ok own_defer_lifo own_defer_fail own_defer_use \
-  overload_show; do
+  own_ptr own_stack own_loop_live own_replace_returned_array try_typed_catch own_defer_ok own_defer_lifo own_defer_fail defer_throw_priority own_defer_use \
+  pulsar_launch pulsar_pool_submit pulsar_block_method pulsar_iife_capture pulsar_spawn_string overload_show; do
   if [ -f "$RP/$name.snl" ] && [ -f "$RP/$name.stdout" ]; then
     got_file="$(mktemp)"
-    "$SNOVAC" run "$RP/$name.snl" >"$got_file" 2>&1 || true
+    err_file="$(mktemp)"
+    if "$SNOVAC" run "$RP/$name.snl" >"$got_file" 2>"$err_file"; then
+      run_rc=0
+    else
+      run_rc=$?
+    fi
     same=0
     same_text "$RP/$name.stdout" "$got_file" || same=$?
-    rm -f "$got_file"
+    if [ "$run_rc" != 0 ] || [ "$same" != 0 ]; then
+      printf '--- run %s rc=%s ---\n' "$name" "$run_rc"
+      printf 'stdout:\n'
+      cat "$got_file"
+      printf 'expected:\n'
+      cat "$RP/$name.stdout"
+      printf 'stderr:\n'
+      cat "$err_file"
+    fi
+    rm -f "$got_file" "$err_file"
+    assert "run: $name exit" 0 "$run_rc"
     assert "run: $name" 0 "$same"
   fi
 done

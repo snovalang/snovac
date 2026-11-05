@@ -69,15 +69,30 @@ static SnEvalValue invoke_defer(SnEvalInterp *in, SnEvalDefer *d) {
 }
 
 void sn_rt_run_defers(SnEvalInterp *in) {
+    SnEvalFlow pending_flow = in->flow;
+    SnEvalValue pending_throw = in->thrown;
+    int owner_threw = pending_flow == FLOW_THROW;
     while (in->defers) {
         SnEvalDefer *d = in->defers;
         in->defers = d->next;
         if (!in->failed) {
+            /* The owner may be unwinding a throw. Run each deferred call with
+             * FLOW_NORMAL so older defers still run. Keep the owner's throw
+             * after the list finishes. A throw from a defer replaces an
+             * earlier pending throw only when the owner itself did not throw.
+             */
+            in->flow = FLOW_NORMAL;
             invoke_defer(in, d);
+            if (in->flow == FLOW_THROW && !owner_threw) {
+                pending_flow = FLOW_THROW;
+                pending_throw = in->thrown;
+            }
         }
         free(d->args);
         free(d);
     }
+    in->flow = pending_flow;
+    if (pending_flow == FLOW_THROW) in->thrown = pending_throw;
 }
 
 SnEvalValue sn_rt_finish_call(SnEvalInterp *in, SnEvalEnv *local, SnEvalEnv *caller, const SnStmt *body) {
@@ -87,9 +102,10 @@ SnEvalValue sn_rt_finish_call(SnEvalInterp *in, SnEvalEnv *local, SnEvalEnv *cal
     SnEvalValue saved_ret = in->ret;
     in->ret = v_unit();
     SnEvalFlow f = body ? sn_eval_exec_stmt(in, local, body) : FLOW_NORMAL;
+    if (f == FLOW_THROW) in->flow = FLOW_THROW;
     sn_rt_run_defers(in);
     SnEvalValue r = (f == FLOW_RETURN) ? in->ret : v_unit();
-    int threw = (f == FLOW_THROW);
+    int threw = (in->flow == FLOW_THROW);
     in->ret = saved_ret;
     sn_rt_frame_pop(in, caller, threw ? in->thrown : r);
     in->defers = saved;

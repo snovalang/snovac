@@ -98,5 +98,6 @@ int sn_rt_probe_name(const char *name) {
         return 0;
     }
     return strcmp(name, "heapAllocs") == 0 || strcmp(name, "heapLive") == 0 ||
-           strcmp(name, "stackAllocs") == 0 || strcmp(name, "boundsChecks") == 0;
+           strcmp(name, "stackAllocs") == 0 || strcmp(name, "boundsChecks") == 0 ||
+           strcmp(name, "pulsarJobs") == 0;
 }

@@ -26,6 +26,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int path_is_within(const char *path, const char *root) {
+  if (!path || !root || !root[0]) return 0;
+  char norm_path[SNOVAC_PATH_MAX];
+  char norm_root[SNOVAC_PATH_MAX];
+  sn_driver_normalize_path(path, norm_path, sizeof(norm_path));
+  sn_driver_normalize_path(root, norm_root, sizeof(norm_root));
+  size_t n = strlen(norm_root);
+  return n > 0 && strncmp(norm_path, norm_root, n) == 0 &&
+         (norm_path[n] == '/' || norm_path[n] == '\\' || norm_path[n] == '\0');
+}
+
 int sn_cmd_build(const char *path, const char *out_path,
               const char *target_override) {
   if (!sn_driver_path_is_source(path) && !sn_driver_path_is_script(path)) {
@@ -138,11 +149,26 @@ int sn_cmd_build_project(const char *path, const char *out_path,
   sn_pkggraph_init(&graph, &arena, &intern, &diag);
   sn_project_scan_roots(&graph, &proj);
 
+  char builtin_root[SNOVAC_PATH_MAX] = {0};
+  if (sn_project_find_builtin_root(proj.source_root, builtin_root,
+                                   sizeof(builtin_root))) {
+    sn_driver_normalize_path(builtin_root, builtin_root,
+                             sizeof(builtin_root));
+  }
+
   SnUnit merged;
   memset(&merged, 0, sizeof(merged));
 
   for (SnPackageNode *node = graph.nodes; node; node = node->next) {
     for (SnPackageFile *pf = node->files; pf; pf = pf->next) {
+      /* The builtin sources are needed during check/resolve, but most cannot
+       * be lowered to SnBC. Only project and fetched dependency sources enter
+       * the native bundle. Keep an application that lives inside the builtin
+       * root (for example, a builtin validation project). */
+      if (path_is_within(pf->path, builtin_root) &&
+          !path_is_within(pf->path, proj.source_root)) {
+        continue;
+      }
       SnDiagFile self = {pf->path, pf->src, pf->src_len};
       SnDiagFile outer = sn_diag_set_file(&diag, self);
 
@@ -151,6 +177,8 @@ int sn_cmd_build_project(const char *path, const char *out_path,
 
       SnUnit unit;
       sn_parse(&arena, &diag, &toks, &unit);
+      SnDiagFile *origin = (SnDiagFile *)sn_arena_alloc(&arena, sizeof(*origin));
+      *origin = self;
 
       for (size_t i = 0; i < unit.decls.len; i++) {
         SnDecl *d = SN_LIST_AT(unit.decls, SnDecl, i);
@@ -169,6 +197,7 @@ int sn_cmd_build_project(const char *path, const char *out_path,
           }
         }
         sn_list_push(&arena, &merged.decls, d);
+        sn_list_push(&arena, &merged.decl_files, origin);
       }
 
       sn_diag_set_file(&diag, outer);

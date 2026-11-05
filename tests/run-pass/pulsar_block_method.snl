@@ -1,0 +1,17 @@
+package tests.run_pass.pulsar_block_method
+
+import builtin.io.console.output
+
+class Host {
+    method go(): unit {
+        let unused = Host()
+        pulsar {
+            Console.printline("m")
+        }
+    }
+}
+
+func main(): int {
+    Host().go()
+    return 0
+}

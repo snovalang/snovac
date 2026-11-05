@@ -1,5 +1,6 @@
   /* Emit run_function */
   fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc) {\n");
+  fprintf(f, "  if (!g_sp) g_sp = g_stack;\n");
   fprintf(f, "  const uint8_t *code = NULL;\n");
   for (size_t i = 0; i < bc->function_count; i++) {
     fprintf(f, "  if (fn_idx == %zu) code = g_fn_code_%zu;\n", i, i);
@@ -253,19 +254,20 @@
   fprintf(f, "int main(int argc, char **argv) {\n");
   fprintf(f, "  g_app_argc = argc > 1 ? argc - 1 : 0; g_app_argv = argc > 1 ? argv + 1 : NULL;\n");
   if (target->os == SN_OS_WINDOWS) {
-    /* Drain waits until this thread consumes the queue. Without it,
-     * OP_SPAWN sleeps forever on the condition variable. */
     fprintf(f, "  uintptr_t pth;\n");
     fprintf(f, "  InitializeCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "  InitializeConditionVariable(&g_pulsar_cond);\n");
+    fprintf(f, "  InitializeConditionVariable(&g_pulsar_done);\n");
     fprintf(f, "  pth = _beginthreadex(NULL, 0, pulsar_thread_proc, NULL, 0, NULL);\n");
     fprintf(f, "  if (pth == 0) { fputs(\"error: cannot start pulsar thread\\n\", stderr); return 1; }\n");
   } else {
     fprintf(f, "  pthread_t pth;\n");
     fprintf(f, "  if (pthread_create(&pth, NULL, pulsar_thread_proc, NULL) != 0) { fputs(\"error: cannot start pulsar thread\\n\", stderr); return 1; }\n");
   }
+  fprintf(f, "  g_sp = g_stack;\n");
   fprintf(f, "  run_function(%u, NULL, 0);\n", bc->main_func_idx);
   fprintf(f, "  int rc = (g_ret.tag == VAL_INT) ? (int)g_ret.as.i : 0;\n");
+  fprintf(f, "  pulsar_drain();\n");
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "  EnterCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "  g_pulsar_stop = true;\n");

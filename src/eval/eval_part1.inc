@@ -351,7 +351,12 @@ const SnDecl *sn_eval_find_overload(SnEvalInterp *in, SnEvalEnv *env, const SnDe
     for (const SnDecl *cur = cls; cur; ) {
         for (size_t i = 0; i < cur->members.len; i++) {
             const SnDecl *m = (const SnDecl *)cur->members.items[i];
-            if (!m->name || strcmp(m->name, name) != 0 || m->kind != SN_DECL_METHOD) {
+            if (!m->name || strcmp(m->name, name) != 0) {
+                continue;
+            }
+            /* Class methods are SN_DECL_METHOD. Extension members are parsed as
+             * SN_DECL_FUNC and merged onto the type for eval. */
+            if (m->kind != SN_DECL_METHOD && m->kind != SN_DECL_FUNC) {
                 continue;
             }
             if (!first) {

@@ -69,6 +69,10 @@ static void sn_borrow_scan_expr(SnBorrowCx *cx, SnExpr *e) {
         sn_borrow_hit(cx, e->text, e->span, 0);
         return;
     }
+    if (e->kind == SN_EXPR_THIS) {
+        sn_borrow_hit(cx, "this", e->span, 0);
+        return;
+    }
     if (e->kind == SN_EXPR_ASSIGN) {
         if (e->lhs && e->lhs->kind == SN_EXPR_IDENT) {
             sn_borrow_hit(cx, e->lhs->text, e->span, 1);

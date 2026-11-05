@@ -3,26 +3,26 @@ package tests.extension_invocation
 import builtin.io.console.output
 
 class Counter {
-    private var value: Int
+    private var value: int
 
-    method increment(): Int {
+    method increment(): int {
         value += 1
         return value
     }
 }
 
 extension Counter {
-    func status(): String {
+    func status(): string {
         if value == 0 {
             return "zero"
         }
         return "nonzero"
     }
+
+    func label(): string = "counter-extension"
 }
 
-public extension Counter.label(): String = "counter-extension"
-
-func main(): Int {
+func main(): int {
     let c = Counter(0)
     Console.printline(c.status())
     c.increment()

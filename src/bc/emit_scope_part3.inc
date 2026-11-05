@@ -55,10 +55,16 @@ void eb_compile_unit(Compiler *c) {
         if (!d) {
             continue;
         }
+        SnDiagFile outer = c->diag ? c->diag->file : (SnDiagFile){0};
+        if (c->diag && i < c->unit->decl_files.len) {
+            SnDiagFile *origin = SN_LIST_AT(c->unit->decl_files, SnDiagFile, i);
+            if (origin) sn_diag_set_file(c->diag, *origin);
+        }
         if (d->kind == SN_DECL_FUNC || d->kind == SN_DECL_METHOD) {
             compile_routine(c, d, NULL);
         } else if (d->kind == SN_DECL_CLASS || d->kind == SN_DECL_INTERFACE) {
             compile_nested(c, d, NULL);
         }
+        if (c->diag) sn_diag_set_file(c->diag, outer);
     }
 }

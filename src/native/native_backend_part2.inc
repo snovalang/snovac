@@ -81,8 +81,8 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "struct Val { ValTag tag; union { bool b; int64_t i; double d; "
              "char *str; void *ptr; } as; };\n\n");
   fprintf(f, "#define SN_VAL_STACK_MAX 4096\n");
-  fprintf(f, "static Val g_stack[SN_VAL_STACK_MAX];\n");
-  fprintf(f, "static Val *g_sp = g_stack;\n");
+  fprintf(f, "static _Thread_local Val g_stack[SN_VAL_STACK_MAX];\n");
+  fprintf(f, "static _Thread_local Val *g_sp;\n");
   fprintf(f, "static inline void push(Val v) {\n");
   fprintf(f, "  if (g_sp >= g_stack + SN_VAL_STACK_MAX) {\n");
   fprintf(f, "    fputs(\"error: value stack overflow\\n\", stderr);\n");
@@ -122,7 +122,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "  if (cond.tag == VAL_BOOL) return cond.as.b != 0;\n");
   fprintf(f, "  if (cond.tag == VAL_INT) return cond.as.i != 0;\n");
   fprintf(f, "  return 0;\n}\n\n");
-  fprintf(f, "static Val g_ret;\n");
+  fprintf(f, "static _Thread_local Val g_ret;\n");
   fprintf(f, "static int g_app_argc; static char **g_app_argv;\n\n");
   fprintf(f,
           "static char *sn_runtime_read_line(void) { size_t n = 0, cap = 128; char *s = malloc(cap); if (!s) return NULL; int c; while ((c = fgetc(stdin)) != EOF && c != '\\n') { if (n + 1 >= cap) { if (cap > ((size_t)-1) / 2) { free(s); return NULL; } cap *= 2; char *p = realloc(s, cap); if (!p) { free(s); return NULL; } s = p; } s[n++] = (char)c; } if (c == EOF && n == 0) { free(s); return NULL; } if (n && s[n - 1] == '\\r') n--; s[n] = 0; return s; }\n");
@@ -247,31 +247,36 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "/* Pulsar platform thread multi-parallelism */\n");
   fprintf(f, "typedef struct PulsarWork {\n");
   fprintf(f, "  size_t fn_idx;\n");
-  fprintf(f, "  Val args[8];\n");
   fprintf(f, "  uint32_t argc;\n");
   fprintf(f, "  struct PulsarWork *next;\n");
+  fprintf(f, "  Val args[];\n");
   fprintf(f, "} PulsarWork;\n\n");
 
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "static CRITICAL_SECTION g_pulsar_mutex;\n");
     fprintf(f, "static CONDITION_VARIABLE g_pulsar_cond;\n");
+    fprintf(f, "static CONDITION_VARIABLE g_pulsar_done;\n");
   } else {
     fprintf(
         f,
         "static pthread_mutex_t g_pulsar_mutex = PTHREAD_MUTEX_INITIALIZER;\n");
     fprintf(
         f, "static pthread_cond_t g_pulsar_cond = PTHREAD_COND_INITIALIZER;\n");
+    fprintf(f, "static pthread_cond_t g_pulsar_done = PTHREAD_COND_INITIALIZER;\n");
   }
   fprintf(f, "static PulsarWork *g_pulsar_queue = NULL;\n");
   fprintf(f, "static size_t g_pulsar_queued = 0;\n");
   fprintf(f, "static int g_pulsar_busy = 0;\n");
   fprintf(f, "static bool g_pulsar_stop = false;\n\n");
 
-  fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc);\n\n");
+  fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc);\n");
+  fprintf(f, "static Val val_clone(Val v);\n");
+  fprintf(f, "static void val_release(Val v);\n\n");
 
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "static unsigned __stdcall pulsar_thread_proc(void *arg) {\n");
     fprintf(f, "  (void)arg;\n");
+    fprintf(f, "  g_sp = g_stack;\n");
     fprintf(f, "  for (;;) {\n");
     fprintf(f, "    EnterCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "    while (!g_pulsar_queue && !g_pulsar_stop) {\n");
@@ -284,10 +289,12 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    if (work) { g_pulsar_queue = work->next; g_pulsar_queued--; g_pulsar_busy = 1; }\n");
     fprintf(f, "    LeaveCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "    if (work) {\n");
+    fprintf(f, "      g_sp = g_stack;\n");
     fprintf(f, "      run_function(work->fn_idx, work->args, work->argc);\n");
+    fprintf(f, "      { uint32_t ai; for (ai = 0; ai < work->argc; ai++) val_release(work->args[ai]); }\n");
     fprintf(f, "      EnterCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "      g_pulsar_busy = 0;\n");
-    fprintf(f, "      WakeConditionVariable(&g_pulsar_cond);\n");
+    fprintf(f, "      WakeConditionVariable(&g_pulsar_done);\n");
     fprintf(f, "      LeaveCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "      free(work);\n");
     fprintf(f, "    }\n");
@@ -295,6 +302,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   } else {
     fprintf(f, "static void *pulsar_thread_proc(void *arg) {\n");
     fprintf(f, "  (void)arg;\n");
+    fprintf(f, "  g_sp = g_stack;\n");
     fprintf(f, "  for (;;) {\n");
     fprintf(f, "    pthread_mutex_lock(&g_pulsar_mutex);\n");
     fprintf(f, "    while (!g_pulsar_queue && !g_pulsar_stop) {\n");
@@ -306,10 +314,12 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    if (work) { g_pulsar_queue = work->next; g_pulsar_queued--; g_pulsar_busy = 1; }\n");
     fprintf(f, "    pthread_mutex_unlock(&g_pulsar_mutex);\n");
     fprintf(f, "    if (work) {\n");
+    fprintf(f, "      g_sp = g_stack;\n");
     fprintf(f, "      run_function(work->fn_idx, work->args, work->argc);\n");
+    fprintf(f, "      { uint32_t ai; for (ai = 0; ai < work->argc; ai++) val_release(work->args[ai]); }\n");
     fprintf(f, "      pthread_mutex_lock(&g_pulsar_mutex);\n");
     fprintf(f, "      g_pulsar_busy = 0;\n");
-    fprintf(f, "      pthread_cond_signal(&g_pulsar_cond);\n");
+    fprintf(f, "      pthread_cond_signal(&g_pulsar_done);\n");
     fprintf(f, "      pthread_mutex_unlock(&g_pulsar_mutex);\n");
     fprintf(f, "      free(work);\n");
     fprintf(f, "    }\n");
