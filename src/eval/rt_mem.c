@@ -63,47 +63,102 @@ void sn_rt_frame_push(SnEvalInterp *in) {
 }
 
 static int mark_ptr(SnEvalMemFrame *frame, const void *p, uint64_t epoch);
-static void mark_env(SnEvalMemFrame *frame, SnEvalEnv *env, uint64_t epoch);
 
-static void mark_value(SnEvalMemFrame *frame, SnEvalValue v, uint64_t epoch) {
+#define SN_MARK_INLINE 64u
+typedef struct {
+    SnEvalValue inline_values[SN_MARK_INLINE];
+    SnEvalValue *values;
+    size_t len;
+    size_t cap;
+} SnMarkWalk;
+
+static void mark_push(SnMarkWalk *walk, SnEvalValue value) {
+    if (walk->len == walk->cap) {
+        if (walk->cap > SIZE_MAX / 2u ||
+            walk->cap * 2u > SIZE_MAX / sizeof(*walk->values)) {
+            fputs("snovac: fatal: escape graph is too large\n", stderr);
+            exit(70);
+        }
+        size_t cap = walk->cap * 2u;
+        SnEvalValue *values;
+        if (walk->values == walk->inline_values) {
+            values = (SnEvalValue *)malloc(cap * sizeof(*values));
+            if (values) memcpy(values, walk->inline_values,
+                               walk->len * sizeof(*values));
+        } else {
+            values = (SnEvalValue *)realloc(walk->values, cap * sizeof(*values));
+        }
+        if (!values) {
+            fputs("snovac: fatal: out of memory traversing escape graph\n", stderr);
+            exit(70);
+        }
+        walk->values = values;
+        walk->cap = cap;
+    }
+    walk->values[walk->len++] = value;
+}
+
+static void mark_env(SnMarkWalk *walk, SnEvalEnv *env, uint64_t epoch) {
+    for (; env; env = env->parent) {
+        if (env->visit_epoch == epoch) return;
+        env->visit_epoch = epoch;
+        for (size_t i = 0; i < env->slots.len; i++) {
+            SnEvalValue *slot = (SnEvalValue *)env->slots.items[i];
+            if (slot) mark_push(walk, *slot);
+        }
+    }
+}
+
+static void mark_value(SnMarkWalk *walk, SnEvalMemFrame *frame,
+                       SnEvalValue v, uint64_t epoch) {
     if (v.kind == V_ARRAY && v.as.arr) {
         if (!mark_ptr(frame, v.as.arr, epoch)) return;
         (void)mark_ptr(frame, v.as.arr->items.items, epoch);
         for (size_t i = 0; i < v.as.arr->items.len; i++) {
             SnEvalValue *slot = (SnEvalValue *)v.as.arr->items.items[i];
-            if (slot && mark_ptr(frame, slot, epoch)) {
-                mark_value(frame, *slot, epoch);
-            }
+            if (slot && mark_ptr(frame, slot, epoch)) mark_push(walk, *slot);
         }
     } else if (v.kind == V_OBJECT && v.as.o) {
         if (!mark_ptr(frame, v.as.o, epoch)) return;
+        /* Object field slots are owned by the evaluation arena. */
         for (size_t i = 0; i < v.as.o->slots.len; i++) {
             SnEvalValue *slot = (SnEvalValue *)v.as.o->slots.items[i];
-            if (slot && mark_ptr(frame, slot, epoch)) {
-                mark_value(frame, *slot, epoch);
-            }
+            if (slot) mark_push(walk, *slot);
         }
     } else if (v.kind == V_REF && v.as.ref) {
         if (!mark_ptr(frame, v.as.ref, epoch)) return;
         if (v.as.ref->slot && !v.as.ref->is_null) {
-            if (mark_ptr(frame, v.as.ref->slot, epoch)) {
-                mark_value(frame, *v.as.ref->slot, epoch);
-            }
+            (void)mark_ptr(frame, v.as.ref->slot, epoch);
+            mark_push(walk, *v.as.ref->slot);
         }
-    } else if (v.kind == V_STRING) {
-        /* Evaluator strings live in the compilation arena, not MemBlocks. */
     } else if (v.kind == V_VARIANT && v.as.vt) {
         if (v.as.vt->visit_epoch == epoch) return;
         v.as.vt->visit_epoch = epoch;
         for (size_t i = 0; i < v.as.vt->payload.len; i++) {
             SnEvalValue *slot = (SnEvalValue *)v.as.vt->payload.items[i];
-            if (slot) mark_value(frame, *slot, epoch);
+            if (slot) mark_push(walk, *slot);
         }
     } else if (v.kind == V_LAMBDA && v.as.lam) {
         if (v.as.lam->visit_epoch == epoch) return;
         v.as.lam->visit_epoch = epoch;
-        mark_env(frame, v.as.lam->env, epoch);
+        mark_env(walk, v.as.lam->env, epoch);
     }
+}
+
+static void mark_roots(SnEvalMemFrame *frame, SnEvalEnv *keep_env,
+                       SnEvalEnv *globals, SnEvalValue extra,
+                       SnEvalValue ret, uint64_t epoch) {
+    SnMarkWalk walk = {{0}, NULL, 0, SN_MARK_INLINE};
+    walk.values = walk.inline_values;
+    mark_env(&walk, keep_env, epoch);
+    mark_env(&walk, globals, epoch);
+    mark_push(&walk, extra);
+    mark_push(&walk, ret);
+    while (walk.len) {
+        SnEvalValue value = walk.values[--walk.len];
+        mark_value(&walk, frame, value, epoch);
+    }
+    if (walk.values != walk.inline_values) free(walk.values);
 }
 
 static int mark_ptr(SnEvalMemFrame *frame, const void *p, uint64_t epoch) {
@@ -113,19 +168,6 @@ static int mark_ptr(SnEvalMemFrame *frame, const void *p, uint64_t epoch) {
     b->visit_epoch = epoch;
     if (owner == frame) b->marked = 1;
     return 1;
-}
-
-static void mark_env(SnEvalMemFrame *frame, SnEvalEnv *env, uint64_t epoch) {
-    for (; env; env = env->parent) {
-        if (env->visit_epoch == epoch) return;
-        env->visit_epoch = epoch;
-        for (size_t i = 0; i < env->slots.len; i++) {
-            SnEvalValue *slot = (SnEvalValue *)env->slots.items[i];
-            if (slot) {
-                mark_value(frame, *slot, epoch);
-            }
-        }
-    }
 }
 
 static void free_block(MemBlock *b) {
@@ -153,10 +195,7 @@ void sn_rt_frame_pop(SnEvalInterp *in, SnEvalEnv *keep_env, SnEvalValue extra) {
         }
         g_visit_epoch = 1;
     }
-    mark_env(frame, keep_env, g_visit_epoch);
-    mark_env(frame, in->globals, g_visit_epoch);
-    mark_value(frame, extra, g_visit_epoch);
-    mark_value(frame, in->ret, g_visit_epoch);
+    mark_roots(frame, keep_env, in->globals, extra, in->ret, g_visit_epoch);
     MemBlock *b = frame->blocks;
     while (b) {
         MemBlock *next = b->next;
