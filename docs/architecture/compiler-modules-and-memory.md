@@ -26,7 +26,7 @@ A migração é incremental e, nesta etapa, os módulos foram agrupados sem alte
 - `semantic/`: pacotes, símbolos, tipos, resolução, checker e regras de ownership/borrow (`check_ownership.c`).
 - `runtime/bytecode/`: formato SNBC e serialização (`snbc.c`, `snbc_io.c`), protótipos/unidade no emitter, lowering de expressões (`emit_bc_expr.c`), statements/jumps/literais e VM por dispatcher/operação.
 - `runtime/value/`: representação, ownership, retain/release e operações de valores.
-- `runtime/eval/`: interpretador da AST; `eval_lookup.c` concentra busca de declarações e membros herdados, separada do bootstrap e da invocação em `eval.c`.
+- `runtime/eval/`: interpretador da AST; `eval_run.c` concentra bootstrap/teardown, `eval.c` invocação e diagnóstico, e `eval_lookup.c` busca de declarações e membros herdados.
 - `runtime/concurrency/`: loop assíncrono e pool de threads expostos pelo runtime.
 - `runtime/`: integração nativa/socket do runtime compartilhado.
 - `backend/native/`: geração do runtime embutido, integração nativa e geração de executáveis autônomos.
@@ -44,7 +44,7 @@ Não foi criado `runtimes/`: `runtime/` é a categoria única para as implementa
 - `semantic/`: checker, regras de controle de statements (`check_control_stmt.c`), resolução, tipos, símbolos e módulos/pacotes.
 - `backend/native/`: backend nativo, integração com bytecode, emissão separada do loop VM e dos valores/RC/ciclo de vida embutidos, e o adaptador de compatibilidade `link_append`.
 - `runtime/concurrency/`: implementação de `async` e do pool `pulsar`.
-- `runtime/`: ABI nativa/socket; `runtime/bytecode/` separa serialização de unidade (`snbc_io.c`) do formato e ciclo de vida estrutural (`snbc.c`), além de dispatcher, operações numéricas (`vm_numeric.c`), composites (`vm_composite.c`), lifecycle e emitter de expressões (`emit_bc_expr.c`); `runtime/value/` separa ciclo de vida/RC (`value.c`), barreiras contra ciclos (`value_graph.c`), constructors/accessors (`value_objects.c`), igualdade iterativa (`value_equal.c`) e impressão (`value_format.c`); `runtime/eval/` separa lookup (`eval_lookup.c`), invocação/entrada, ambientes, regiões, expressões, statements, grafo de ownership e igualdade iterativa (`eval_equal.c`).
+- `runtime/`: ABI nativa/socket; `runtime/bytecode/` separa serialização de unidade (`snbc_io.c`) do formato e ciclo de vida estrutural (`snbc.c`), além de dispatcher, operações numéricas (`vm_numeric.c`), composites (`vm_composite.c`), lifecycle e emitter de expressões (`emit_bc_expr.c`); `runtime/value/` separa ciclo de vida/RC (`value.c`), barreiras contra ciclos (`value_graph.c`), constructors/accessors (`value_objects.c`), igualdade iterativa (`value_equal.c`) e impressão (`value_format.c`); `runtime/eval/` separa bootstrap/teardown (`eval_run.c`), lookup (`eval_lookup.c`), invocação, ambientes, regiões, expressões, statements, grafo de ownership e igualdade iterativa (`eval_equal.c`).
 - `builtin/`: intrínsecos semânticos em C.
 - `arena`, `intern` e `diag` continuam na raiz porque são APIs compartilhadas pelo compilador e pelos runtimes; concentrá-los em `core/` exigirá atualizar também os includes relativos dos testes e as regras de instalação. `target.c` permanece na raiz porque a seleção de plataforma é compartilhada pelo driver e pelo backend.
 

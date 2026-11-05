@@ -1,7 +1,8 @@
 /* eval_internal.h — shared state for the tree-walking interpreter.
  *
  * Split by concern to keep every translation unit small:
- *   eval.c         entry point and function invocation
+ *   eval.c         diagnostics and function invocation
+ *   eval_run.c     interpreter bootstrap, execution and teardown
  *   eval_lookup.c  declaration and inherited-member lookup
  *   eval_expr.c    expression evaluation
  *   eval_stmt.c    statement execution
