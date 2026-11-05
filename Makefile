@@ -68,8 +68,8 @@ else
 endif
 
 # Release builds set this from the GitHub tag (or workflow_dispatch input).
-# Local tagged builds use that exact tag; untagged builds identify the commit.
-SNOVAC_VERSION ?= $(shell git describe --tags --exact-match HEAD 2>/dev/null || git describe --tags --always --dirty 2>/dev/null || echo dev)
+# Local tagged builds use that exact tag; untagged builds report dev.
+SNOVAC_VERSION ?= $(shell git describe --tags --exact-match HEAD 2>/dev/null || echo dev)
 CPPFLAGS += -DSNOVAC_VERSION='"$(SNOVAC_VERSION)"'
 
 BIN      = $(BUILD)/snl$(EXE)
