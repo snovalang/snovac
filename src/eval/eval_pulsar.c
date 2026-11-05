@@ -2,6 +2,9 @@
  * worker boundary. The source AST and strings stay alive until pool_wait. */
 #include "eval_internal.h"
 
+#include "lex.h"
+#include "parse.h"
+
 #define SN_PULSAR_NAME_MAX 64
 
 static atomic_int g_eval_pulsar_jobs;
@@ -137,13 +140,56 @@ static int collect_expr(const SnExpr *e, const char **bound, size_t nbound,
         return name_has(bound, nbound, "this")
             ? 1 : name_add(free_names, nfree, "this");
     }
+    if (e->kind == SN_EXPR_STRING && e->interpolated && e->text) {
+        const char *raw = e->text;
+        size_t n = strlen(raw);
+        if (n >= 2 && raw[0] == '"') {
+            raw++;
+            n -= 2;
+        }
+        for (size_t i = 0; i < n; i++) {
+            if (raw[i] == '$' && i + 1 < n && raw[i + 1] == '{') {
+                size_t start = i + 2;
+                int depth = 1;
+                size_t j = start;
+                for (; j < n && depth > 0; j++) {
+                    if (raw[j] == '{') depth++;
+                    else if (raw[j] == '}') depth--;
+                    if (depth == 0) break;
+                }
+                char *buf = (char *)malloc(j - start + 1);
+                if (!buf) return 0;
+                memcpy(buf, raw + start, j - start);
+                buf[j - start] = '\0';
+                SnArena arena;
+                sn_arena_init(&arena, 0);
+                SnDiagSink diag;
+                sn_diag_init(&diag, "", buf, j - start);
+                SnTokenVec toks;
+                int ok = 1;
+                if (sn_lex(&arena, &diag, buf, j - start, &toks) == 0) {
+                    SnExpr *interp = sn_parse_expr_only(&arena, &diag, &toks);
+                    if (interp && !collect_expr(interp, bound, nbound, free_names, nfree))
+                        ok = 0;
+                }
+                sn_arena_free(&arena);
+                free(buf);
+                if (!ok) return 0;
+                i = j;
+            }
+        }
+    }
     if (e->kind == SN_EXPR_LAMBDA) {
         const char *inner[SN_PULSAR_NAME_MAX];
         size_t ni = nbound > SN_PULSAR_NAME_MAX ? SN_PULSAR_NAME_MAX : nbound;
         memcpy(inner, bound, ni * sizeof(*inner));
         for (size_t i = 0; i < e->params.len; i++) {
             const SnParam *p = (const SnParam *)e->params.items[i];
-            if (p && !name_add(inner, &ni, p->name)) return 0;
+            if (p) {
+                if (p->def && !collect_expr(p->def, bound, nbound, free_names, nfree))
+                    return 0;
+                if (!name_add(inner, &ni, p->name)) return 0;
+            }
         }
         return collect_expr(e->value, inner, ni, free_names, nfree) &&
                collect_stmt(e->body, inner, ni, free_names, nfree);
@@ -162,9 +208,13 @@ static int collect_expr(const SnExpr *e, const char **bound, size_t nbound,
     for (size_t i = 0; i < e->arms.len; i++) {
         const SnMatchArm *arm = (const SnMatchArm *)e->arms.items[i];
         if (!arm) continue;
-        if (!collect_expr(arm->guard, bound, nbound, free_names, nfree) ||
-            !collect_expr(arm->value, bound, nbound, free_names, nfree) ||
-            !collect_stmt(arm->body, bound, nbound, free_names, nfree)) return 0;
+        const char *arm_bound[SN_PULSAR_NAME_MAX];
+        size_t narm = nbound;
+        memcpy(arm_bound, bound, nbound * sizeof(*bound));
+        if (!collect_pattern(arm->pattern, arm_bound, &narm) ||
+            !collect_expr(arm->guard, arm_bound, narm, free_names, nfree) ||
+            !collect_expr(arm->value, arm_bound, narm, free_names, nfree) ||
+            !collect_stmt(arm->body, arm_bound, narm, free_names, nfree)) return 0;
     }
     return 1;
 }
@@ -274,13 +324,14 @@ static int capture_one(SnEvalInterp *in, const SnStmt *s, SnEvalPulsarJob *job,
                        const char *name, SnEvalValue value) {
     if (job_has_name(job, name)) return 1;
     if (job->capture_count >= job->capture_cap) return 0;
-    job->captures[job->capture_count].name = name;
-    if (!capture_value(value, &job->captures[job->capture_count].value, 0)) {
+    size_t slot = job->capture_count;
+    job->captures[slot].name = name;
+    job->capture_count++;
+    if (!capture_value(value, &job->captures[slot].value, 0)) {
         sn_rt_error(in, SNOVA_TYPE_ERROR, s->span,
                     "pulsar capture cannot cross the worker boundary");
         return 0;
     }
-    job->capture_count++;
     return 1;
 }
 
