@@ -125,7 +125,7 @@ void sn_native_write_scope_ops(FILE *f, int windows) {
     fprintf(f,
             "    case %d: {\n"
             "      uint32_t fni = read_u32(&ip); uint32_t argc = read_u32(&ip);\n"
-            "      if (argc > 256 || argc > (SIZE_MAX - sizeof(PulsarWork)) / sizeof(Val)) { fputs(\"error: pulsar arity\\n\", stderr); exit(1); }\n"
+            "      if (argc > 256u) { fputs(\"error: pulsar arity\\n\", stderr); exit(1); }\n"
             "      PulsarWork *work = (PulsarWork *)calloc(1, sizeof(PulsarWork) + (size_t)argc * sizeof(Val));\n"
             "      if (!work) { fputs(\"error: out of memory\\n\", stderr); exit(70); }\n"
             "      work->fn_idx = fni; work->argc = argc;\n"
