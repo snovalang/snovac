@@ -1,6 +1,8 @@
 /* eval_string.c — string literal decoding and `${...}` interpolation. */
 #include "eval_internal.h"
 
+#include <stdint.h>
+
 #include "lex.h"
 #include "parse.h"
 
@@ -14,12 +16,20 @@ typedef struct {
 } StrBuf;
 
 static void sb_reserve(StrBuf *b, size_t extra) {
-    if (b->len + extra + 1 <= b->cap) {
-        return;
+    if (b->len == SIZE_MAX || extra > SIZE_MAX - b->len - 1u) {
+        fputs("snovac evaluator: interpolated string size overflow\n", stderr);
+        abort();
     }
-    size_t ncap = b->cap ? b->cap * 2 : 32;
-    while (ncap < b->len + extra + 1) {
-        ncap *= 2;
+    size_t needed = b->len + extra + 1u;
+    if (needed <= b->cap) return;
+
+    size_t ncap = b->cap ? b->cap : 32u;
+    while (ncap < needed) {
+        if (ncap > SIZE_MAX / 2u) {
+            ncap = needed;
+            break;
+        }
+        ncap *= 2u;
     }
     char *nd = (char *)sn_arena_alloc(b->in->arena, ncap);
     memcpy(nd, b->data, b->len);
@@ -111,6 +121,10 @@ const char *decode_string(Interp *in, Env *env, const SnExpr *e) {
     StrBuf b;
     b.in = in;
     b.len = 0;
+    if (n == SIZE_MAX) {
+        fputs("snovac evaluator: interpolated string size overflow\n", stderr);
+        abort();
+    }
     b.cap = n + 1;
     b.data = (char *)sn_arena_alloc(in->arena, b.cap);
 
