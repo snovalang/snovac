@@ -68,6 +68,7 @@ struct RefVal {
     size_t len;
     int is_null;
     int fat;
+    int slot_owned;
 };
 
 struct SnEvalObject {

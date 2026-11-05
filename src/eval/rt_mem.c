@@ -6,6 +6,7 @@
 
 typedef struct MemBlock {
     struct MemBlock *next;
+    SnEvalMemFrame *owner;
     size_t size;
     int heap;
     int marked;
@@ -25,19 +26,6 @@ static int g_heap_live;
 static int g_stack_allocs;
 static int g_bounds;
 static uint64_t g_visit_epoch;
-
-static MemBlock *payload_block(SnEvalMemFrame *frame, const void *p,
-                               SnEvalMemFrame **owner) {
-    for (SnEvalMemFrame *f = frame; f; f = f->parent) {
-        for (MemBlock *b = f->blocks; b; b = b->next) {
-            if ((char *)(b + 1) == (const char *)p) {
-                if (owner) *owner = f;
-                return b;
-            }
-        }
-    }
-    return NULL;
-}
 
 void sn_rt_mem_reset(SnEvalInterp *in) {
     g_pool_used = 0;
@@ -128,7 +116,9 @@ static void mark_value(SnMarkWalk *walk, SnEvalMemFrame *frame,
     } else if (v.kind == V_REF && v.as.ref) {
         if (!mark_ptr(frame, v.as.ref, epoch)) return;
         if (v.as.ref->slot && !v.as.ref->is_null) {
-            (void)mark_ptr(frame, v.as.ref->slot, epoch);
+            if (v.as.ref->slot_owned) {
+                (void)mark_ptr(frame, v.as.ref->slot, epoch);
+            }
             mark_push(walk, *v.as.ref->slot);
         }
     } else if (v.kind == V_VARIANT && v.as.vt) {
@@ -162,9 +152,14 @@ static void mark_roots(SnEvalMemFrame *frame, SnEvalEnv *keep_env,
 }
 
 static int mark_ptr(SnEvalMemFrame *frame, const void *p, uint64_t epoch) {
-    SnEvalMemFrame *owner = NULL;
-    MemBlock *b = payload_block(frame, p, &owner);
-    if (!b || b->visit_epoch == epoch) return 0;
+    if (!p) return 0;
+    /* `p` is an exact pointer returned by sn_rt_alloc for these runtime nodes. */
+    MemBlock *b = ((MemBlock *)p) - 1;
+    SnEvalMemFrame *owner = b->owner;
+    SnEvalMemFrame *active;
+    for (active = frame; active && active != owner; active = active->parent) {
+    }
+    if (!active || b->visit_epoch == epoch) return 0;
     b->visit_epoch = epoch;
     if (owner == frame) b->marked = 1;
     return 1;
@@ -201,6 +196,7 @@ void sn_rt_frame_pop(SnEvalInterp *in, SnEvalEnv *keep_env, SnEvalValue extra) {
         MemBlock *next = b->next;
         if (b->marked && frame->parent) {
             b->marked = 0;
+            b->owner = frame->parent;
             b->next = frame->parent->blocks;
             frame->parent->blocks = b;
         } else {
@@ -245,6 +241,7 @@ void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
         return NULL;
     }
     b->size = nbytes;
+    b->owner = in->mem;
     b->heap = heap;
     b->marked = 0;
     b->visit_epoch = 0;

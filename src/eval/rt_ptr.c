@@ -48,6 +48,7 @@ SnEvalValue sn_rt_take_ref(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
         if (box) {
             *box = *slot;
             r->slot = box;
+            r->slot_owned = 1;
         }
     } else {
         r->slot = slot;
