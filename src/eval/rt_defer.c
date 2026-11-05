@@ -91,7 +91,7 @@ SnEvalValue sn_rt_finish_call(SnEvalInterp *in, SnEvalEnv *local, SnEvalEnv *cal
     SnEvalValue r = (f == FLOW_RETURN) ? in->ret : v_unit();
     int threw = (f == FLOW_THROW);
     in->ret = saved_ret;
-    sn_rt_frame_pop(in, caller, r);
+    sn_rt_frame_pop(in, caller, threw ? in->thrown : r);
     in->defers = saved;
     if (threw) {
         in->flow = FLOW_THROW;

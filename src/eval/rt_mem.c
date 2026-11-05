@@ -5,6 +5,7 @@
 #include <limits.h>
 
 #define RT_POOL (1u << 20)
+#define RT_HEAP_LIMIT (64u * 1024u * 1024u)
 
 typedef struct MemBlock {
     struct MemBlock *next;
@@ -26,6 +27,7 @@ static size_t g_pool_used;
 static MemBlock *g_free_stack;
 static size_t g_heap_allocs;
 static size_t g_heap_live;
+static size_t g_heap_bytes;
 static size_t g_stack_allocs;
 static size_t g_bounds;
 static uint64_t g_visit_epoch;
@@ -49,6 +51,7 @@ void sn_rt_mem_reset(SnEvalInterp *in) {
     g_free_stack = NULL;
     g_heap_allocs = 0;
     g_heap_live = 0;
+    g_heap_bytes = 0;
     g_stack_allocs = 0;
     g_bounds = 0;
     g_visit_epoch = 0;
@@ -187,6 +190,11 @@ static void free_block(MemBlock *b) {
         if (g_heap_live > 0) {
             g_heap_live--;
         }
+        if (g_heap_bytes >= sizeof(MemBlock) + b->size) {
+            g_heap_bytes -= sizeof(MemBlock) + b->size;
+        } else {
+            g_heap_bytes = 0;
+        }
         free(b);
         return;
     }
@@ -253,10 +261,12 @@ void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
         }
     }
     if (heap) {
+        if (bytes > RT_HEAP_LIMIT - g_heap_bytes) runtime_oom(nbytes);
         b = (MemBlock *)malloc(bytes);
         if (!b) runtime_oom(nbytes);
         count_inc(&g_heap_allocs);
         count_inc(&g_heap_live);
+        g_heap_bytes += bytes;
     } else if (b) {
         count_inc(&g_stack_allocs);
     }
@@ -291,6 +301,89 @@ void sn_rt_release(SnEvalInterp *in, void *ptr) {
     b->prev = NULL;
     b->next = NULL;
     free_block(b);
+}
+
+typedef struct {
+    const void *inline_items[64];
+    const void **items;
+    size_t len;
+    size_t cap;
+} SnDropWalk;
+
+static int drop_seen(SnDropWalk *walk, const void *ptr) {
+    for (size_t i = 0; i < walk->len; i++) {
+        if (walk->items[i] == ptr) return 1;
+    }
+    if (walk->len == walk->cap) {
+        size_t cap = walk->cap ? walk->cap * 2u : 16u;
+        if (cap < walk->cap || cap > SIZE_MAX / sizeof(*walk->items)) {
+            runtime_oom(SIZE_MAX);
+        }
+        const void **items;
+        if (walk->items == walk->inline_items) {
+            items = (const void **)malloc(cap * sizeof(*items));
+            if (items) memcpy((void *)items, walk->inline_items,
+                              walk->len * sizeof(*items));
+        } else {
+            items = (const void **)realloc((void *)walk->items,
+                                           cap * sizeof(*items));
+        }
+        if (!items) runtime_oom(cap * sizeof(*items));
+        walk->items = items;
+        walk->cap = cap;
+    }
+    walk->items[walk->len++] = ptr;
+    return 0;
+}
+
+static void drop_value(SnEvalInterp *in, SnDropWalk *walk, SnEvalValue value) {
+    if (value.kind == V_ARRAY && value.as.arr) {
+        ArrayVal *array = value.as.arr;
+        if (drop_seen(walk, array)) return;
+        for (size_t i = 0; i < array->items.len; i++) {
+            SnEvalValue *slot = (SnEvalValue *)array->items.items[i];
+            if (slot) {
+                drop_value(in, walk, *slot);
+                sn_rt_release(in, slot);
+            }
+        }
+        if (array->items.items) sn_rt_release(in, array->items.items);
+        sn_rt_release(in, array);
+    } else if (value.kind == V_OBJECT && value.as.o) {
+        SnEvalObject *object = value.as.o;
+        if (drop_seen(walk, object)) return;
+        for (size_t i = 0; i < object->slots.len; i++) {
+            SnEvalValue *slot = (SnEvalValue *)object->slots.items[i];
+            if (slot) drop_value(in, walk, *slot);
+        }
+        sn_rt_release(in, object);
+    } else if (value.kind == V_REF && value.as.ref) {
+        RefVal *ref = value.as.ref;
+        if (drop_seen(walk, ref)) return;
+        if (ref->slot_owned && ref->slot) {
+            drop_value(in, walk, *ref->slot);
+            sn_rt_release(in, ref->slot);
+        }
+        sn_rt_release(in, ref);
+    }
+}
+
+void sn_rt_drop_value(SnEvalInterp *in, SnEvalValue value) {
+    SnDropWalk walk = {{0}, NULL, 0, 64};
+    walk.items = walk.inline_items;
+    drop_value(in, &walk, value);
+    if (walk.items != walk.inline_items) free((void *)walk.items);
+}
+
+void sn_rt_store_owned(SnEvalInterp *in, SnEvalValue *slot, SnEvalValue value) {
+    if (!slot) return;
+    SnEvalValue old = *slot;
+    int same_owner =
+        (old.kind == V_ARRAY && value.kind == V_ARRAY && old.as.arr == value.as.arr) ||
+        (old.kind == V_OBJECT && value.kind == V_OBJECT && old.as.o == value.as.o) ||
+        (old.kind == V_REF && value.kind == V_REF && old.as.ref == value.as.ref);
+    if (!same_owner) sn_rt_drop_value(in, old);
+    *slot = value;
 }
 
 static void sn_rt_list_resize(SnEvalInterp *in, SnList *l, size_t ncap, int heap) {
@@ -346,7 +439,11 @@ void sn_rt_array_clear(SnEvalInterp *in, ArrayVal *array) {
     if (!array) return;
     int heap = sn_rt_array_heap_class(array);
     for (size_t i = 0; i < array->items.len; i++) {
-        sn_rt_release(in, array->items.items[i]);
+        SnEvalValue *slot = (SnEvalValue *)array->items.items[i];
+        if (slot) {
+            sn_rt_drop_value(in, *slot);
+            sn_rt_release(in, slot);
+        }
     }
     array->items.len = 0;
     sn_rt_list_resize(in, &array->items, 0, heap);

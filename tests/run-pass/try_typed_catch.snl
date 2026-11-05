@@ -1,0 +1,20 @@
+package tests.run_pass.try_typed_catch
+
+import builtin.console.Console
+
+func fail(): unit {
+    throw "caught-value"
+}
+
+func main(): int {
+    try {
+        fail()
+    } catch (number: int) {
+        Console.printline("wrong-handler")
+    } catch (message: string) {
+        Console.printline(message)
+    } finally {
+        Console.printline("finally")
+    }
+    return 0
+}

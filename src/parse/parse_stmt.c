@@ -98,10 +98,11 @@ static SnStmt *parse_try(P *p, SnSpan span) {
         advance_p(p);
         int paren = accept(p, SN_TOK_LPAREN);
         const char *nm = NULL;
+        SnType *catch_type = NULL;
         if (at_name(p)) {
             nm = expect_name(p);
             if (accept(p, SN_TOK_COLON)) {
-                sn_parse_type(p);
+                catch_type = sn_parse_type(p);
             }
         }
         if (paren) {
@@ -109,6 +110,7 @@ static SnStmt *parse_try(P *p, SnSpan span) {
         }
         SnStmt *c = sn_parse_block(p);
         c->name = nm;
+        c->type = catch_type;
         sn_list_push(p->arena, &s->catches, c);
     }
     /* `finally` is not a lexer keyword — it is an ordinary identifier

@@ -1,0 +1,21 @@
+package tests.run_pass.own_replace_returned_array
+
+import builtin.console.Console
+
+func makeBox(n: int): Array<int> {
+    return [n, n, n, n]
+}
+
+func main(): int {
+    var box = [0]
+    var nested = [[0]]
+    var i = 0
+    while i < 5000 {
+        box = makeBox(i)
+        nested.set(0, [i])
+        i = i + 1
+    }
+    Console.printline(heapLive())
+    Console.printline(box[0])
+    return 0
+}

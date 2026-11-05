@@ -3,4 +3,5 @@
 #include "test_check_part1.inc"
 #include "test_check_part2.inc"
 #include "test_check_part3.inc"
+#include "test_check_part5.inc"
 #include "test_check_part4.inc"

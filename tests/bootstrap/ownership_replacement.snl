@@ -1,0 +1,18 @@
+package tests.bootstrap.ownership_replacement
+
+import builtin.console.Console
+
+func makeBox(n: int): Array<int> {
+    return [n, n, n, n]
+}
+
+func main(): int {
+    var box = [0]
+    var i = 0
+    while i < 5000 {
+        box = makeBox(i)
+        i = i + 1
+    }
+    Console.printline(box[0])
+    return 0
+}

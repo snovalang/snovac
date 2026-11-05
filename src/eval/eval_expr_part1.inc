@@ -263,6 +263,36 @@ static int try_array_method(SnEvalInterp *in, SnEvalEnv *env, SnEvalValue recv,
         }
         return 1;
     }
+    if (strcmp(m, "set") == 0) {
+        if (call->args.len < 2) {
+            sn_rt_error(in, SNOVA_TYPE_ERROR, call->span,
+                        "Array.set expects an index and a value");
+            *out = v_unit();
+            return 1;
+        }
+        long long idx = sn_eval_as_int(in,
+            sn_eval_expr(in, env, (const SnExpr *)call->args.items[0]), call->span);
+        if (in->failed) {
+            *out = v_unit();
+            return 1;
+        }
+        if (idx < 0 || (size_t)idx >= recv.as.arr->items.len) {
+            sn_rt_error(in, SNOVA_TYPE_ERROR, call->span,
+                        "Array.set index is outside the array bounds");
+            *out = v_unit();
+            return 1;
+        }
+        SnEvalValue item = sn_eval_expr(in, env,
+            (const SnExpr *)call->args.items[1]);
+        if (in->failed) {
+            *out = v_unit();
+            return 1;
+        }
+        SnEvalValue *slot = (SnEvalValue *)recv.as.arr->items.items[idx];
+        sn_rt_store_owned(in, slot, item);
+        *out = v_unit();
+        return 1;
+    }
     if (strcmp(m, "clear") == 0) {
         sn_rt_array_clear(in, recv.as.arr);
         *out = v_int(0);

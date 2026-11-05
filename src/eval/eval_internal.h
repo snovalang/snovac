@@ -122,6 +122,7 @@ typedef struct {
     const SnUnit *unit;
     SnEvalEnv *globals;
     SnEvalValue ret;
+    SnEvalValue thrown;
     SnEvalFlow flow;
     int failed;
     int async_depth;
@@ -221,6 +222,8 @@ void sn_rt_frame_push(SnEvalInterp *in);
 void sn_rt_frame_pop(SnEvalInterp *in, SnEvalEnv *keep_env, SnEvalValue extra);
 void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap);
 void sn_rt_release(SnEvalInterp *in, void *ptr);
+void sn_rt_drop_value(SnEvalInterp *in, SnEvalValue value);
+void sn_rt_store_owned(SnEvalInterp *in, SnEvalValue *slot, SnEvalValue value);
 void sn_rt_list_push(SnEvalInterp *in, SnList *l, void *item, int heap);
 void sn_rt_array_push(SnEvalInterp *in, ArrayVal *array, SnEvalValue item);
 SnEvalValue sn_rt_array_pop(SnEvalInterp *in, ArrayVal *array);

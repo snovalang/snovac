@@ -229,15 +229,27 @@ static void test_method_overload(const char *tmp) {
 
 static int scratch_dir(char *buf, size_t n, const char *leaf) {
 #if defined(_WIN32)
-    const char *root = getenv("TEMP");
-    if (root == NULL || root[0] == '\0') root = getenv("TMP");
-    if (root == NULL || root[0] == '\0') root = ".";
-    int wrote = snprintf(buf, n, "%s\\%s", root, leaf);
+    (void)leaf;
+    char root[MAX_PATH];
+    char temp_file[MAX_PATH];
+    DWORD root_len = GetTempPathA(MAX_PATH, root);
+    if (root_len == 0 || root_len >= MAX_PATH ||
+        !GetTempFileNameA(root, "snv", 0, temp_file)) {
+        return 0;
+    }
+    if (!DeleteFileA(temp_file) || !CreateDirectoryA(temp_file, NULL)) {
+        return 0;
+    }
+    int wrote = snprintf(buf, n, "%s", temp_file);
 #else
     int wrote = snprintf(buf, n, "/tmp/%s", leaf);
 #endif
     if (wrote < 0 || (size_t)wrote >= n) return 0;
+#if !defined(_WIN32)
     return mkdtemp(buf) != NULL;
+#else
+    return 1;
+#endif
 }
 
 static void test_empty_array_struct_field(const char *tmp) {
@@ -357,6 +369,10 @@ int main(void) {
     test_string_is_chars(tmp);
     test_duplicate_fields(tmp);
     test_method_overload(tmp);
+    test_array_literal_element_types(tmp);
+    test_for_binding_types(tmp);
+    test_for_binding_annotation_mismatch(tmp);
+    test_builtin_member_signatures(tmp);
 
     printf("\n%d passed, %d failed\n", pass, fail);
     return fail == 0 ? 0 : 1;

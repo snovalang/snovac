@@ -3,6 +3,9 @@
  * eval_internal.h for the split. */
 #include "eval_internal.h"
 #include "async.h"
+#include <pthread.h>
+
+static pthread_mutex_t g_eval_run_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void sn_rt_error(SnEvalInterp *in, int code, SnSpan span, const char *fmt, ...) {
     if (in->failed) {

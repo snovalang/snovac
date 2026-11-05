@@ -127,16 +127,43 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
     }
 
     case SN_STMT_FOR: {
+        SnTypeRep *iterable_ty = sn_type_error(c->types);
         if (s->expr) {
-            sn_check_expr(c, local, s->expr); /* iterable — element typing not modeled */
+            iterable_ty = sn_check_expr(c, local, s->expr);
         }
+
+        SnTypeRep *item_ty = sn_type_error(c->types);
+        if (iterable_ty->tag == SN_T_ARRAY && iterable_ty->nargs == 1) {
+            item_ty = iterable_ty->args[0];
+        } else if (sn_type_integer_width(iterable_ty) > 0) {
+            /* Integer sources are iteration counts; the loop variable is the
+             * zero-based index produced by the evaluator. */
+            item_ty = sn_type_int(c->types);
+        } else if (iterable_ty->tag == SN_T_NAMED && iterable_ty->decl &&
+                   iterable_ty->decl->name &&
+                   strcmp(iterable_ty->decl->name, "Channel") == 0 &&
+                   iterable_ty->nargs == 1) {
+            item_ty = iterable_ty->args[0];
+        }
+
+        if (s->type) {
+            SnTypeRep *declared_ty = sn_check_resolve_type(c, s->type);
+            if (!is_error(item_ty) && types_clash(c, item_ty, declared_ty)) {
+                sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_FOR_BINDING_TYPE_MISMATCH,
+                             s->type->span,
+                             "for binding has type `%s`, but the source yields `%s`",
+                             sn_type_name(declared_ty), sn_type_name(item_ty));
+            }
+            item_ty = declared_ty;
+        }
+
         SnScope body_scope;
         sn_scope_init(&body_scope, c->arena, local);
         if (s->name) {
             SnSymbol *sym = sn_scope_define(&body_scope, sn_intern_cstr(c->intern, s->name),
                                             SN_SYM_LOCAL, NULL, s->span);
             if (sym) {
-                sym->value_type = sn_type_error(c->types); /* documented gap */
+                sym->value_type = item_ty;
             }
         }
         if (s->then_br) {
@@ -184,7 +211,22 @@ void sn_check_stmt(SnChecker *c, SnScope *local, SnStmt *s) {
             sn_check_stmt(c, local, s->then_br);
         }
         for (size_t i = 0; i < s->catches.len; i++) {
-            sn_check_stmt(c, local, SN_LIST_AT(s->catches, SnStmt, i));
+            SnStmt *handler = SN_LIST_AT(s->catches, SnStmt, i);
+            SnScope catch_scope;
+            sn_scope_init(&catch_scope, c->arena, local);
+            if (handler->name) {
+                SnSymbol *sym = sn_scope_define(&catch_scope,
+                    sn_intern_cstr(c->intern, handler->name), SN_SYM_LOCAL,
+                    NULL, handler->span);
+                if (sym) {
+                    sym->value_type = handler->type
+                        ? sn_check_resolve_type(c, handler->type)
+                        : sn_type_any(c->types);
+                }
+            } else if (handler->type) {
+                sn_check_resolve_type(c, handler->type);
+            }
+            sn_check_stmt(c, &catch_scope, handler);
         }
         if (s->finally_br) {
             sn_check_stmt(c, local, s->finally_br);

@@ -1,19 +1,5 @@
 /* eval_stmt.c — statement execution and control flow. */
 #include "eval_internal.h"
-#include "pulsar.h"
-
-typedef struct {
-    SnEvalInterp *in;
-    SnEvalEnv *env;
-    const SnExpr *expr;
-} SnPulsarJob;
-
-static void sn_eval_pulsar_job(void *arg) {
-    SnPulsarJob *job = (SnPulsarJob *)arg;
-    if (job->expr) {
-        sn_eval_expr(job->in, job->env, job->expr);
-    }
-}
 
 /* A runaway loop in a smoke-path interpreter should report, not hang. */
 #define SN_LOOP_GUARD 100000000
@@ -27,6 +13,26 @@ static SnEvalFlow exec_block(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
         }
     }
     return FLOW_NORMAL;
+}
+
+static int catch_type_matches(const SnType *type, SnEvalValue value) {
+    if (!type || !type->name) return 1;
+    const char *name = type->name;
+    switch (value.kind) {
+    case V_INT: return strcmp(name, "int") == 0 || strcmp(name, "long") == 0;
+    case V_DOUBLE: return strcmp(name, "double") == 0 || strcmp(name, "decimal") == 0;
+    case V_BOOL: return strcmp(name, "bool") == 0;
+    case V_STRING: return strcmp(name, "string") == 0;
+    case V_CHAR: return strcmp(name, "char") == 0;
+    case V_ARRAY: return strcmp(name, "Array") == 0;
+    case V_OBJECT:
+        return value.as.o && value.as.o->cls && value.as.o->cls->name &&
+               strcmp(name, value.as.o->cls->name) == 0;
+    case V_VARIANT:
+        return value.as.vt && value.as.vt->name &&
+               strcmp(name, value.as.vt->name) == 0;
+    default: return 0;
+    }
 }
 
 static SnEvalFlow exec_while(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) {
@@ -237,22 +243,9 @@ SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
     case SN_STMT_CONTINUE: return FLOW_CONTINUE;
 
     case SN_STMT_PULSAR: {
-        SnPulsarPool *pool = sn_pulsar_pool_create(1);
-        SnPulsarJob job;
-        job.in = in;
-        job.env = env;
-        job.expr = s->expr;
-        if (pool && sn_pulsar_pool_submit(pool, sn_eval_pulsar_job, &job)) {
-            sn_pulsar_pool_wait(pool);
-            sn_pulsar_pool_destroy(pool);
-        } else {
-            if (pool) {
-                sn_pulsar_pool_destroy(pool);
-            }
-            if (s->expr) {
-                sn_eval_expr(in, env, s->expr);
-            }
-        }
+        /* The AST evaluator is synchronous; keep its Pulsar fallback on the
+         * caller thread instead of creating a worker for every statement. */
+        if (s->expr) sn_eval_expr(in, env, s->expr);
         return in->flow == FLOW_THROW ? FLOW_THROW
              : in->failed ? FLOW_RETURN : FLOW_NORMAL;
     }
@@ -262,16 +255,27 @@ SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
         return in->flow == FLOW_THROW ? FLOW_THROW : FLOW_NORMAL;
 
     case SN_STMT_THROW:
+        in->thrown = s->expr ? sn_eval_expr(in, env, s->expr) : v_unit();
+        if (in->failed) return FLOW_RETURN;
         in->flow = FLOW_THROW;
         return FLOW_THROW;
 
     case SN_STMT_TRY: {
         SnEvalFlow f = s->then_br ? sn_eval_exec_stmt(in, env, s->then_br) : FLOW_NORMAL;
         if (f == FLOW_THROW) {
+            SnEvalValue thrown = in->thrown;
             in->flow = FLOW_NORMAL;
-            f = FLOW_NORMAL;
-            if (s->catches.len > 0) {
-                f = sn_eval_exec_stmt(in, env, (const SnStmt *)s->catches.items[0]);
+            f = FLOW_THROW;
+            for (size_t i = 0; i < s->catches.len; i++) {
+                const SnStmt *handler = (const SnStmt *)s->catches.items[i];
+                if (!catch_type_matches(handler->type, thrown)) continue;
+                SnEvalEnv *catch_env = sn_eval_env_new(in, env);
+                if (handler->name) {
+                    sn_eval_env_define(in, catch_env, handler->name, thrown);
+                }
+                in->flow = FLOW_NORMAL;
+                f = sn_eval_exec_stmt(in, catch_env, handler);
+                break;
             }
         }
         if (s->finally_br) {

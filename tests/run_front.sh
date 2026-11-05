@@ -44,11 +44,15 @@ fi
 RP="$DIR/run-pass"
 [ -d "$RP" ] || RP="$DIR/../../tests/run-pass"
 for name in hello string_comment_url array_field_access counter extension_invocation \
-  own_ptr own_stack own_loop_live own_defer_ok own_defer_lifo own_defer_fail own_defer_use \
+  own_ptr own_stack own_loop_live own_replace_returned_array try_typed_catch own_defer_ok own_defer_lifo own_defer_fail own_defer_use \
   overload_show; do
   if [ -f "$RP/$name.snl" ] && [ -f "$RP/$name.stdout" ]; then
-    got="$("$SNOVAC" run "$RP/$name.snl" 2>&1 || true)"
-    assert "run: $name" "$(cat "$RP/$name.stdout")" "$got"
+    got_file="$(mktemp)"
+    "$SNOVAC" run "$RP/$name.snl" >"$got_file" 2>&1 || true
+    same=0
+    same_text "$RP/$name.stdout" "$got_file" || same=$?
+    rm -f "$got_file"
+    assert "run: $name" 0 "$same"
   fi
 done
 

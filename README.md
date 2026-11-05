@@ -70,7 +70,7 @@ If the latest GitHub release has no prebuilt archive, the script clones this rep
 ## Features
 
 - **Pure C11 Implementation**: Zero dependencies, extremely fast compilation speed.
-- **Diagnostics & Error Reporting**: Colorized source snippets with precise diagnostic codes (`SNOVA0001` - `SNOVA0040`).
+- **Diagnostics & Error Reporting**: Colorized source snippets with stable `SNOVA` diagnostic codes across the lexer, parser, resolver, checker, and runtime.
 - **Module Management**: Discovers root packages with `mod.sns`.
 - **Bytecode and native compilation**: Ahead-of-time bytecode emission and native linking. `snl run` executes the checked program with the tree-walking interpreter.
 - **Pulsar Concurrency**: Actor model and streaming concurrency support.

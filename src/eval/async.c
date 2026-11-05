@@ -48,21 +48,29 @@ SnAsyncTask *sn_async_spawn_owned(SnAsyncLoop *loop, SnAsyncStepFn step,
 
 void sn_async_loop_run(SnAsyncLoop *loop) {
     if (!loop) return;
-
-    bool has_pending = true;
-    while (has_pending) {
-        has_pending = false;
+    for (;;) {
+        bool pending = false;
+        SnAsyncTask *prev = NULL;
         SnAsyncTask *cur = loop->head;
         while (cur) {
             if (cur->state == SN_TASK_PENDING || cur->state == SN_TASK_RUNNING) {
                 cur->state = SN_TASK_RUNNING;
                 cur->step(cur);
-                if (cur->state != SN_TASK_COMPLETED && cur->state != SN_TASK_FAILED) {
-                    has_pending = true;
-                }
             }
-            cur = cur->next;
+            SnAsyncTask *next = cur->next;
+            if (cur->state == SN_TASK_COMPLETED || cur->state == SN_TASK_FAILED) {
+                if (prev) prev->next = next;
+                else loop->head = next;
+                if (loop->tail == cur) loop->tail = prev;
+                if (cur->cleanup) cur->cleanup(cur->user_data);
+                free(cur);
+            } else {
+                pending = true;
+                prev = cur;
+            }
+            cur = next;
         }
+        if (!pending) break;
     }
 }
 

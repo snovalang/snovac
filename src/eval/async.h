@@ -35,8 +35,10 @@ typedef struct SnAsyncLoop {
 
 void sn_async_loop_init(SnAsyncLoop *loop);
 SnAsyncTask *sn_async_spawn(SnAsyncLoop *loop, SnAsyncStepFn step, void *user_data);
-/* Transfers user_data ownership to the loop. cleanup runs once at loop cleanup,
- * or immediately if the task cannot be created. */
+/* Task nodes are reclaimed as soon as they complete during loop_run. The
+ * returned handle is valid only until the next loop_run call. Transfers
+ * user_data ownership to the loop; cleanup runs once at task completion, or
+ * immediately if the task cannot be created. */
 SnAsyncTask *sn_async_spawn_owned(SnAsyncLoop *loop, SnAsyncStepFn step,
                                   void *user_data, SnAsyncCleanupFn cleanup);
 void sn_async_loop_run(SnAsyncLoop *loop);

@@ -92,7 +92,7 @@ def needs_verification(path):
         return False
     if path.startswith("tests/"):
         return True
-    return path.endswith(".c") or path.endswith(".h")
+    return path.endswith((".c", ".h"))
 
 
 def mark(event):

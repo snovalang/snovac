@@ -16,8 +16,9 @@
  * (incl. immutability — SNOVA_IMMUTABLE_REASSIGN — and its constructor
  * exception), index (arrays plus the other subscriptable receivers in
  * builtins.c), cast (`as`, trusts the annotation), `is` (validates the type
- * exists, returns bool), array literals (incl. the SNOVA100 empty-literal
- * rule and its annotated-binding exception), `let`/`var` inference,
+ * exists, returns bool), array literals (including element compatibility,
+ * the SNOVA100 empty-literal rule and its annotated-binding exception),
+ * `let`/`var` inference,
  * `if`/`while` condition-is-bool, `return`-vs-signature matching, `this`,
  * subtype assignability, and the intrinsic generic types `Array<T>` /
  * `Partial<T>`.
@@ -33,10 +34,9 @@
  *     argument list checked, because that module models no parameters. See
  *     builtins.h for why inventing them was rejected.
  *
- * Documented, NOT covered (returns SN_T_ERROR for the construct's own type,
- * but still recurses into children so nested identifiers/calls are checked
- * and contribute to coverage — these are not silently wrong, they're
- * honestly untyped):
+ * Documented limitations. Cases with no inferred type return SN_T_ERROR for
+ * the construct itself but still recurse into children so nested names and
+ * calls are checked. The individual cases below state where inference exists:
  *
  *   - Lambdas without a fully-annotated parameter list. plan.md §5.3 asks
  *     for bidirectional inference from the expected type at the use site;
@@ -45,8 +45,9 @@
  *     result type isn't computed (arm/branch bodies are still checked).
  *     Match-arm pattern bindings are registered but with SN_T_ERROR — real
  *     pattern-to-payload typing isn't implemented.
- *   - `for (let x in xs)` — no Iterable/element-type protocol is modeled;
- *     `x` is bound with SN_T_ERROR.
+ *   - `for` bindings infer `int` for integer ranges, `T` for arrays and
+ *     `Channel<T>`, and honor an explicit binding annotation. Other source
+ *     types have no Iterable protocol and do not infer an element type.
  *   - `await`: passes the operand's type through unchanged unless it's
  *     literally named `Task` with a generic argument, in which case it
  *     unwraps to that argument. No real async/Task modeling.
@@ -66,6 +67,14 @@
  *     return `T` on `List<T>` type-checks as returning the type variable T
  *     itself, not the instance's concrete element type.
  */
+// TODO: Add expected-type propagation for lambdas, if/match expressions, struct literals, and pattern payloads.
+// TODO: Define an Iterable protocol for loops over sources other than integers, arrays, and Channel<T>.
+// TODO: Model Task<T> and reject await operands that are not awaitable.
+// TODO: Ratify and implement the error propagation semantics of ?.
+// TODO: Expose interpolation expressions to semantic checking instead of reparsing them only at runtime.
+// TODO: Check generic bounds, substitute type parameters at concrete call sites, and infer generic arguments.
+// TODO: Add tuple representations to SnTypeTag and check tuple construction and compatibility.
+// TODO: Infer a common assignable element type for array literals instead of using only the first item.
 #ifndef SNOVAC_CHECK_H
 #define SNOVAC_CHECK_H
 
@@ -97,6 +106,8 @@
 #define SNOVA_NARROWING_CONVERSION 145
 #define SNOVA_AMBIGUOUS_OVERLOAD 146
 #define SNOVA_NO_MATCHING_OVERLOAD 147
+#define SNOVA_ARRAY_ELEMENT_TYPE_MISMATCH 149
+#define SNOVA_FOR_BINDING_TYPE_MISMATCH 150
 /* A struct's values are written in braces (`Message{"olá"}`), not parentheses. */
 #define SNOVA_STRUCT_BRACE_INIT 151
 

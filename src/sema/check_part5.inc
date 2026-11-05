@@ -114,8 +114,7 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
              * An immediate call of an inner or anonymous function is a lambda
              * callee: its parameters are real, so they are checked. */
             SnTypeRep *callee_ty = e->lhs->resolved_type;
-            if (e->lhs->kind == SN_EXPR_LAMBDA && callee_ty &&
-                callee_ty->tag == SN_T_FUNC) {
+            if (callee_ty && callee_ty->tag == SN_T_FUNC) {
                 check_call_against_functype(c, e, callee_ty, arg_tys, e->args.len);
                 result = callee_ty->ret;
                 break;
@@ -357,9 +356,14 @@ SnTypeRep *sn_check_expr(SnChecker *c, SnScope *local, SnExpr *e) {
         SnTypeRep *elem_ty = sn_check_expr(c, local, first);
         for (size_t i = 1; i < e->args.len; i++) {
             SnExpr *item = SN_LIST_AT(e->args, SnExpr, i);
-            sn_check_expr(c, local, item); /* checked for coverage; not
-                                            * cross-validated against elem_ty
-                                            * in this pass (documented gap) */
+            SnTypeRep *item_ty = sn_check_expr(c, local, item);
+            if (!types_clash(c, item_ty, elem_ty)) {
+                continue;
+            }
+            sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARRAY_ELEMENT_TYPE_MISMATCH,
+                         item ? item->span : e->span,
+                         "array element has type `%s`, expected `%s`",
+                         sn_type_name(item_ty), sn_type_name(elem_ty));
         }
         result = is_error(elem_ty) ? sn_type_error(c->types)
                                    : sn_type_array(c->types, elem_ty);

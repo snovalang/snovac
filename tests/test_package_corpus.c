@@ -1,7 +1,7 @@
-#include "../arena.h"
-#include "../diag.h"
-#include "../intern.h"
-#include "../package.h"
+#include "../src/base/arena.h"
+#include "../src/base/diag.h"
+#include "../src/base/intern.h"
+#include "../src/sema/package.h"
 #include "test_package_corpus.h"
 #include <stdio.h>
 #include <string.h>
@@ -9,7 +9,11 @@ int report_real_corpus(SnInternTable *it, SnArena *a) {
 
     SnDiagSink diag;
     sn_diag_init(&diag, "<corpus-scan>", "", 0);
-    diag.out = fopen("/dev/null", "w"); /* the point here is the counters, not the text */
+#ifdef _WIN32
+    diag.out = fopen("NUL", "w");
+#else
+    diag.out = fopen("/dev/null", "w");
+#endif
     if (!diag.out) {
         diag.out = stderr;
     }

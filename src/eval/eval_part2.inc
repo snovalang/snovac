@@ -171,12 +171,15 @@ SnEvalValue sn_eval_call_lambda(SnEvalInterp *in, const SnEvalLambda *lam, SnLis
 /* ── entry point ──────────────────────────────────────────────────────────── */
 
 int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
+    /* The evaluator allocator and its probe counters are process-global. */
+    pthread_mutex_lock(&g_eval_run_lock);
     SnEvalInterp in;
     in.arena = arena;
     in.diag = diag;
     in.unit = unit;
     in.globals = sn_eval_env_new(&in, NULL);
     in.ret = v_unit();
+    in.thrown = v_unit();
     in.flow = FLOW_NORMAL;
     in.failed = 0;
     in.async_depth = 0;
@@ -190,16 +193,25 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
         SnSpan z = {0, 0, 1, 1};
         sn_diag_emit(diag, SN_DIAG_ERROR, SNOVA_NO_MAIN, z,
                      "no `func main()` found in this file");
+        pthread_mutex_unlock(&g_eval_run_lock);
         return -1;
     }
 
     SnEvalEnv *global = sn_eval_env_new(&in, NULL);
     SnList no_args = {0};
     SnEvalValue r = sn_eval_call_function(&in, main_fn, &no_args, global, NULL, main_fn->span);
+    if (in.flow == FLOW_THROW && !in.failed) {
+        sn_rt_error(&in, SNOVA_TYPE_ERROR, main_fn->span,
+                    "uncaught thrown value `%s`",
+                    sn_eval_to_string(&in, in.thrown, main_fn->span));
+    }
     sn_rt_frame_pop(&in, NULL, r);
 
     if (in.failed) {
+        pthread_mutex_unlock(&g_eval_run_lock);
         return -1;
     }
-    return (r.kind == V_INT) ? (int)r.as.i : 0;
+    int result = (r.kind == V_INT) ? (int)r.as.i : 0;
+    pthread_mutex_unlock(&g_eval_run_lock);
+    return result;
 }

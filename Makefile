@@ -115,6 +115,9 @@ TEST_RESOLVE_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/diag.o $(BUILD)/base/int
                      $(BUILD)/parse/parse_decl.o $(BUILD)/parse/parse_decl_parts.o \
                      $(BUILD)/parse/parse_ptr.o $(BUILD)/driver/driver_utils.o
 TEST_CHECK_BIN = $(BUILD)/test_check$(EXE)
+TEST_ASYNC_BIN = $(BUILD)/test_async$(EXE)
+TEST_PULSAR_BIN = $(BUILD)/test_pulsar$(EXE)
+TEST_EVAL_BIN = $(BUILD)/test_eval_concurrent$(EXE)
 TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/sema/check.o \
                   $(BUILD)/sema/check_ptr.o $(BUILD)/sema/borrow.o $(BUILD)/sema/borrow_expr.o \
                   $(BUILD)/sema/borrow_flow.o $(BUILD)/sema/borrow_task.o
@@ -220,8 +223,8 @@ $(TEST_SNBC_BIN): tests/test_snbc.c $(BUILD)/bc/snbc.o | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_snbc.c \
 	    $(BUILD)/bc/snbc.o
 
-$(TEST_PACKAGE_BIN): tests/test_package.c $(TEST_PACKAGE_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_package.c $(TEST_PACKAGE_OBJS)
+$(TEST_PACKAGE_BIN): tests/test_package.c tests/test_package_corpus.c tests/test_package_corpus.h tests/test_package_helpers.h $(TEST_PACKAGE_OBJS) | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_package.c tests/test_package_corpus.c $(TEST_PACKAGE_OBJS)
 
 $(TEST_TYPES_BIN): tests/test_types.c $(wildcard tests/test_types_part*.inc) $(TEST_TYPES_OBJS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_types.c $(TEST_TYPES_OBJS)
@@ -232,10 +235,19 @@ $(TEST_RESOLVE_BIN): tests/test_resolve.c $(wildcard tests/test_resolve_part*.in
 $(TEST_CHECK_BIN): tests/test_check.c $(wildcard tests/test_check_part*.inc) $(TEST_CHECK_OBJS) | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_check.c $(TEST_CHECK_OBJS)
 
+$(TEST_ASYNC_BIN): tests/test_async.c src/eval/async.c src/eval/async.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_async.c src/eval/async.c
+
+$(TEST_PULSAR_BIN): tests/test_pulsar.c src/eval/pulsar.c src/eval/pulsar.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_pulsar.c src/eval/pulsar.c
+
+$(TEST_EVAL_BIN): tests/test_eval_concurrent.c $(RT_OBJS) | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_eval_concurrent.c $(RT_OBJS) $(EXTRA_LIBS)
+
 # Assertions for the lexer decisions derived from the corpus, plus the
 # standalone symbol-table, package-graph, type-representation, resolver and
 # checker unit tests, plus the little-endian SnBC writer.
-unit: $(BIN) $(TEST_SYMBOL_BIN) $(TEST_PACKAGE_BIN) $(TEST_TYPES_BIN) $(TEST_RESOLVE_BIN) $(TEST_CHECK_BIN) $(TEST_SNBC_BIN)
+unit: $(BIN) $(TEST_SYMBOL_BIN) $(TEST_PACKAGE_BIN) $(TEST_TYPES_BIN) $(TEST_RESOLVE_BIN) $(TEST_CHECK_BIN) $(TEST_SNBC_BIN) $(TEST_ASYNC_BIN) $(TEST_PULSAR_BIN) $(TEST_EVAL_BIN)
 ifeq ($(OS),Windows_NT)
 	@$(TEST_SYMBOL_BIN)
 	@$(TEST_PACKAGE_BIN)
@@ -243,6 +255,9 @@ ifeq ($(OS),Windows_NT)
 	@$(TEST_RESOLVE_BIN)
 	@$(TEST_CHECK_BIN)
 	@$(TEST_SNBC_BIN)
+	@$(TEST_ASYNC_BIN)
+	@$(TEST_PULSAR_BIN)
+	@$(TEST_EVAL_BIN)
 	@sh tests/run.sh $(BIN)
 	@sh tests/battery.sh $(BIN)
 else
@@ -254,6 +269,9 @@ else
 	@./$(TEST_RESOLVE_BIN)
 	@./$(TEST_CHECK_BIN)
 	@./$(TEST_SNBC_BIN)
+	@./$(TEST_ASYNC_BIN)
+	@./$(TEST_PULSAR_BIN)
+	@./$(TEST_EVAL_BIN)
 endif
 
 # Lexes every .snl in the repository and reports coverage.
@@ -272,7 +290,7 @@ endif
 
 compdb: compile_commands.json
 
-compile_commands.json: $(SRCS) tests/test_symbol.c tests/test_package.c tests/test_types.c tests/test_resolve.c tests/test_check.c tests/test_snbc.c scripts/gen_compile_commands.py
+compile_commands.json: $(SRCS) tests/test_symbol.c tests/test_package.c tests/test_types.c tests/test_resolve.c tests/test_check.c tests/test_snbc.c tests/test_async.c tests/test_pulsar.c tests/test_eval_concurrent.c scripts/gen_compile_commands.py
 ifeq ($(OS),Windows_NT)
 	@python scripts/gen_compile_commands.py "$(CURDIR)" "$(CC)" "$(CPPFLAGS)" "$(CFLAGS)" "$(WARN)" "$(INCLUDES)"
 else

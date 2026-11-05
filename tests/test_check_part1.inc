@@ -13,6 +13,7 @@
 #if defined(_WIN32)
 #include <direct.h>
 #include <io.h>
+#include <windows.h>
 #define mkdir(dir, mode) _mkdir(dir)
 #endif
 
@@ -70,6 +71,9 @@ static void world_init(World *w) {
     w->diag_buf = NULL;
     w->diag_buf_len = 0;
     w->diag.out = tmpfile();
+    if (w->diag.out == NULL) {
+        w->diag.out = fopen("build/test_check_diag.tmp", "w+");
+    }
 #else
     w->diag.out = open_memstream(&w->diag_buf, &w->diag_buf_len);
 #endif

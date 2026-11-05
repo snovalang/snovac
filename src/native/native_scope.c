@@ -68,13 +68,17 @@ void sn_native_write_scope_ops(FILE *f, int windows) {
     if (windows) {
         fprintf(f,
                 "      EnterCriticalSection(&g_pulsar_mutex);\n"
+                "      if (g_pulsar_queued >= 1024u) { LeaveCriticalSection(&g_pulsar_mutex); free(work); fputs(\"error: pulsar queue capacity exceeded\\n\", stderr); exit(75); }\n"
                 "      work->next = g_pulsar_queue; g_pulsar_queue = work;\n"
+                "      g_pulsar_queued++;\n"
                 "      WakeConditionVariable(&g_pulsar_cond);\n"
                 "      LeaveCriticalSection(&g_pulsar_mutex);\n");
     } else {
         fprintf(f,
                 "      pthread_mutex_lock(&g_pulsar_mutex);\n"
+                "      if (g_pulsar_queued >= 1024u) { pthread_mutex_unlock(&g_pulsar_mutex); free(work); fputs(\"error: pulsar queue capacity exceeded\\n\", stderr); exit(75); }\n"
                 "      work->next = g_pulsar_queue; g_pulsar_queue = work;\n"
+                "      g_pulsar_queued++;\n"
                 "      pthread_cond_signal(&g_pulsar_cond);\n"
                 "      pthread_mutex_unlock(&g_pulsar_mutex);\n");
     }

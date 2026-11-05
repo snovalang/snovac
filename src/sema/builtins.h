@@ -17,13 +17,10 @@
  *     mismatch (sn_type_is_any), so an imprecise entry stays silent rather
  *     than producing a wrong diagnostic;
  *
- *   - NO parameter list. Nothing upstream declares one, and inventing
- *     signatures for `map`/`substring`/`split` would fabricate arity rules the
- *     language has never stated. A builtin method is therefore reported as
- *     SN_T_FUNC with zero parameters, and check.c does not check the argument
- *     list of a call whose callee resolved through this module. That is a
- *     documented gap, not an oversight: argument checking for builtin members
- *     needs real signatures first.
+ *   - parameter signatures for intrinsic members, including receiver-derived
+ *     element types and common scalar/string argument types. Callback
+ *     signatures remain `any` until the language defines their function type;
+ *     calls still have a checked arity.
  *
  * `Partial<T>` is modeled as T itself — see sn_builtin_generic().
  */
@@ -59,10 +56,9 @@ SnTypeRep *sn_builtin_generic(SnTypeTable *t, SnInternTable *it, const char *ina
 int sn_builtin_is_generic_name(SnInternTable *it, const char *iname);
 
 /* Type of `recv.<iname>` for an intrinsic receiver — an array, a string, or a
- * numeric/bool primitive. Methods come back as SN_T_FUNC with zero parameters
- * and the modeled result in `ret` (see the header note on why the parameter
- * list is empty rather than absent). Returns NULL when `recv` has no such
- * intrinsic member, which is the caller's cue to report SNOVA0028 as before. */
+ * numeric/bool primitive. Signatures carry arity and known parameter types;
+ * callback parameters use `any` until the language specifies their shape.
+ * Returns NULL when `recv` has no such intrinsic member. */
 SnTypeRep *sn_builtin_member(SnTypeTable *t, SnInternTable *it, const SnTypeRep *recv,
                              const char *iname);
 

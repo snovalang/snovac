@@ -139,13 +139,13 @@ pass_total=0; pass_ok=0
 # check` has no dependency-materialization step, so it cannot see them. They
 # are counted apart rather than mixed into a single misleading percentage.
 #
-# The same gap also reaches one fixture outside that directory
-# (missing_import_type_usage_ok.snl imports `builtin.http.Http`), so the test
-# is "does this fixture report SNOVA050, package-not-found, against itself" —
-# that diagnostic IS the dependency-materialization gap, by definition. It is
-# only consulted for compile-pass fixtures; compile-fail keeps its own tally.
+# The same gap also reaches fixtures outside that directory: `try_catch.snl`
+# imports `builtin.errors.Errors`, and `missing_import_type_usage_ok.snl`
+# imports `builtin.http.Http`. Those are counted with the package fixtures;
+# the missing dependency is the reason they cannot be checked in this
+# checkout. This classification is only for compile-pass fixtures.
 needs_materialized_deps() { # file
-  case "$1" in */compile-pass/packages/*) return 0;; esac
+  case "$1" in */compile-pass/packages/*|*/compile-pass/try_catch.snl) return 0;; esac
   own_codes "$1" | grep -qx 50
 }
 

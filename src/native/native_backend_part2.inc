@@ -257,6 +257,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
         f, "static pthread_cond_t g_pulsar_cond = PTHREAD_COND_INITIALIZER;\n");
   }
   fprintf(f, "static PulsarWork *g_pulsar_queue = NULL;\n");
+  fprintf(f, "static size_t g_pulsar_queued = 0;\n");
   fprintf(f, "static int g_pulsar_busy = 0;\n");
   fprintf(f, "static bool g_pulsar_stop = false;\n\n");
 
@@ -274,7 +275,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    if (g_pulsar_stop && !g_pulsar_queue) { "
                "LeaveCriticalSection(&g_pulsar_mutex); break; }\n");
     fprintf(f, "    PulsarWork *work = g_pulsar_queue;\n");
-    fprintf(f, "    if (work) { g_pulsar_queue = work->next; g_pulsar_busy = 1; }\n");
+    fprintf(f, "    if (work) { g_pulsar_queue = work->next; g_pulsar_queued--; g_pulsar_busy = 1; }\n");
     fprintf(f, "    LeaveCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "    if (work) {\n");
     fprintf(f, "      run_function(work->fn_idx, work->args, work->argc);\n");
@@ -296,7 +297,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    if (g_pulsar_stop && !g_pulsar_queue) { "
                "pthread_mutex_unlock(&g_pulsar_mutex); break; }\n");
     fprintf(f, "    PulsarWork *work = g_pulsar_queue;\n");
-    fprintf(f, "    if (work) { g_pulsar_queue = work->next; g_pulsar_busy = 1; }\n");
+    fprintf(f, "    if (work) { g_pulsar_queue = work->next; g_pulsar_queued--; g_pulsar_busy = 1; }\n");
     fprintf(f, "    pthread_mutex_unlock(&g_pulsar_mutex);\n");
     fprintf(f, "    if (work) {\n");
     fprintf(f, "      run_function(work->fn_idx, work->args, work->argc);\n");
@@ -315,11 +316,15 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "  work->fn_idx = fn_idx;\n  work->argc = 0;\n  work->next = NULL;\n");
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "  EnterCriticalSection(&g_pulsar_mutex);\n");
+    fprintf(f, "  if (g_pulsar_queued >= 1024u) { LeaveCriticalSection(&g_pulsar_mutex); free(work); fputs(\"error: pulsar queue capacity exceeded\\n\", stderr); exit(75); }\n");
+    fprintf(f, "  g_pulsar_queued++;\n");
     fprintf(f, "  work->next = g_pulsar_queue;\n  g_pulsar_queue = work;\n");
     fprintf(f, "  WakeConditionVariable(&g_pulsar_cond);\n");
     fprintf(f, "  LeaveCriticalSection(&g_pulsar_mutex);\n");
   } else {
     fprintf(f, "  pthread_mutex_lock(&g_pulsar_mutex);\n");
+    fprintf(f, "  if (g_pulsar_queued >= 1024u) { pthread_mutex_unlock(&g_pulsar_mutex); free(work); fputs(\"error: pulsar queue capacity exceeded\\n\", stderr); exit(75); }\n");
+    fprintf(f, "  g_pulsar_queued++;\n");
     fprintf(f, "  work->next = g_pulsar_queue;\n  g_pulsar_queue = work;\n");
     fprintf(f, "  pthread_cond_signal(&g_pulsar_cond);\n");
     fprintf(f, "  pthread_mutex_unlock(&g_pulsar_mutex);\n");

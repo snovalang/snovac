@@ -20,60 +20,46 @@ typedef enum {
 typedef struct {
     const char *name;
     BSlot ret;
+    uint8_t arity;
+    BSlot p0;
+    BSlot p1;
 } BMember;
 
 /* crates/snovalang/src/native/selfcheck/static_facts.rs, "Array" entry, in the
  * same order. Result types are this module's addition — that table has none. */
 static const BMember ARRAY_MEMBERS[] = {
-    {"length", B_INT},
-    {"len", B_INT},
-    {"isEmpty", B_BOOL},
-    {"push", B_INT},
-    {"pop", B_ELEM},
-    {"clear", B_INT},
-    {"get", B_ELEM},
-    {"set", B_UNIT},
-    {"map", B_ARRAY_ANY},
-    {"filter", B_SELF},
-    {"forEach", B_UNIT},
-    {"reduce", B_ANY},
-    {"flatMap", B_ARRAY_ANY},
-    {"take", B_SELF},
-    {"drop", B_SELF},
-    {"first", B_ELEM},
-    {"last", B_ELEM},
-    {"join", B_STRING},
-    {"concurrentMapping", B_ARRAY_ANY},
-    {"concurrentMappingWith", B_ARRAY_ANY},
-    {"concurrentForEach", B_UNIT},
+    {"length", B_INT, 0, B_ANY, B_ANY}, {"len", B_INT, 0, B_ANY, B_ANY},
+    {"isEmpty", B_BOOL, 0, B_ANY, B_ANY}, {"push", B_INT, 1, B_ELEM, B_ANY},
+    {"pop", B_ELEM, 0, B_ANY, B_ANY}, {"clear", B_INT, 0, B_ANY, B_ANY},
+    {"get", B_ELEM, 1, B_INT, B_ANY}, {"set", B_UNIT, 2, B_INT, B_ELEM},
+    {"map", B_ARRAY_ANY, 1, B_ANY, B_ANY}, {"filter", B_SELF, 1, B_ANY, B_ANY},
+    {"forEach", B_UNIT, 1, B_ANY, B_ANY}, {"reduce", B_ANY, 2, B_ANY, B_ANY},
+    {"flatMap", B_ARRAY_ANY, 1, B_ANY, B_ANY}, {"take", B_SELF, 1, B_INT, B_ANY},
+    {"drop", B_SELF, 1, B_INT, B_ANY}, {"first", B_ELEM, 0, B_ANY, B_ANY},
+    {"last", B_ELEM, 0, B_ANY, B_ANY}, {"join", B_STRING, 1, B_STRING, B_ANY},
+    {"concurrentMapping", B_ARRAY_ANY, 1, B_ANY, B_ANY},
+    {"concurrentMappingWith", B_ARRAY_ANY, 2, B_ANY, B_ANY},
+    {"concurrentForEach", B_UNIT, 1, B_ANY, B_ANY},
 };
 
 /* Same source, "string" entry. Indexing and `charAt` yield `char`: a string
  * is a concatenation of char values. `substring` stays a string. */
 static const BMember STRING_MEMBERS[] = {
-    {"length", B_INT},
-    {"len", B_INT},
-    {"toString", B_STRING},
-    {"asString", B_STRING},
-    {"charAt", B_CHAR},
-    {"substring", B_STRING},
-    {"trim", B_STRING},
-    {"trimStart", B_STRING},
-    {"trimEnd", B_STRING},
-    {"startsWith", B_BOOL},
-    {"endsWith", B_BOOL},
-    {"contains", B_BOOL},
-    {"indexOf", B_INT},
-    {"lastIndexOf", B_INT},
-    {"split", B_ARRAY_STRING},
-    {"replace", B_STRING},
-    {"isEmpty", B_BOOL},
+    {"length", B_INT, 0, B_ANY, B_ANY}, {"len", B_INT, 0, B_ANY, B_ANY},
+    {"toString", B_STRING, 0, B_ANY, B_ANY}, {"asString", B_STRING, 0, B_ANY, B_ANY},
+    {"charAt", B_CHAR, 1, B_INT, B_ANY}, {"substring", B_STRING, 2, B_INT, B_INT},
+    {"trim", B_STRING, 0, B_ANY, B_ANY}, {"trimStart", B_STRING, 0, B_ANY, B_ANY},
+    {"trimEnd", B_STRING, 0, B_ANY, B_ANY}, {"startsWith", B_BOOL, 1, B_STRING, B_ANY},
+    {"endsWith", B_BOOL, 1, B_STRING, B_ANY}, {"contains", B_BOOL, 1, B_STRING, B_ANY},
+    {"indexOf", B_INT, 1, B_STRING, B_ANY}, {"lastIndexOf", B_INT, 1, B_STRING, B_ANY},
+    {"split", B_ARRAY_STRING, 1, B_STRING, B_ANY},
+    {"replace", B_STRING, 2, B_STRING, B_STRING}, {"isEmpty", B_BOOL, 0, B_ANY, B_ANY},
 };
 
 /* Same source: int/long/decimal/float/double/bool all carry exactly these. */
 static const BMember SCALAR_MEMBERS[] = {
-    {"toString", B_STRING},
-    {"asString", B_STRING},
+    {"toString", B_STRING, 0, B_ANY, B_ANY},
+    {"asString", B_STRING, 0, B_ANY, B_ANY},
 };
 
 static SnTypeRep *slot_type(SnTypeTable *t, BSlot slot, const SnTypeRep *recv) {
@@ -103,9 +89,13 @@ static SnTypeRep *slot_type(SnTypeTable *t, BSlot slot, const SnTypeRep *recv) {
     return sn_type_any(t);
 }
 
-/* Methods carry no parameter list — see the header. */
-static SnTypeRep *method_of(SnTypeTable *t, BSlot ret, const SnTypeRep *recv) {
-    return sn_type_func(t, NULL, 0, slot_type(t, ret, recv));
+static SnTypeRep *method_of(SnTypeTable *t, const BMember *member,
+                            const SnTypeRep *recv) {
+    SnTypeRep *params[2];
+    if (member->arity > 0) params[0] = slot_type(t, member->p0, recv);
+    if (member->arity > 1) params[1] = slot_type(t, member->p1, recv);
+    return sn_type_func(t, member->arity ? params : NULL, member->arity,
+                        slot_type(t, member->ret, recv));
 }
 
 static const BMember *find_member(const BMember *table, size_t n, const char *name) {
@@ -177,7 +167,7 @@ SnTypeRep *sn_builtin_member(SnTypeTable *t, SnInternTable *it, const SnTypeRep 
     default:
         return NULL;
     }
-    return m ? method_of(t, m->ret, recv) : NULL;
+    return m ? method_of(t, m, recv) : NULL;
 }
 
 SnTypeRep *sn_builtin_index_result(SnTypeTable *t, SnInternTable *it,

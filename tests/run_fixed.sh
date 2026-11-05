@@ -238,6 +238,28 @@ compiler_case() {
   assert "compiler: $label matches snl run" "$host_rc" "$prod_rc"
 }
 
+native_case() {
+  label="$1"
+  expect_out="$2"
+  src="$3"
+  native_ext=""
+  case "$(uname -s 2>/dev/null || true)" in MINGW*|MSYS*|CYGWIN*) native_ext=".exe" ;; esac
+  exe="$CC_ROOT/native-$label$native_ext"
+  out="$CC_ROOT/native-$label.out"
+  assert "build: $label native executable emits" 0 \
+    "$(rc_of "$SNL_ABS" build "$src" -o "$exe")"
+  if "$exe" >"$out"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  assert "build: $label native exit" 0 "$rc"
+  printf '%s\n' "$expect_out" > "$CC_ROOT/native-$label.expect"
+  same=0
+  same_text "$CC_ROOT/native-$label.expect" "$out" || same=$?
+  assert "build: $label native stdout" 0 "$same"
+}
+
 printf 'package p\n\nfunc main(): int {\n    return 0\n}\n' > "$CC_ROOT/tiny-zero.snl"
 printf 'package p\n\nfunc main(): int {\n    return 1 + 2 * 3\n}\n' > "$CC_ROOT/tiny-prec.snl"
 printf 'package p\n\nfunc main(): int {\n    return (1 + 2) * 3\n}\n' > "$CC_ROOT/tiny-paren.snl"
@@ -263,6 +285,16 @@ compiler_case "match" 20 "$DIR/bootstrap/match_int.snl"
 compiler_case "defer" 5 "$DIR/bootstrap/defer_order.snl"
 compiler_case "async" 4 "$DIR/bootstrap/async_await.snl"
 compiler_case "pulsar" 3 "$DIR/bootstrap/pulsar_launch.snl"
+native_case "ownership_replacement" 4999 "$DIR/bootstrap/ownership_replacement.snl"
+if "$SNL_ABS" build "$DIR/run-pass/try_typed_catch.snl" \
+    -o "$CC_ROOT/try_typed_catch" >"$CC_ROOT/try-build.out" 2>&1; then
+  try_build_rc=0
+else
+  try_build_rc=$?
+fi
+assert "build: try/catch is rejected when emitter cannot lower it" 1 "$try_build_rc"
+assert "build: try/catch rejection identifies unsupported lowering" 1 \
+  "$(grep -q 'SNOVA0400.*cannot lower statement to SnBC' "$CC_ROOT/try-build.out" && echo 1 || echo 0)"
 compiler_case "class" 4 "$DIR/bootstrap/class_method.snl"
 compiler_case "enum" 1 "$DIR/bootstrap/enum_match.snl"
 compiler_case "trait" 6 "$DIR/bootstrap/trait_decl.snl"

@@ -242,7 +242,7 @@
     fprintf(f, "  if (pth == 0) { fputs(\"error: cannot start pulsar thread\\n\", stderr); return 1; }\n");
   } else {
     fprintf(f, "  pthread_t pth;\n");
-    fprintf(f, "  pthread_create(&pth, NULL, pulsar_thread_proc, NULL);\n");
+    fprintf(f, "  if (pthread_create(&pth, NULL, pulsar_thread_proc, NULL) != 0) { fputs(\"error: cannot start pulsar thread\\n\", stderr); return 1; }\n");
   }
   fprintf(f, "  run_function(%u, NULL, 0);\n", bc->main_func_idx);
   fprintf(f, "  int rc = (g_ret.tag == VAL_INT) ? (int)g_ret.as.i : 0;\n");

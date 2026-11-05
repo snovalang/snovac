@@ -203,6 +203,7 @@ static SnEvalValue eval_unary(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e)
 
 static SnEvalValue eval_assign(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
     SnEvalValue val = sn_eval_expr(in, env, e->rhs);
+    if (in->failed) return v_unit();
     SnEvalValue *slot = NULL;
     if (e->lhs->kind == SN_EXPR_IDENT) {
         slot = sn_eval_env_lookup(env, e->lhs->text);
@@ -262,7 +263,7 @@ static SnEvalValue eval_assign(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e
         }
         val = eval_binary(in, env, &tmp);
     }
-    *slot = val;
+    sn_rt_store_owned(in, slot, val);
     return val;
 }
 
