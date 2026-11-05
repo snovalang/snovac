@@ -1,6 +1,8 @@
 /* rt_defer.c — LIFO `defer` calls, run before the owner's frame is freed. */
 #include "eval_internal.h"
 
+#include <stdint.h>
+
 void sn_rt_defer_schedule(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *call) {
     if (!call || call->kind != SN_EXPR_CALL) {
         sn_rt_error(in, SNOVA_UNSUPPORTED, call ? call->span : (SnSpan){0},
@@ -9,16 +11,35 @@ void sn_rt_defer_schedule(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *call) 
     }
     SnEvalDefer *d = (SnEvalDefer *)calloc(1, sizeof(SnEvalDefer));
     if (!d) {
+        sn_rt_error(in, SNOVA_OUT_OF_MEMORY, call->span,
+                    "out of memory scheduling defer");
         return;
     }
     d->call = call;
     d->env = env;
     d->nargs = call->args.len;
     if (d->nargs) {
+        if (d->nargs > SIZE_MAX / sizeof(*d->args)) {
+            free(d);
+            sn_rt_error(in, SNOVA_OUT_OF_MEMORY, call->span,
+                        "defer argument list is too large");
+            return;
+        }
         d->args = (SnEvalValue *)calloc(d->nargs, sizeof(SnEvalValue));
+        if (!d->args) {
+            free(d);
+            sn_rt_error(in, SNOVA_OUT_OF_MEMORY, call->span,
+                        "out of memory capturing defer arguments");
+            return;
+        }
         for (size_t i = 0; i < d->nargs; i++) {
             d->args[i] = sn_rt_eval_arg(in, env, (const SnExpr *)call->args.items[i]);
         }
+    }
+    if (in->failed) {
+        free(d->args);
+        free(d);
+        return;
     }
     d->next = in->defers;
     in->defers = d;
@@ -48,10 +69,12 @@ static SnEvalValue invoke_defer(SnEvalInterp *in, SnEvalDefer *d) {
 }
 
 void sn_rt_run_defers(SnEvalInterp *in) {
-    while (in->defers && !in->failed) {
+    while (in->defers) {
         SnEvalDefer *d = in->defers;
         in->defers = d->next;
-        invoke_defer(in, d);
+        if (!in->failed) {
+            invoke_defer(in, d);
+        }
         free(d->args);
         free(d);
     }

@@ -33,6 +33,7 @@ A integração com `master` adotou a árvore ativa `src/`; os nomes antigos `fro
 - Em `if`, cada braço é analisado a partir do mesmo snapshot. Movimentos/escapes/defer são unidos conservadoramente, holds temporários são encerrados no limite do braço e rebindings de referência para lugares divergentes são rejeitados até existir uma representação de pontos múltiplos/CFG.
 - Loops são analisados considerando que podem executar zero vezes: estado de move e empréstimos locais volta ao snapshot de entrada, moves do owner dentro do corpo geram erro e rebindings que mudam o destino do borrow são rejeitados como loop-carried até haver análise de pontos fixos/CFG.
 - `src/eval/async.c` permite transferir cleanup para tarefas. `src/eval/pulsar.c` oferece `sn_pulsar_pool_submit_owned`; o cleanup é executado após a função ou no caminho de falha de submissão.
+- Registros `defer` e seus arrays de argumentos são liberados mesmo quando outra defer falha; OOM ao criar registro/argumentos vira diagnóstico runtime em vez de dereferenciar NULL. Após uma falha, defers pendentes não são invocadas, mas todos os registros são drenados e liberados antes do frame.
 - A compilação atual foi verificada com `make -j2`. As suites de testes não foram executadas nesta integração.
 
 - `src/base/`: arena, diagnósticos e internamento compartilhados.
