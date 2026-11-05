@@ -8,6 +8,7 @@
 
 typedef struct MemBlock {
     struct MemBlock *next;
+    struct MemBlock *prev;
     SnEvalMemFrame *owner;
     size_t size;
     int heap;
@@ -213,7 +214,9 @@ void sn_rt_frame_pop(SnEvalInterp *in, SnEvalEnv *keep_env, SnEvalValue extra) {
         if (b->marked && frame->parent) {
             b->marked = 0;
             b->owner = frame->parent;
+            b->prev = NULL;
             b->next = frame->parent->blocks;
+            if (b->next) b->next->prev = b;
             frame->parent->blocks = b;
         } else {
             free_block(b);
@@ -262,7 +265,9 @@ void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
     b->heap = heap;
     b->marked = 0;
     b->visit_epoch = 0;
+    b->prev = NULL;
     b->next = in->mem ? in->mem->blocks : NULL;
+    if (b->next) b->next->prev = b;
     if (in->mem) {
         in->mem->blocks = b;
     }
@@ -271,19 +276,80 @@ void *sn_rt_alloc(SnEvalInterp *in, size_t nbytes, int heap) {
     return payload;
 }
 
+void sn_rt_release(SnEvalInterp *in, void *ptr) {
+    (void)in;
+    if (!ptr) return;
+    MemBlock *b = ((MemBlock *)ptr) - 1;
+    if ((void *)(b + 1) != ptr) return;
+    if (b->prev) {
+        b->prev->next = b->next;
+    } else if (b->owner && b->owner->blocks == b) {
+        b->owner->blocks = b->next;
+    }
+    if (b->next) b->next->prev = b->prev;
+    b->owner = NULL;
+    b->prev = NULL;
+    b->next = NULL;
+    free_block(b);
+}
+
+static void sn_rt_list_resize(SnEvalInterp *in, SnList *l, size_t ncap, int heap) {
+    void **nd = NULL;
+    if (ncap) {
+        if (ncap > SIZE_MAX / sizeof(void *)) runtime_oom(SIZE_MAX);
+        nd = (void **)sn_rt_alloc(in, ncap * sizeof(void *), heap);
+        if (l->len) memcpy(nd, l->items, l->len * sizeof(void *));
+    }
+    void **old = l->items;
+    l->items = nd;
+    l->cap = ncap;
+    if (old) sn_rt_release(in, old);
+}
+
 void sn_rt_list_push(SnEvalInterp *in, SnList *l, void *item, int heap) {
     if (l->len == l->cap) {
         if (l->cap > SIZE_MAX / 2u) runtime_oom(SIZE_MAX);
         size_t ncap = l->cap ? l->cap * 2 : 4;
-        if (ncap > SIZE_MAX / sizeof(void *)) runtime_oom(SIZE_MAX);
-        void **nd = (void **)sn_rt_alloc(in, ncap * sizeof(void *), heap);
-        if (l->items) {
-            memcpy(nd, l->items, l->len * sizeof(void *));
-        }
-        l->items = nd;
-        l->cap = ncap;
+        sn_rt_list_resize(in, l, ncap, heap);
     }
     l->items[l->len++] = item;
+}
+
+static int sn_rt_array_heap_class(const ArrayVal *array) {
+    const MemBlock *block = ((const MemBlock *)array) - 1;
+    return block->heap;
+}
+
+void sn_rt_array_push(SnEvalInterp *in, ArrayVal *array, SnEvalValue item) {
+    int heap = sn_rt_array_heap_class(array);
+    SnEvalValue *slot = (SnEvalValue *)sn_rt_alloc(in, sizeof(*slot), heap);
+    *slot = item;
+    sn_rt_list_push(in, &array->items, slot, heap);
+}
+
+SnEvalValue sn_rt_array_pop(SnEvalInterp *in, ArrayVal *array) {
+    if (!array || !array->items.len) return v_unit();
+    int heap = sn_rt_array_heap_class(array);
+    SnEvalValue *slot = (SnEvalValue *)array->items.items[--array->items.len];
+    SnEvalValue result = *slot;
+    sn_rt_release(in, slot);
+    if (!array->items.len) {
+        sn_rt_list_resize(in, &array->items, 0, heap);
+    } else if (array->items.cap > 4 &&
+               array->items.len <= array->items.cap / 4) {
+        sn_rt_list_resize(in, &array->items, array->items.cap / 2, heap);
+    }
+    return result;
+}
+
+void sn_rt_array_clear(SnEvalInterp *in, ArrayVal *array) {
+    if (!array) return;
+    int heap = sn_rt_array_heap_class(array);
+    for (size_t i = 0; i < array->items.len; i++) {
+        sn_rt_release(in, array->items.items[i]);
+    }
+    array->items.len = 0;
+    sn_rt_list_resize(in, &array->items, 0, heap);
 }
 
 int sn_rt_heap_allocs(void) { return count_export(g_heap_allocs); }

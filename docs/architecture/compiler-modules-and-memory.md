@@ -35,6 +35,7 @@ A integração com `master` adotou a árvore ativa `src/`; os nomes antigos `fro
 - `src/eval/async.c` permite transferir cleanup para tarefas. `src/eval/pulsar.c` oferece `sn_pulsar_pool_submit_owned`; o cleanup é executado após a função ou no caminho de falha de submissão.
 - Registros `defer` e seus arrays de argumentos são liberados mesmo quando outra defer falha; OOM ao criar registro/argumentos vira diagnóstico runtime em vez de dereferenciar NULL. Após uma falha, defers pendentes não são invocadas, mas todos os registros são drenados e liberados antes do frame.
 - O allocator de valores valida `sizeof(header) + payload`, crescimento geométrico de listas e limites do pool antes de alocar. Falha/OOM encerra com código 70 explícito, evitando que os callers recebam ponteiro nulo e o dereferenciem; contadores internos usam `size_t` e saturam apenas na exportação pela API `int`.
+- Arrays do evaluator mantêm header, slots e buffers no allocator runtime. `push` cresce com capacidade geométrica e libera o buffer anterior após copiar; `pop` libera o slot removido e reduz a capacidade a um quarto de ocupação; `clear` libera slots e buffer. Assim, slots removidos não ficam retidos na arena geral até o fim da execução.
 - A compilação atual foi verificada com `make -j2`. As suites de testes não foram executadas nesta integração.
 
 - `src/base/`: arena, diagnósticos e internamento compartilhados.

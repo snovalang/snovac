@@ -236,18 +236,14 @@ static int try_array_method(SnEvalInterp *in, SnEvalEnv *env, SnEvalValue recv,
     if (strcmp(m, "push") == 0) {
         if (call->args.len > 0) {
             SnEvalValue item = sn_eval_expr(in, env, (const SnExpr *)call->args.items[0]);
-            SnEvalValue *boxed = (SnEvalValue *)sn_arena_alloc(in->arena, sizeof(SnEvalValue));
-            *boxed = item;
-            sn_list_push(in->arena, &recv.as.arr->items, boxed);
+            sn_rt_array_push(in, recv.as.arr, item);
         }
         *out = v_int((long long)recv.as.arr->items.len);
         return 1;
     }
     if (strcmp(m, "pop") == 0) {
         if (recv.as.arr->items.len > 0) {
-            SnEvalValue *last = (SnEvalValue *)recv.as.arr->items.items[recv.as.arr->items.len - 1];
-            recv.as.arr->items.len--;
-            *out = *last;
+            *out = sn_rt_array_pop(in, recv.as.arr);
         } else {
             *out = v_unit();
         }
@@ -268,7 +264,7 @@ static int try_array_method(SnEvalInterp *in, SnEvalEnv *env, SnEvalValue recv,
         return 1;
     }
     if (strcmp(m, "clear") == 0) {
-        recv.as.arr->items.len = 0;
+        sn_rt_array_clear(in, recv.as.arr);
         *out = v_int(0);
         return 1;
     }
