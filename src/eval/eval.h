@@ -5,11 +5,12 @@
  * substrings (`line.contains(".map(")`) and never built a tree; every
  * behaviour here comes from SnDecl/SnStmt/SnExpr nodes instead.
  *
- * Scope today (P3 preview): functions, classes with fields and methods,
- * let/var, assignment, arithmetic and comparison, if/while, return,
- * string concatenation and interpolation, and the Console intrinsics.
- * Generics, pattern matching, async/pulsars and the remaining ~590 @native
- * intrinsics are later phases — see specs/20260719/snovac-c-toolchain/plan.md.
+ * Scope today: functions, classes with fields and methods, let/var,
+ * assignment, arithmetic and comparison, if/while, return, string
+ * concatenation and interpolation, Console intrinsics, `defer` on throw,
+ * and `pulsar` launches on `SnPulsarPool` (waited before `sn_eval_run`
+ * returns). `snl build` still uses the generated native pulsar queue.
+ * Remaining @native intrinsics are later work.
  *
  * Memory: arrays, objects and pointers live in a frame owned by the function
  * (or by one loop iteration). The frame is freed when that owner ends, after

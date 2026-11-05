@@ -7,21 +7,21 @@ void sn_native_write_scope_support(FILE *f, int windows) {
     fprintf(f, "typedef struct SnVar { uint32_t tag; Val *payload; uint32_t n; } SnVar;\n");
     fprintf(f, "typedef struct DeferItem { size_t fn; Val args[8]; uint32_t argc; struct DeferItem *next; } DeferItem;\n");
     fprintf(f, "typedef struct AsyncItem { size_t fn; Val args[8]; uint32_t argc; struct AsyncItem *next; } AsyncItem;\n");
-    fprintf(f, "static AsyncItem *g_async_q = NULL;\n");
-    fprintf(f, "static int g_async_depth = 0;\n");
+    fprintf(f, "static _Thread_local AsyncItem *g_async_q = NULL;\n");
+    fprintf(f, "static _Thread_local int g_async_depth = 0;\n");
     fprintf(f, "static void pulsar_drain(void) {\n");
     fprintf(f, "  for (;;) {\n");
     if (windows) {
         fprintf(f, "    EnterCriticalSection(&g_pulsar_mutex);\n");
         fprintf(f, "    int pending = g_pulsar_queue != NULL || g_pulsar_busy;\n");
         fprintf(f, "    if (!pending) { LeaveCriticalSection(&g_pulsar_mutex); break; }\n");
-        fprintf(f, "    SleepConditionVariableCS(&g_pulsar_cond, &g_pulsar_mutex, INFINITE);\n");
+        fprintf(f, "    SleepConditionVariableCS(&g_pulsar_done, &g_pulsar_mutex, INFINITE);\n");
         fprintf(f, "    LeaveCriticalSection(&g_pulsar_mutex);\n");
     } else {
         fprintf(f, "    pthread_mutex_lock(&g_pulsar_mutex);\n");
         fprintf(f, "    int pending = g_pulsar_queue != NULL || g_pulsar_busy;\n");
         fprintf(f, "    if (!pending) { pthread_mutex_unlock(&g_pulsar_mutex); break; }\n");
-        fprintf(f, "    pthread_cond_wait(&g_pulsar_cond, &g_pulsar_mutex);\n");
+        fprintf(f, "    pthread_cond_wait(&g_pulsar_done, &g_pulsar_mutex);\n");
         fprintf(f, "    pthread_mutex_unlock(&g_pulsar_mutex);\n");
     }
     fprintf(f, "  }\n}\n");
@@ -59,8 +59,8 @@ void sn_native_write_scope_ops(FILE *f, int windows) {
     fprintf(f,
             "    case %d: {\n"
             "      uint32_t fni = read_u32(&ip); uint32_t argc = read_u32(&ip);\n"
-            "      if (argc > 8) { fputs(\"error: pulsar arity\\n\", stderr); exit(1); }\n"
-            "      PulsarWork *work = (PulsarWork *)calloc(1, sizeof(PulsarWork));\n"
+            "      if (argc > 256 || argc > (SIZE_MAX - sizeof(PulsarWork)) / sizeof(Val)) { fputs(\"error: pulsar arity\\n\", stderr); exit(1); }\n"
+            "      PulsarWork *work = (PulsarWork *)calloc(1, sizeof(PulsarWork) + (size_t)argc * sizeof(Val));\n"
             "      if (!work) { fputs(\"error: out of memory\\n\", stderr); exit(70); }\n"
             "      work->fn_idx = fni; work->argc = argc;\n"
             "      for (uint32_t ai = argc; ai > 0; ai--) work->args[ai - 1] = pop();\n",
@@ -83,7 +83,6 @@ void sn_native_write_scope_ops(FILE *f, int windows) {
                 "      pthread_mutex_unlock(&g_pulsar_mutex);\n");
     }
     fprintf(f,
-            "      pulsar_drain();\n"
             "      break;\n"
             "    }\n");
     fprintf(f,

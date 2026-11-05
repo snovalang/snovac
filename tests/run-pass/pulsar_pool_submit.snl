@@ -1,0 +1,12 @@
+package tests.run_pass.pulsar_pool_submit
+
+import builtin.io.console.output
+
+pulsar func worker(): unit {
+}
+
+func main(): int {
+    pulsar worker()
+    Console.printline(pulsarJobs())
+    return 0
+}

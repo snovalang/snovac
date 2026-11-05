@@ -293,9 +293,7 @@ SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
     case SN_STMT_CONTINUE: return FLOW_CONTINUE;
 
     case SN_STMT_PULSAR: {
-        /* The AST evaluator is synchronous; keep its Pulsar fallback on the
-         * caller thread instead of creating a worker for every statement. */
-        if (s->expr) sn_eval_expr(in, env, s->expr);
+        sn_eval_pulsar_submit(in, env, s);
         return in->flow == FLOW_THROW ? FLOW_THROW
              : in->failed ? FLOW_RETURN : FLOW_NORMAL;
     }

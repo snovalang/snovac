@@ -353,7 +353,13 @@ static void register_one(Compiler *c, const SnDecl *d, const SnDecl *owner) {
 
 void eb_register_unit(Compiler *c) {
     for (size_t i = 0; i < c->unit->decls.len; i++) {
+        SnDiagFile outer = c->diag ? c->diag->file : (SnDiagFile){0};
+        if (c->diag && i < c->unit->decl_files.len) {
+            SnDiagFile *origin = SN_LIST_AT(c->unit->decl_files, SnDiagFile, i);
+            if (origin) sn_diag_set_file(c->diag, *origin);
+        }
         register_one(c, SN_LIST_AT(c->unit->decls, SnDecl, i), NULL);
+        if (c->diag) sn_diag_set_file(c->diag, outer);
     }
 }
 

@@ -1,0 +1,12 @@
+package tests.run_pass.pulsar_launch
+
+import builtin.io.console.output
+
+pulsar func worker(): unit {
+    Console.printline("p")
+}
+
+func main(): int {
+    pulsar worker()
+    return 0
+}

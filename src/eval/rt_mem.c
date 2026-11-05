@@ -22,15 +22,16 @@ struct SnEvalMemFrame {
     MemBlock *blocks;
 };
 
-static char g_pool[RT_POOL];
-static size_t g_pool_used;
-static MemBlock *g_free_stack;
-static size_t g_heap_allocs;
-static size_t g_heap_live;
-static size_t g_heap_bytes;
-static size_t g_stack_allocs;
-static size_t g_bounds;
-static uint64_t g_visit_epoch;
+/* A Pulsar worker evaluates with its own interpreter and allocation pool. */
+static _Thread_local char g_pool[RT_POOL];
+static _Thread_local size_t g_pool_used;
+static _Thread_local MemBlock *g_free_stack;
+static _Thread_local size_t g_heap_allocs;
+static _Thread_local size_t g_heap_live;
+static _Thread_local size_t g_heap_bytes;
+static _Thread_local size_t g_stack_allocs;
+static _Thread_local size_t g_bounds;
+static _Thread_local uint64_t g_visit_epoch;
 
 static void count_inc(size_t *counter) {
     if (*counter < SIZE_MAX) (*counter)++;
@@ -460,7 +461,8 @@ int sn_eval_probe_name(const char *name) {
         return 0;
     }
     return strcmp(name, "heapAllocs") == 0 || strcmp(name, "heapLive") == 0 ||
-           strcmp(name, "stackAllocs") == 0 || strcmp(name, "boundsChecks") == 0;
+           strcmp(name, "stackAllocs") == 0 || strcmp(name, "boundsChecks") == 0 ||
+           strcmp(name, "pulsarJobs") == 0;
 }
 
 long long sn_eval_probe_value(const char *name) {
@@ -478,6 +480,9 @@ long long sn_eval_probe_value(const char *name) {
     }
     if (strcmp(name, "boundsChecks") == 0) {
         return sn_rt_bounds_checks();
+    }
+    if (strcmp(name, "pulsarJobs") == 0) {
+        return sn_eval_pulsar_jobs();
     }
     return 0;
 }

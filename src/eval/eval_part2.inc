@@ -171,9 +171,10 @@ SnEvalValue sn_eval_call_lambda(SnEvalInterp *in, const SnEvalLambda *lam, SnLis
 /* ── entry point ──────────────────────────────────────────────────────────── */
 
 int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
-    /* The evaluator allocator and its probe counters are process-global. */
+    /* One `sn_eval_run` at a time; Pulsar workers use thread-local pools. */
     pthread_mutex_lock(&g_eval_run_lock);
     SnEvalInterp in;
+    memset(&in, 0, sizeof(in));
     in.arena = arena;
     in.diag = diag;
     in.unit = unit;
@@ -185,6 +186,11 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
     in.async_depth = 0;
     in.mem = NULL;
     in.defers = NULL;
+    in.pulsar_pool = NULL;
+    atomic_int pulsar_failed;
+    atomic_init(&pulsar_failed, 0);
+    in.pulsar_failed = &pulsar_failed;
+    sn_eval_pulsar_jobs_reset();
     sn_rt_mem_reset(&in);
     sn_rt_frame_push(&in);
 
@@ -197,9 +203,20 @@ int sn_eval_run(SnArena *arena, SnDiagSink *diag, const SnUnit *unit) {
         return -1;
     }
 
+    in.pulsar_pool = sn_pulsar_pool_create(4);
+    if (!in.pulsar_pool) {
+        sn_rt_error(&in, SNOVA_OUT_OF_MEMORY, main_fn->span,
+                    "cannot start Pulsar worker pool");
+        pthread_mutex_unlock(&g_eval_run_lock);
+        return -1;
+    }
+
     SnEvalEnv *global = sn_eval_env_new(&in, NULL);
     SnList no_args = {0};
     SnEvalValue r = sn_eval_call_function(&in, main_fn, &no_args, global, NULL, main_fn->span);
+    sn_pulsar_pool_wait(in.pulsar_pool);
+    sn_pulsar_pool_destroy(in.pulsar_pool);
+    if (atomic_load(&pulsar_failed)) in.failed = 1;
     if (in.flow == FLOW_THROW && !in.failed) {
         sn_rt_error(&in, SNOVA_TYPE_ERROR, main_fn->span,
                     "uncaught thrown value `%s`",

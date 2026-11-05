@@ -16,9 +16,56 @@ if [ -f "$BUILD_OUT" ]; then
   rm -f "$BUILD_OUT"
 fi
 
+PULSAR_OUT="$PROJ/pulsar_launch"
+assert "build: compile pulsar launch native binary" 0 \
+  "$(rc_of "$SNOVAC" build "$DIR/bootstrap/pulsar_launch.snl" -o "$PULSAR_OUT")"
+if [ -f "$PULSAR_OUT" ]; then
+  pulsar_got="$(mktemp)"
+  pulsar_exp="$(mktemp)"
+  if "$PULSAR_OUT" >"$pulsar_got" 2>&1; then
+    pulsar_rc=0
+  else
+    pulsar_rc=$?
+  fi
+  printf 'p\n' >"$pulsar_exp"
+  pulsar_out_match=0
+  same_text "$pulsar_exp" "$pulsar_got" || pulsar_out_match=$?
+  assert "build: pulsar native exit preserves main" 3 "$pulsar_rc"
+  assert "build: pulsar native drains worker output" 0 "$pulsar_out_match"
+  rm -f "$PULSAR_OUT" "$pulsar_got" "$pulsar_exp"
+fi
+
 # ── snovac get & dependency graph tests ─────────────────────────────────────
 GET_TEST_DIR="$(pwd)/build/get_test_$$"
 mkdir -p "$GET_TEST_DIR"
+
+# Project native builds must check builtin sources without lowering the whole
+# builtin tree into SnBC. Force discovery so this also covers installed layouts.
+TINY_PROJ="$GET_TEST_DIR/tiny_app"
+mkdir -p "$TINY_PROJ/src/app"
+cat > "$TINY_PROJ/mod.sns" <<'EOF'
+module tiny_app
+snova "1.0.0"
+EOF
+cat > "$TINY_PROJ/src/app/Main.snl" <<'EOF'
+package app
+func main(): int { return 0 }
+EOF
+TINY_BIN="$TINY_PROJ/tiny.exe"
+assert "build: project ignores unrelated builtin lowering" 0 \
+  "$(rc_of env SNOVA_BUILTIN_DIR="$DIR/../builtin" "$SNOVAC" build --project "$TINY_PROJ" -o "$TINY_BIN")"
+if [ -f "$TINY_BIN" ]; then
+  assert "build: minimal project binary exits successfully" 0 \
+    "$(rc_of "$TINY_BIN")"
+fi
+cat > "$TINY_PROJ/src/app/Main.snl" <<'EOF'
+package app
+let globalNumbers = [1, 2]
+func main(): int { return 0 }
+EOF
+emit_error="$(env SNOVA_BUILTIN_DIR="$DIR/../builtin" "$SNOVAC" build --project "$TINY_PROJ" -o "$TINY_BIN" 2>&1 || true)"
+assert "build: emit diagnostic names its source file" 1 \
+  "$(printf '%s\n' "$emit_error" | grep -c 'src/app/Main.snl:2:' || true)"
 
 # Fixture: depC
 mkdir -p "$GET_TEST_DIR/depC/src"

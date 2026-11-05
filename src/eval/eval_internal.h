@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -131,6 +132,8 @@ typedef struct {
     int async_depth;
     SnEvalMemFrame *mem;
     SnEvalDefer *defers;
+    SnPulsarPool *pulsar_pool;
+    atomic_int *pulsar_failed;
 } SnEvalInterp;
 
 /* ── value constructors ───────────────────────────────────────────────────── */
@@ -217,6 +220,9 @@ int sn_eval_is_variant_ctor(SnEvalInterp *in, const char *name);
 /* ── eval_stmt.c ──────────────────────────────────────────────────────────── */
 
 SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s);
+int sn_eval_pulsar_submit(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s);
+void sn_eval_pulsar_jobs_reset(void);
+int sn_eval_pulsar_jobs(void);
 
 /* ── eval_string.c ────────────────────────────────────────────────────────── */
 

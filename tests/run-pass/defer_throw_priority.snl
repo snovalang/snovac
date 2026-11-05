@@ -1,0 +1,40 @@
+package tests.run_pass.defer_throw_priority
+
+import builtin.io.console.output
+
+func say(s: string): int {
+    Console.printline(s)
+    return 0
+}
+
+func throw_deferred(): int {
+    throw "deferred"
+    return 0
+}
+
+func throws_original(): int {
+    defer say("older-after-throw")
+    defer throw_deferred()
+    throw "original"
+    return 0
+}
+
+func returns_normally(): int {
+    defer say("older-after-return")
+    defer throw_deferred()
+    return 0
+}
+
+func main(): int {
+    try {
+        throws_original()
+    } catch (message: string) {
+        say(message)
+    }
+    try {
+        returns_normally()
+    } catch (message: string) {
+        say(message)
+    }
+    return 0
+}
