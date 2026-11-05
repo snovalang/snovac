@@ -283,8 +283,10 @@ static int collect_stmt(const SnStmt *s, const char **bound, size_t nbound,
 
 static void pulsar_job_free(void *arg) {
     SnEvalPulsarJob *job = (SnEvalPulsarJob *)arg;
-    for (size_t i = 0; i < job->capture_count; i++)
+    for (size_t i = 0; i < job->capture_count; i++) {
+        free((void *)job->captures[i].name);
         release_capture(job->captures[i].value);
+    }
     free(job->captures);
     free(job);
 }
@@ -341,7 +343,16 @@ static int capture_one(SnEvalInterp *in, const SnStmt *s, SnEvalPulsarJob *job,
     if (job_has_name(job, name)) return 1;
     if (job->capture_count >= job->capture_cap) return 0;
     size_t slot = job->capture_count;
-    job->captures[slot].name = name;
+    size_t name_len = name ? strlen(name) : 0;
+    char *name_copy = (char *)malloc(name_len + 1);
+    if (!name_copy) {
+        sn_rt_error(in, SNOVA_OUT_OF_MEMORY, s->span,
+                    "out of memory capturing pulsar name");
+        return 0;
+    }
+    if (name) memcpy(name_copy, name, name_len + 1);
+    else name_copy[0] = '\0';
+    job->captures[slot].name = name_copy;
     job->capture_count++;
     if (!capture_value(value, &job->captures[slot].value, 0)) {
         sn_rt_error(in, SNOVA_TYPE_ERROR, s->span,
