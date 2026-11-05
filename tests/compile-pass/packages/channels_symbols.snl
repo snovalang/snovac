@@ -1,8 +1,8 @@
 package tests.packages.channels_symbols
 
 
-import builtin.channels.Channels
-import builtin.async.Async
+import builtin.channels.channels
+import builtin.async.async
 
 
 async func main(): Task<int> {

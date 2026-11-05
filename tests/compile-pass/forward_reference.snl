@@ -1,6 +1,6 @@
 package tests.forward_reference
 
-import builtin.console.Console
+import builtin.console.console
 
 // Guards real behavior found while fixing snovac's builtin-resolution bug
 // (specs/20260727/language-conformance-baseline/): package-level symbol

@@ -1,6 +1,6 @@
 package tests.run_pass.own_defer_ok
 
-import builtin.console.Console
+import builtin.console.console
 
 func say(s: string): int {
     Console.printline(s)

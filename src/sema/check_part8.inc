@@ -53,6 +53,8 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
      * may mention them (`func try<T, E>(result: Result<T, E>)`). A method
      * also sees its owning type's — `method map(f: (T) -> U): List<U>` inside
      * `class List<T>` names both. */
+    SnScope *previous_type_params = c->type_params;
+    const SnDecl *previous_function = c->current_function;
     SnScope type_params_scope;
     sn_scope_init(&type_params_scope, c->arena, NULL);
     define_type_params(c, &type_params_scope, decl);
@@ -60,6 +62,7 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
         define_type_params(c, &type_params_scope, c->enclosing_type);
     }
     c->type_params = &type_params_scope;
+    c->current_function = decl;
 
     SnScope params_scope;
     sn_scope_init(&params_scope, c->arena, NULL);
@@ -74,7 +77,12 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
         }
     }
 
-    int is_new_constructor = (decl->name && strcmp(decl->name, "new") == 0 && c->enclosing_type != NULL);
+    /* A static factory named `new` has an ordinary declared return type.
+     * Only an instance `new` method is the language's constructor form; the
+     * previous name-only check silently replaced every static factory's
+     * result with its enclosing type. */
+    int is_new_constructor = (decl->name && strcmp(decl->name, "new") == 0 &&
+                              c->enclosing_type != NULL && !decl->is_static);
     if (is_new_constructor) {
         SnSymbol *self_sym = find_type_symbol_for_decl(c->resolver, c->enclosing_type);
         SnTypeRep *self_ty = self_sym ? sn_type_named(c->types, self_sym, NULL, 0) : sn_type_error(c->types);
@@ -131,7 +139,8 @@ void sn_check_decl_body(SnChecker *c, const SnDecl *decl) {
     c->in_constructor = 0;
     c->in_async_body = 0;
     c->current_return_type = NULL;
-    c->type_params = NULL;
+    c->current_function = previous_function;
+    c->type_params = previous_type_params;
 }
 
 static void bind_signature_type_params(SnChecker *c, SnScope *scope, const SnDecl *decl) {
@@ -180,6 +189,9 @@ void sn_check_field_initializer(SnChecker *c, SnScope *local, const SnDecl *fiel
     if (!c || !field || !field->init || !field->type) {
         return;
     }
+    SnScope *previous_type_params = c->type_params;
+    SnScope type_params_scope;
+    bind_signature_type_params(c, &type_params_scope, NULL);
     SnTypeRep *expected = sn_check_resolve_type(c, field->type);
     SnTypeRep *got = sn_check_expr(c, local, field->init);
     got = adopt_literal_type(c, field->init, got, expected);
@@ -188,4 +200,5 @@ void sn_check_field_initializer(SnChecker *c, SnScope *local, const SnDecl *fiel
                     "field `%s` initializer has the wrong type",
                     field->name ? field->name : "<field>");
     }
+    c->type_params = previous_type_params;
 }

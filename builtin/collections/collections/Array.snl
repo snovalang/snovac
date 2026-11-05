@@ -1,0 +1,406 @@
+package builtin.collections.collections
+
+import builtin.errors.errors
+
+import builtin.types
+
+class Array<T> {
+    public override method toString(): string {
+        return "Array(length: " + this.length().toString() + ")"
+    }
+
+    public override method equals(other: Object): bool {
+        return this == other
+    }
+
+    public override method hashCode(): int {
+        return 0
+    }
+
+    @Native
+    public static method new(): Array<T>
+
+    @Native
+    public method length(): int
+
+    @Native
+    public method len(): int
+
+    @Native
+    public method isEmpty(): bool
+
+    @Native
+    public method push(value: T): int
+
+    @Native
+    public method pop(): T
+
+    @Native
+    public method clear(): int
+
+    @Native
+    public method get(index: int): T
+
+    @Native
+    public method set(index: int, value: T): unit
+
+    public method copy(): Array<T> {
+        var result = Array<T>.new()
+        var i = 0
+        while i < this.length() {
+            result.push(this.get(i))
+            i += 1
+        }
+        return result
+    }
+
+    public method first(): T {
+        return this.get(0)
+    }
+
+    public method firstOr(fallback: T): T {
+        if this.isEmpty() {
+            return fallback
+        }
+        return this.get(0)
+    }
+
+    public method last(): T {
+        return this.get(this.length() - 1)
+    }
+
+    public method lastOr(fallback: T): T {
+        if this.isEmpty() {
+            return fallback
+        }
+        return this.get(this.length() - 1)
+    }
+
+    public method tryFirst(): Option<T> {
+        if this.isEmpty() {
+            return None
+        }
+        return Some(this.get(0))
+    }
+
+    public method tryLast(): Option<T> {
+        if this.isEmpty() {
+            return None
+        }
+        return Some(this.get(this.length() - 1))
+    }
+
+    public method tryGet(index: int): Option<T> {
+        if index < 0 || index >= this.length() {
+            return None
+        }
+        return Some(this.get(index))
+    }
+
+    public method tryPop(): Option<T> {
+        if this.isEmpty() {
+            return None
+        }
+        return Some(this.pop())
+    }
+
+    public method map<U>(transform: (T) -> U): Array<U> {
+        var result = Array<U>.new()
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            result.push(transform(source.get(i)))
+            i += 1
+        }
+        return result
+    }
+
+    public method filter(predicate: (T) -> bool): Array<T> {
+        var result = Array<T>.new()
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            var value = source.get(i)
+            if predicate(value) {
+                result.push(value)
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method reduce<U>(initial: U, reducer: (U, T) -> U): U {
+        var result = initial
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            result = reducer(result, source.get(i))
+            i += 1
+        }
+        return result
+    }
+
+    public method flatMap<U>(transform: (T) -> Array<U>): Array<U> {
+        var result = Array<U>.new()
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            var mapped = transform(source.get(i))
+            var j = 0
+            while j < mapped.length() {
+                result.push(mapped.get(j))
+                j += 1
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method take(count: int): Array<T> {
+        var result = Array<T>.new()
+        var limit = count
+        if limit < 0 { limit = 0 }
+        if limit > this.length() { limit = this.length() }
+        var i = 0
+        while i < limit {
+            result.push(this.get(i))
+            i += 1
+        }
+        return result
+    }
+
+    public method drop(count: int): Array<T> {
+        var result = Array<T>.new()
+        var start = count
+        if start < 0 { start = 0 }
+        if start > this.length() { start = this.length() }
+        var i = start
+        while i < this.length() {
+            result.push(this.get(i))
+            i += 1
+        }
+        return result
+    }
+
+    public method forEach(action: (T) -> unit): unit {
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            action(source.get(i))
+            i += 1
+        }
+    }
+
+    public method contains(value: T): bool {
+        var i = 0
+        while i < this.length() {
+            if this.get(i) == value {
+                return true
+            }
+            i += 1
+        }
+        return false
+    }
+
+    public method indexOf(value: T): int {
+        var i = 0
+        while i < this.length() {
+            if this.get(i) == value {
+                return i
+            }
+            i += 1
+        }
+        return -1
+    }
+
+    public method find(predicate: (T) -> bool): Option<T> {
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            var value = source.get(i)
+            if predicate(value) {
+                return Some(value)
+            }
+            i += 1
+        }
+        return None
+    }
+
+    public method findIndex(predicate: (T) -> bool): int {
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            if predicate(source.get(i)) {
+                return i
+            }
+            i += 1
+        }
+        return -1
+    }
+
+    public method reversed(): Array<T> {
+        var result = Array<T>.new()
+        var i = this.length() - 1
+        while i >= 0 {
+            result.push(this.get(i))
+            i -= 1
+        }
+        return result
+    }
+
+    public method any(predicate: (T) -> bool): bool {
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            if predicate(source.get(i)) {
+                return true
+            }
+            i += 1
+        }
+        return false
+    }
+
+    public method all(predicate: (T) -> bool): bool {
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            if predicate(source.get(i)) == false {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+
+    public method countWhere(predicate: (T) -> bool): int {
+        var result = 0
+        var source = this.copy()
+        var i = 0
+        while i < source.length() {
+            if predicate(source.get(i)) {
+                result += 1
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method prepend(value: T): unit {
+        var oldLength = this.length()
+        this.push(value)
+        var i = oldLength
+        while i > 0 {
+            this.set(i, this.get(i - 1))
+            i -= 1
+        }
+        this.set(0, value)
+    }
+
+    public method insert(index: int, value: T): unit {
+        if index < 0 || index > this.length() {
+            throw IndexOutOfBoundsException("Array.insert index out of bounds")
+        }
+        var oldLength = this.length()
+        this.push(value)
+        var i = oldLength
+        while i > index {
+            this.set(i, this.get(i - 1))
+            i -= 1
+        }
+        this.set(index, value)
+    }
+
+    public method removeAt(index: int): T {
+        if index < 0 || index >= this.length() {
+            throw IndexOutOfBoundsException("Array.removeAt index out of bounds")
+        }
+        var removed = this.get(index)
+        var i = index
+        while i + 1 < this.length() {
+            this.set(i, this.get(i + 1))
+            i += 1
+        }
+        this.pop()
+        return removed
+    }
+
+    public method remove(value: T): bool {
+        var index = this.indexOf(value)
+        if index < 0 {
+            return false
+        }
+        this.removeAt(index)
+        return true
+    }
+
+    public method removeAll(value: T): int {
+        var removed = 0
+        var i = 0
+        while i < this.length() {
+            if this.get(i) == value {
+                this.removeAt(i)
+                removed += 1
+            } else {
+                i += 1
+            }
+        }
+        return removed
+    }
+
+    public method distinct(): Array<T> {
+        var result = Array<T>.new()
+        var i = 0
+        while i < this.length() {
+            var value = this.get(i)
+            if result.contains(value) == false {
+                result.push(value)
+            }
+            i += 1
+        }
+        return result
+    }
+
+    public method concat(other: Array<T>): Array<T> {
+        var result = Array<T>.new()
+        var i = 0
+        while i < this.length() {
+            result.push(this.get(i))
+            i += 1
+        }
+        i = 0
+        while i < other.length() {
+            result.push(other.get(i))
+            i += 1
+        }
+        return result
+    }
+
+    public method join(separator: string): string {
+        var result = ""
+        var i = 0
+        while i < this.length() {
+            if i > 0 {
+                result += separator
+            }
+            result += this.get(i).toString()
+            i += 1
+        }
+        return result
+    }
+
+    public method slice(start: int, end: int): Array<T> {
+        var first = start
+        var last = end
+        if first < 0 { first = 0 }
+        if last < 0 { last = 0 }
+        if first > this.length() { first = this.length() }
+        if last > this.length() { last = this.length() }
+        var result = Array<T>.new()
+        var i = first
+        while i < last {
+            result.push(this.get(i))
+            i += 1
+        }
+        return result
+    }
+}

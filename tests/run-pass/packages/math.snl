@@ -1,8 +1,8 @@
 package tests.packages.math
 
 
-import builtin.console.Console
-import builtin.math.Math
+import builtin.console.console
+import builtin.math.math
 
 
 func main(): int {

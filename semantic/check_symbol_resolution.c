@@ -5,6 +5,48 @@
 
 #include "builtins.h"
 
+static SnSymbol *array_type_symbol(SnChecker *c) {
+    SnScope *pkg = sn_resolver_package_scope(
+        c->resolver, sn_intern_cstr(c->intern, "builtin.collections.collections"));
+    SnSymbol *sym = pkg ? sn_scope_lookup_local(pkg, sn_intern_cstr(c->intern, "Array")) : NULL;
+    return sym && sym->kind == SN_SYM_TYPE ? sym : NULL;
+}
+
+static SnTypeRep *array_source_member_type(SnChecker *c, SnSymbol *member,
+                                           SnTypeRep *receiver) {
+    SnSymbol *owner = array_type_symbol(c);
+    if (!owner || !owner->decl || !member) return NULL;
+    SnScope params;
+    sn_scope_init(&params, c->arena, c->type_params);
+    for (size_t i = 0; i < owner->decl->generics.len; i++) {
+        const char *name = SN_LIST_AT(owner->decl->generics, const char, i);
+        sn_scope_define(&params, sn_intern_cstr(c->intern, name), SN_SYM_TYPE,
+                        NULL, owner->decl->span);
+    }
+    if (member->decl) {
+        for (size_t i = 0; i < member->decl->generics.len; i++) {
+            const char *name = SN_LIST_AT(member->decl->generics, const char, i);
+            sn_scope_define(&params, sn_intern_cstr(c->intern, name), SN_SYM_TYPE,
+                            NULL, member->decl->span);
+        }
+    }
+    SnScope *old_params = c->type_params;
+    const SnDecl *old_owner = c->enclosing_type;
+    c->type_params = &params;
+    c->enclosing_type = owner->decl;
+    SnTypeRep *type = symbol_type(c, member);
+    c->type_params = old_params;
+    c->enclosing_type = old_owner;
+    if (receiver && receiver->tag == SN_T_ARRAY && receiver->nargs == 1 &&
+        owner->decl->generics.len) {
+        const char *name = SN_LIST_AT(owner->decl->generics, const char, 0);
+        const char *names[] = {name};
+        SnTypeRep *args[] = {receiver->args[0]};
+        type = sn_type_subst_names(c->types, type, names, args, 1);
+    }
+    return type;
+}
+
 /* Resolves what an IDENT or MEMBER expression refers to, checking/caching
  * it (and, for MEMBER, its receiver chain) along the way. Shared by
  * sn_check_expr's own IDENT/MEMBER cases and by CALL, which needs the same
@@ -115,7 +157,13 @@ SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
         if (recv_ty) {
             e->lhs->resolved_type = recv_ty;
             const char *sname = sn_intern_cstr(c->intern, e->text);
-            SnTypeRep *sm = sn_builtin_static_member(c->types, c->intern, recv_ty, sname);
+            SnSymbol *array = array_type_symbol(c);
+            SnScope *scope = array && array->decl
+                ? sn_resolver_type_scope(c->resolver, array->decl) : NULL;
+            SnSymbol *member = scope ? sn_scope_lookup_local(scope, sname) : NULL;
+            SnTypeRep *sm = recv_ty->tag == SN_T_ARRAY && member &&
+                member->kind == SN_SYM_METHOD
+                ? array_source_member_type(c, member, recv_ty) : NULL;
             if (!sm) {
                 sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNKNOWN_MEMBER, e->span,
                             "type has no member `%s`", e->text);
@@ -154,16 +202,42 @@ SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
         }
         SnTypeRep *target_ty = (is_qdot && is_opt_base) ? base_ty->args[0] : base_ty;
 
-        if (target_ty->tag != SN_T_NAMED || !target_ty->decl) {
-            /* Arrays, strings and scalars carry members that no .snova file
-             * declares (`arr.len()`, `n.toString()`) — builtins.c owns them. */
-            SnTypeRep *bm = sn_builtin_member(c->types, c->intern, target_ty, mname);
+        if (target_ty->tag != SN_T_NAMED || !target_ty->decl || !target_ty->decl->decl) {
+            /* Primitive and intrinsic containers use runtime representations;
+             * their signatures still come from builtin .snl declarations. */
+            SnTypeRep *bm = NULL;
+            SnSymbol *source_member = NULL;
+            if (target_ty->tag == SN_T_ARRAY) {
+                SnSymbol *array = array_type_symbol(c);
+                SnScope *scope = array && array->decl
+                    ? sn_resolver_type_scope(c->resolver, array->decl) : NULL;
+                source_member = scope ? sn_scope_lookup_local(scope, mname) : NULL;
+                if (source_member && source_member->kind == SN_SYM_METHOD)
+                    bm = array_source_member_type(c, source_member, target_ty);
+            } else {
+                SnScope *scope = sn_resolver_primitive_extension_scope(
+                    c->resolver, sn_type_name(target_ty));
+                source_member = scope ? sn_scope_lookup_local(scope, mname) : NULL;
+                if (source_member && source_member->kind == SN_SYM_METHOD)
+                    bm = symbol_type(c, source_member);
+            }
+            if (!bm && target_ty->tag == SN_T_TYPEVAR) {
+                SnSymbol *object = find_type_symbol_anywhere(
+                    c, c->enclosing_type, "Object");
+                SnScope *object_scope = object && object->decl
+                    ? sn_resolver_type_scope(c->resolver, object->decl) : NULL;
+                source_member = object_scope
+                    ? sn_scope_lookup_local(object_scope, mname) : NULL;
+                if (source_member && source_member->kind == SN_SYM_METHOD)
+                    bm = symbol_type(c, source_member);
+                else source_member = NULL;
+            }
             if (bm) {
                 if (is_qdot && is_opt_base && !sn_check_is_error(bm)) {
                     bm = sn_builtin_generic(c->types, c->intern, sn_intern_cstr(c->intern, "Option"), &bm, 1);
                 }
                 e->resolved_type = bm;
-                return NULL; /* intrinsic: no symbol — see the CALL case */
+                return source_member;
             }
             sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNKNOWN_MEMBER, e->span,
                         "type has no member `%s`", e->text);

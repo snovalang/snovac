@@ -15,9 +15,44 @@ static SnEvalFlow exec_block(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
     return FLOW_NORMAL;
 }
 
-static int catch_type_matches(const SnType *type, SnEvalValue value) {
+static const char *type_basename(const char *name) {
+    const char *dot = name ? strrchr(name, '.') : NULL;
+    return dot ? dot + 1 : name;
+}
+
+static const SnDecl *find_declared_type(const SnEvalInterp *in, const char *name) {
+    if (!in || !in->unit || !name) return NULL;
+    const char *base = type_basename(name);
+    for (size_t i = 0; i < in->unit->decls.len; i++) {
+        const SnDecl *decl = (const SnDecl *)in->unit->decls.items[i];
+        if ((decl->kind == SN_DECL_CLASS || decl->kind == SN_DECL_STRUCT ||
+             decl->kind == SN_DECL_ENUM || decl->kind == SN_DECL_INTERFACE) &&
+            decl->name && strcmp(decl->name, base) == 0) {
+            return decl;
+        }
+    }
+    return NULL;
+}
+
+static int runtime_type_is_a(const SnEvalInterp *in, const SnDecl *actual,
+                             const char *expected_name, int depth) {
+    if (!actual || !expected_name || depth > 32) return 0;
+    const char *expected = type_basename(expected_name);
+    if (actual->name && strcmp(actual->name, expected) == 0) return 1;
+    for (size_t i = 0; i < actual->supertypes.len; i++) {
+        const SnType *supertype = (const SnType *)actual->supertypes.items[i];
+        if (!supertype || supertype->kind != SN_TYPE_NAME || !supertype->name) continue;
+        const SnDecl *parent = find_declared_type(in, supertype->name);
+        if (parent && runtime_type_is_a(in, parent, expected, depth + 1)) return 1;
+        if (strcmp(type_basename(supertype->name), expected) == 0) return 1;
+    }
+    return 0;
+}
+
+static int catch_type_matches(SnEvalInterp *in, const SnType *type, SnEvalValue value) {
     if (!type || !type->name) return 1;
-    const char *name = type->name;
+    const char *name = type_basename(type->name);
+    if (strcmp(name, "any") == 0) return 1;
     switch (value.kind) {
     case V_INT: return strcmp(name, "int") == 0 || strcmp(name, "long") == 0;
     case V_DOUBLE: return strcmp(name, "double") == 0 || strcmp(name, "decimal") == 0;
@@ -26,19 +61,22 @@ static int catch_type_matches(const SnType *type, SnEvalValue value) {
     case V_CHAR: return strcmp(name, "char") == 0;
     case V_ARRAY: return strcmp(name, "Array") == 0;
     case V_OBJECT:
-        return value.as.o && value.as.o->cls && value.as.o->cls->name &&
-               strcmp(name, value.as.o->cls->name) == 0;
+        return value.as.o && runtime_type_is_a(in, value.as.o->cls, name, 0);
     case V_VARIANT:
-        return value.as.vt && value.as.vt->name &&
-               strcmp(name, value.as.vt->name) == 0;
+        if (!value.as.vt) return 0;
+        if (value.as.vt->owner_type &&
+            runtime_type_is_a(in, value.as.vt->owner_type, name, 0)) return 1;
+        return value.as.vt->name && strcmp(name, value.as.vt->name) == 0;
     default: return 0;
     }
 }
 
 static SnEvalFlow exec_while(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) {
     int guard = 0;
-    while (!in->failed && in->flow != FLOW_THROW &&
-           sn_eval_truthy(in, sn_eval_expr(in, env, s->expr), s->span)) {
+    while (!in->failed && in->flow != FLOW_THROW) {
+        SnEvalValue condition = sn_eval_expr(in, env, s->expr);
+        if (in->flow == FLOW_THROW) return FLOW_THROW;
+        if (!sn_eval_truthy(in, condition, s->span)) break;
         sn_rt_frame_push(in);
         SnEvalFlow f = sn_eval_exec_stmt(in, env, s->then_br);
         sn_rt_frame_pop(in, env, in->ret);
@@ -114,9 +152,13 @@ const SnMatchArm *sn_eval_match_arm(SnEvalInterp *in, SnEvalEnv *env, const SnLi
         if (!sn_eval_pattern_match(in, candidate, arm->pattern, subject)) {
             continue;
         }
-        if (arm->guard &&
-            !sn_eval_truthy(in, sn_eval_expr(in, candidate, arm->guard), arm->span)) {
-            continue;
+        if (arm->guard) {
+            SnEvalValue guard = sn_eval_expr(in, candidate, arm->guard);
+            if (in->flow == FLOW_THROW) {
+                *arm_env = NULL;
+                return NULL;
+            }
+            if (!sn_eval_truthy(in, guard, arm->span)) continue;
         }
         *arm_env = candidate;
         return arm;
@@ -127,12 +169,12 @@ const SnMatchArm *sn_eval_match_arm(SnEvalInterp *in, SnEvalEnv *env, const SnLi
 
 static SnEvalFlow exec_match(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) {
     SnEvalValue subject = sn_eval_expr(in, env, s->expr);
-    if (in->failed) {
-        return FLOW_RETURN;
-    }
+    if (in->flow == FLOW_THROW) return FLOW_THROW;
+    if (in->failed) return FLOW_RETURN;
     SnEvalEnv *arm_env = NULL;
     const SnMatchArm *arm = sn_eval_match_arm(in, env, &s->arms, subject, &arm_env);
     if (!arm) {
+        if (in->flow == FLOW_THROW) return FLOW_THROW;
         /* A statement-position match with no matching arm is a no-op, mirroring
          * an `if` chain whose conditions are all false. */
         return in->failed ? FLOW_RETURN : FLOW_NORMAL;
@@ -142,6 +184,7 @@ static SnEvalFlow exec_match(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
     }
     if (arm->value) {
         sn_eval_expr(in, arm_env, arm->value);
+        if (in->flow == FLOW_THROW) return FLOW_THROW;
         return in->failed ? FLOW_RETURN : FLOW_NORMAL;
     }
     return FLOW_NORMAL;
@@ -150,6 +193,7 @@ static SnEvalFlow exec_match(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
 static SnEvalFlow exec_for(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) {
     if (!s->expr) return FLOW_NORMAL;
     SnEvalValue iterable = sn_eval_expr(in, env, s->expr);
+    if (in->flow == FLOW_THROW) return FLOW_THROW;
     if (in->failed) return FLOW_RETURN;
 
     if (iterable.kind == V_INT) {
@@ -189,6 +233,7 @@ static SnEvalFlow exec_for(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) {
 }
 
 SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) {
+    if (in->flow == FLOW_THROW) return FLOW_THROW;
     if (!s || in->failed) {
         return in->failed ? FLOW_RETURN : FLOW_NORMAL;
     }
@@ -200,6 +245,7 @@ SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
     case SN_STMT_LET:
     case SN_STMT_VAR: {
         SnEvalValue v = s->expr ? sn_eval_expr(in, env, s->expr) : sn_eval_default_for(s->type);
+        if (in->flow == FLOW_THROW) return FLOW_THROW;
         if (v.kind == V_INT && s->type && s->type->name) {
             const char *n = s->type->name;
             if (strcmp(n, "int8") == 0) v.iwidth = 8;
@@ -222,13 +268,17 @@ SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
 
     case SN_STMT_RETURN:
         in->ret = s->expr ? sn_eval_expr(in, env, s->expr) : v_unit();
+        if (in->flow == FLOW_THROW) return FLOW_THROW;
         return FLOW_RETURN;
 
-    case SN_STMT_IF:
-        if (sn_eval_truthy(in, sn_eval_expr(in, env, s->expr), s->span)) {
+    case SN_STMT_IF: {
+        SnEvalValue condition = sn_eval_expr(in, env, s->expr);
+        if (in->flow == FLOW_THROW) return FLOW_THROW;
+        if (sn_eval_truthy(in, condition, s->span)) {
             return sn_eval_exec_stmt(in, env, s->then_br);
         }
         return s->else_br ? sn_eval_exec_stmt(in, env, s->else_br) : FLOW_NORMAL;
+    }
 
     case SN_STMT_WHILE:
         return exec_while(in, env, s);
@@ -255,7 +305,13 @@ SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
         return in->flow == FLOW_THROW ? FLOW_THROW : FLOW_NORMAL;
 
     case SN_STMT_THROW:
-        in->thrown = s->expr ? sn_eval_expr(in, env, s->expr) : v_unit();
+        if (s->expr) {
+            SnEvalValue thrown = sn_eval_expr(in, env, s->expr);
+            if (in->flow == FLOW_THROW) return FLOW_THROW;
+            in->thrown = thrown;
+        } else {
+            in->thrown = v_unit();
+        }
         if (in->failed) return FLOW_RETURN;
         in->flow = FLOW_THROW;
         return FLOW_THROW;
@@ -268,7 +324,7 @@ SnEvalFlow sn_eval_exec_stmt(SnEvalInterp *in, SnEvalEnv *env, const SnStmt *s) 
             f = FLOW_THROW;
             for (size_t i = 0; i < s->catches.len; i++) {
                 const SnStmt *handler = (const SnStmt *)s->catches.items[i];
-                if (!catch_type_matches(handler->type, thrown)) continue;
+                if (!catch_type_matches(in, handler->type, thrown)) continue;
                 SnEvalEnv *catch_env = sn_eval_env_new(in, env);
                 if (handler->name) {
                     sn_eval_env_define(in, catch_env, handler->name, thrown);

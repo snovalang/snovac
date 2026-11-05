@@ -1,6 +1,6 @@
 package tests.bad
 
-import builtin.console.Console
+import builtin.console.console
 
 // error[SNOVA026]: a `.` member access must be followed by a member name.
 // `jsonValue[0].` closes the expression (here with `)`) right after the dot, so

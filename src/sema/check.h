@@ -8,14 +8,13 @@
  * ── Scope actually covered by this pass (2026-07-25) ────────────────────────
  *
  * Solid, tested: literals, identifiers (incl. through single-inheritance),
- * member access (incl. inherited, and the intrinsic members builtins.c owns —
- * `arr.len()`, `n.toString()`), calls (arity + argument type checking, incl.
+ * member access (incl. inherited and signatures declared in builtin .snl
+ * sources — `arr.len()`, `n.toString()`), calls (arity + argument type checking, incl.
  * enum variant construction like `Some(x)`/`Ok(v)`, construction of a
  * class/struct, and calling a value of function type), binary/unary
  * operators under the ratified no-implicit-promotion rule, assignment
  * (incl. immutability — SNOVA_IMMUTABLE_REASSIGN — and its constructor
- * exception), index (arrays plus the other subscriptable receivers in
- * builtins.c), cast (`as`, trusts the annotation), `is` (validates the type
+ * exception), index (intrinsic container/text representations), cast (`as`, trusts the annotation), `is` (validates the type
  * exists, returns bool), array literals (including element compatibility,
  * the SNOVA100 empty-literal rule and its annotated-binding exception),
  * `let`/`var` inference,
@@ -30,9 +29,9 @@
  *     (adopt_literal_type). The ratified no-implicit-promotion rule is about
  *     converting an already-typed value and is unaffected — `int + long` is
  *     still an error, and a SUFFIXED literal (`42L`, `1.5d`) is committed.
- *   - a call whose callee resolved through builtins.c does NOT have its
- *     argument list checked, because that module models no parameters. See
- *     builtins.h for why inventing them was rejected.
+ *   - a direct construction expression for an intrinsic generic does not
+ *     select a source constructor; use the source-declared `Array<T>.new()`
+ *     factory when arguments need signature checking.
  *
  * Documented limitations. Cases with no inferred type return SN_T_ERROR for
  * the construct itself but still recurse into children so nested names and
@@ -98,6 +97,7 @@
 #define SNOVA_NOT_CALLABLE 137
 #define SNOVA_LET_TYPE_MISMATCH 138
 #define SNOVA_BREAK_OUTSIDE_LOOP 139
+#define SNOVA_UNHANDLED_ERROR 141
 #define SNOVA_CONTINUE_OUTSIDE_LOOP 140
 #define SNOVA_ABSTRACT_INSTANTIATION 141
 #define SNOVA_MISSING_RETURN 142
@@ -152,6 +152,8 @@ typedef struct {
     const SnList *current_imports; /* interned package names, or NULL */
     const SnDecl *enclosing_type;  /* NULL at top level */
     SnTypeRep *current_return_type;
+    const SnDecl *current_function;
+    SnList active_catch_types; /* SnTypeRep*, NULL item means catch-all */
 
     /* Type parameters in scope for the body being checked — the declaration's
      * own `generics` plus, for a method, its owning type's. `T` in

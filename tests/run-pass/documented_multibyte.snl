@@ -1,7 +1,7 @@
 package tests.run_pass.documented_multibyte
 
 
-import builtin.console.Console
+import builtin.console.console
 
 
 // Regression fixture: `@Documented(...)` blocks and text containing

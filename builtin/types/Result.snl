@@ -1,0 +1,157 @@
+package builtin.types
+
+import builtin.errors.errors
+
+enum Result<T, E> {
+    Ok(value: T),
+    Err(error: E),
+
+    public method isOk(): bool {
+        return match this {
+            Ok(_) -> true
+            Err(_) -> false
+        }
+    }
+
+    public method isErr(): bool {
+        return match this {
+            Ok(_) -> false
+            Err(_) -> true
+        }
+    }
+
+    public method contains(value: T): bool {
+        return match this {
+            Ok(found) -> found == value
+            Err(_) -> false
+        }
+    }
+
+    public method containsError(error: E): bool {
+        return match this {
+            Ok(_) -> false
+            Err(found) -> found == error
+        }
+    }
+
+    public method and<U>(next: Result<U, E>): Result<U, E> {
+        return match this {
+            Ok(_) -> next
+            Err(error) -> Err(error)
+        }
+    }
+
+    public method or(fallback: Result<T, E>): Result<T, E> {
+        return match this {
+            Ok(value) -> Ok(value)
+            Err(_) -> fallback
+        }
+    }
+
+    public method unwrap(): T {
+        match this {
+            Ok(value) -> return value
+            Err(error) -> throw error
+        }
+    }
+
+    public method expect(message: string): T {
+        match this {
+            Ok(value) -> return value
+            Err(_) -> throw IllegalStateException(message)
+        }
+    }
+
+    public method unwrapErr(): E {
+        match this {
+            Ok(_) -> throw RuntimeException("Result.unwrapErr called on Ok")
+            Err(error) -> return error
+        }
+    }
+
+    public method unwrapOr(fallback: T): T {
+        return match this {
+            Ok(value) -> value
+            Err(_) -> fallback
+        }
+    }
+
+    public method unwrapOrElse(recover: (E) -> T): T {
+        return match this {
+            Ok(value) -> value
+            Err(error) -> recover(error)
+        }
+    }
+
+    public method ok(): Option<T> {
+        return match this {
+            Ok(value) -> Option<T>.Some(value)
+            Err(_) -> Option<T>.None
+        }
+    }
+
+    public method err(): Option<E> {
+        return match this {
+            Ok(_) -> Option<E>.None
+            Err(error) -> Option<E>.Some(error)
+        }
+    }
+
+    public method map<U>(transform: (T) -> U): Result<U, E> {
+        return match this {
+            Ok(value) -> Ok(transform(value))
+            Err(error) -> Err(error)
+        }
+    }
+
+    public method mapOr<U>(fallback: U, transform: (T) -> U): U {
+        return match this {
+            Ok(value) -> transform(value)
+            Err(_) -> fallback
+        }
+    }
+
+    public method mapOrElse<U>(fallback: (E) -> U, transform: (T) -> U): U {
+        return match this {
+            Ok(value) -> transform(value)
+            Err(error) -> fallback(error)
+        }
+    }
+
+    public method inspect(action: (T) -> unit): Result<T, E> {
+        match this {
+            Ok(value) -> action(value)
+            Err(_) -> {}
+        }
+        return this
+    }
+
+    public method inspectError(action: (E) -> unit): Result<T, E> {
+        match this {
+            Ok(_) -> {}
+            Err(error) -> action(error)
+        }
+        return this
+    }
+
+    public method mapError<F>(transform: (E) -> F): Result<T, F> {
+        return match this {
+            Ok(value) -> Ok(value)
+            Err(error) -> Err(transform(error))
+        }
+    }
+
+    public method andThen<U>(transform: (T) -> Result<U, E>): Result<U, E> {
+        return match this {
+            Ok(value) -> transform(value)
+            Err(error) -> Err(error)
+        }
+    }
+
+    public method orElse<F>(recover: (E) -> Result<T, F>): Result<T, F> {
+        return match this {
+            Ok(value) -> Ok(value)
+            Err(error) -> recover(error)
+        }
+    }
+}

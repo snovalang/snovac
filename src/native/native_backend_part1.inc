@@ -9,6 +9,7 @@
 #include "native_backend.h"
 #include "native_scope.h"
 #include "driver_utils.h"
+#include "runtime_api.h"
 
 #include <stdio.h>
 #include <stdlib.h>

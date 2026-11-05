@@ -69,4 +69,95 @@ same_text() {
 
 . "$DIR/run_front.sh"
 . "$DIR/run_deps.sh"
+
+# Check and execute the builtin tree as a manifest-backed consumer project.
+# This covers package-path agreement and source-level generic/core APIs.
+REPO_ROOT="$(cd "$DIR/.." && pwd)"
+case "$SNOVAC" in
+  /*) SNOVAC_ABS="$SNOVAC" ;;
+  *) SNOVAC_ABS="$(pwd)/$SNOVAC" ;;
+esac
+BUILTIN_PROJECT="$(mktemp -d)"
+mkdir -p "$BUILTIN_PROJECT/src/app"
+cp -R "$REPO_ROOT/builtin" "$BUILTIN_PROJECT/src/builtin"
+cat > "$BUILTIN_PROJECT/mod.sns" <<'EOF'
+module builtin_validation
+snova "1.0.0"
+EOF
+cat > "$BUILTIN_PROJECT/src/app/Main.snl" <<'EOF'
+package app
+import builtin.async.async
+import builtin.args.args
+import builtin.collections.collections
+import builtin.env.env
+import builtin.filesystem.filesystem
+import builtin.math.math
+import builtin.net.net
+import builtin.text.text
+import builtin.time.time
+import builtin.types
+import builtin.util.util
+import builtin.util.concurrent.concurrent
+
+func main(): int {
+    let some: Option<int> = Some(7)
+    if some.isSome() == false || some.unwrap() != 7 || some.unwrapOr(0) != 7 { return 1 }
+    let none: Option<int> = None
+    if none.isNone() == false || none.unwrapOr(8) != 8 { return 2 }
+    let ok: Result<int, string> = Ok(11)
+    if ok.isOk() == false || ok.unwrap() != 11 { return 3 }
+    let err: Result<int, string> = Err("bad")
+    if err.isErr() == false { return 4 }
+
+    let task = Task { value: 9 }
+    if task.get() != 9 || task.map((value: int) -> value * 2).get() != 18 { return 5 }
+    let pair = Pair { first: 3, second: "three" }
+    if pair.swap().first != "three" { return 6 }
+
+    let values = [1, 2, 3]
+    if values.map((n: int) -> n + 1).get(1) != 3 { return 7 }
+    if values.filter((n: int) -> n > 1).length() != 2 { return 8 }
+    if values.reduce(0, (sum: int, n: int) -> sum + n) != 6 { return 9 }
+    let map = Map<string, int>()
+    if map.put("one", 1) == false || map.getOrDefault("one", 0) != 1 { return 10 }
+    let set = Set<int>()
+    if set.add(1) == false || set.contains(1) == false { return 11 }
+
+    if Text.join(["snova", "lang"], "-") != "snova-lang" || Text.repeat("x", 3) != "xxx" { return 12 }
+    if Text.isBlank("  ") == false || Math.lcm(12, 18) != 36 || Math.pow(2, 5) != 32 { return 13 }
+    if Net.resolve("localhost").isEmpty() { return 14 }
+    Time.now()
+    Time.sleep(Duration.seconds(0L))
+
+    var semaphore = Concurrent.semaphore(1)
+    if semaphore.tryAcquire() == false { return 15 }
+    semaphore.release()
+    let mutex = Mutex { value: 42 }
+    if mutex.tryLock() == false || mutex.tryLock() { return 21 }
+    mutex.unlock()
+    mutex.lock()
+    mutex.unlock()
+    mutex.close()
+    var group = Concurrent.waitGroup()
+    group.add(1)
+    group.done()
+    if group.isComplete() == false { return 16 }
+    var token = CancellationToken { cancelled: false }
+    token.cancel()
+    if Async.isCancelled(token) == false { return 17 }
+    if Args.count() < 0 || Env.get("PATH").isEmpty() { return 18 }
+    if FileSystem.writeText("probe.txt", "ok") == false { return 19 }
+    if FileSystem.readText("probe.txt") != "ok" { return 20 }
+    return 0
+}
+EOF
+assert "builtin: manifest-backed project checks" 0 \
+  "$(rc_of "$SNOVAC" check --project "$BUILTIN_PROJECT")"
+if (cd "$BUILTIN_PROJECT" && "$SNOVAC_ABS" run --project .); then
+  builtin_run_rc=0
+else
+  builtin_run_rc=$?
+fi
+assert "builtin: interpreter runs source implementations" 0 "$builtin_run_rc"
+rm -rf "$BUILTIN_PROJECT"
 . "$DIR/run_fixed.sh"

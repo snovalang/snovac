@@ -1,8 +1,8 @@
 package tests.packages.args
 
 
-import builtin.args.Args
-import builtin.console.Console
+import builtin.args.args
+import builtin.console.console
 
 
 func main(args: Array<string>): int {

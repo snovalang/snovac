@@ -1,8 +1,8 @@
 package tests.packages.net_symbols
 
 
-import builtin.net.Net
-import builtin.async.Async
+import builtin.net.net
+import builtin.async.async
 
 
 async func handleConn(stream: TcpStream): Task<unit> {

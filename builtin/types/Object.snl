@@ -1,0 +1,20 @@
+package builtin.types
+
+// Implicit root of every user class, struct, and enum. Concrete types may
+// override these methods when they have value semantics.
+abstract class Object {
+    public method toString(): string {
+        return "Object"
+    }
+
+    public method equals(other: Object): bool {
+        return this == other
+    }
+
+    // A constant hash is valid for the identity equality above: equal objects
+    // are guaranteed to have equal hashes. Collections in this library use
+    // equality lookup and do not depend on hash distribution.
+    public method hashCode(): int {
+        return 0
+    }
+}

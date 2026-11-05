@@ -19,6 +19,7 @@
 #include "cmd_run_snbc.h"
 #include "cmd_tidy.h"
 #include "driver_utils.h"
+#include "runtime_api.h"
 #include "target.h"
 
 #ifdef _WIN32
@@ -232,9 +233,13 @@ int main(int argc, char **argv) {
         int is_project = 0;
         const char *path = NULL;
         const char *offline_cache = NULL;
+        int runtime_arg_start = argc;
 
         for (int i = 2; i < argc; i++) {
-            if (strcmp(argv[i], "--project") == 0) {
+            if (strcmp(argv[i], "--") == 0) {
+                runtime_arg_start = i + 1;
+                break;
+            } else if (strcmp(argv[i], "--project") == 0) {
                 is_project = 1;
             } else if (strncmp(argv[i], "--offline-cache=", 16) == 0) {
                 offline_cache = argv[i] + 16;
@@ -250,20 +255,33 @@ int main(int argc, char **argv) {
             return 2;
         }
 
+        int app_argc = runtime_arg_start < argc ? argc - runtime_arg_start : 0;
+        const char *const *app_argv = app_argc ? (const char *const *)&argv[runtime_arg_start] : NULL;
+        SnRuntimeStatus init_status = sn_runtime_process_init(app_argc, app_argv);
+        if (init_status != SN_RUNTIME_OK) {
+            fprintf(stderr, "error: cannot initialize runtime arguments: %s\n",
+                    sn_runtime_status_name(init_status));
+            return 1;
+        }
+
+        int run_status;
         if (is_project) {
             int bad = reject_unless_source(path, 1);
             if (bad) {
+                sn_runtime_process_clear();
                 return bad;
             }
-            return sn_cmd_run_project_with_cache(path, offline_cache);
-        }
-        {
+            run_status = sn_cmd_run_project_with_cache(path, offline_cache);
+        } else {
             int bad = reject_unless_source(path, 0);
             if (bad) {
+                sn_runtime_process_clear();
                 return bad;
             }
+            run_status = sn_cmd_run(path);
         }
-        return sn_cmd_run(path);
+        sn_runtime_process_clear();
+        return run_status;
     }
 
     /* `check --project <path>` */

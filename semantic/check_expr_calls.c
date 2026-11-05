@@ -161,11 +161,9 @@ SnTypeRep *check_expr_call(SnChecker *c, SnScope *local, SnExpr *e) {
             break;
         }
         if (!callee_sym) {
-            /* resolve_value_symbol returns NULL both for a real failure (it
-             * has already reported one, and left SN_T_ERROR behind) and for an
-             * intrinsic member, which has no symbol but does leave a real
-             * SN_T_FUNC type behind. The latter is callable; its argument list
-             * is not checked because builtins.c models no parameters. */
+            /* resolve_value_symbol returns NULL for a real failure (already
+             * diagnosed) or a callable intrinsic with no source symbol. The
+             * latter keeps its source-resolved function type here. */
             SnTypeRep *callee_ty = e->lhs->resolved_type;
             result = (callee_ty && callee_ty->tag == SN_T_FUNC) ? callee_ty->ret
                                                                 : sn_type_error(c->types);

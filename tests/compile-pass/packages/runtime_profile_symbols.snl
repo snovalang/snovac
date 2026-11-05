@@ -1,6 +1,6 @@
 package tests.compile_pass.packages.runtime_profile_symbols
 
-import builtin.runtime.Runtime
+import builtin.runtime.runtime
 
 func main(): int {
     let minimal = RuntimeConfig.forProfile(RuntimeProfile.Minimal)

@@ -37,7 +37,17 @@ static SnTypeRep *check_binary(SnChecker *c, SnExpr *e, SnTypeRep *lt, SnTypeRep
         break;
     case SN_TOK_EQ:
     case SN_TOK_NE:
-        if (lt == rt || sn_ptr_null_cmp(lt, rt)) {
+        if (lt == rt || sn_ptr_null_cmp(lt, rt) ||
+            (((lt->tag == SN_T_ARRAY ||
+               (lt->tag == SN_T_NAMED && lt->decl &&
+                strcmp(lt->decl->name, "Array") == 0)) ||
+              (rt->tag == SN_T_ARRAY ||
+               (rt->tag == SN_T_NAMED && rt->decl &&
+                strcmp(rt->decl->name, "Array") == 0))) &&
+             ((lt->tag == SN_T_NAMED && lt->decl &&
+               strcmp(lt->decl->name, "Object") == 0) ||
+              (rt->tag == SN_T_NAMED && rt->decl &&
+               strcmp(rt->decl->name, "Object") == 0)))) {
             return sn_type_bool(c->types);
         }
         break;
@@ -91,6 +101,10 @@ static SnTypeRep *check_unary(SnChecker *c, SnExpr *e, SnTypeRep *operand) {
         if (operand->tag == SN_T_NAMED && operand->decl && operand->nargs >= 1 &&
             (operand->decl->name == sn_intern_cstr(c->intern, "Option") ||
              operand->decl->name == sn_intern_cstr(c->intern, "Result"))) {
+            if (operand->decl->name == sn_intern_cstr(c->intern, "Result") &&
+                operand->nargs >= 2) {
+                require_error_handled(c, operand->args[1], e->span);
+            }
             return operand->args[0];
         }
         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_UNARY_TYPE_MISMATCH, e->span,
@@ -175,7 +189,12 @@ static void check_call_args(SnChecker *c, SnExpr *call_expr, const SnSymbol *cal
  * declaration, so there are no parameter names to quote. */
 static void check_call_against_functype(SnChecker *c, SnExpr *call_expr,
                                         const SnTypeRep *ft, SnTypeRep **arg_tys,
-                                        size_t nargs) {
+                                        size_t nargs, int check_effects) {
+    if (check_effects) {
+        for (uint32_t i = 0; i < ft->nthrows; i++) {
+            require_error_handled(c, ft->throws_types[i], call_expr->span);
+        }
+    }
     if (ft->nargs != nargs) {
         sn_diag_emit(c->diag, SN_DIAG_ERROR, SNOVA_ARITY_MISMATCH, call_expr->span,
                     "expected %u argument(s), found %zu", ft->nargs, nargs);
@@ -255,6 +274,7 @@ static void check_constructor_call(SnChecker *c, SnExpr *call_expr, SnSymbol *ty
         const SnDecl *m = SN_LIST_AT(d->members, SnDecl, i);
         if (m->kind == SN_DECL_METHOD && m->name &&
             sn_intern_cstr(c->intern, m->name) == sn_intern_cstr(c->intern, "constructor")) {
+            check_call_throws(c, m, call_expr->span);
             check_call_args(c, call_expr, type_sym, &m->params, arg_tys, nargs);
             return;
         }

@@ -1,8 +1,60 @@
+static int try_scalar_method(SnEvalInterp *in, SnEvalEnv *env, SnEvalValue recv,
+                             const SnExpr *call, SnEvalValue *out) {
+    if (!call || !call->lhs || !call->lhs->text) return 0;
+    const char *name = call->lhs->text;
+    if (strcmp(name, "toString") == 0) {
+        *out = v_str(sn_eval_to_string(in, recv, call->span));
+        return 1;
+    }
+    if (strcmp(name, "equals") == 0) {
+        if (call->args.len != 1) return 0;
+        SnEvalValue other = sn_eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+        *out = v_bool(sn_eval_value_equals(recv, other));
+        return 1;
+    }
+    if (strcmp(name, "hashCode") == 0) {
+        uint32_t hash = 0;
+        if (recv.kind == V_INT) {
+            uint64_t bits = (uint64_t)recv.as.i;
+            hash = (uint32_t)(bits ^ (bits >> 32));
+        } else if (recv.kind == V_DOUBLE) {
+            uint64_t bits = 0;
+            memcpy(&bits, &recv.as.d, sizeof(bits));
+            hash = (uint32_t)(bits ^ (bits >> 32));
+        } else if (recv.kind == V_BOOL) {
+            hash = recv.as.b ? 1231u : 1237u;
+        } else if (recv.kind == V_CHAR) {
+            hash = (uint32_t)recv.as.i;
+        }
+        *out = v_int((long long)(int32_t)hash);
+        return 1;
+    }
+    return 0;
+}
+
 static int try_string_method(SnEvalInterp *in, SnEvalEnv *env, SnEvalValue recv,
                              const SnExpr *call, SnEvalValue *out) {
     const SnExpr *callee = call->lhs;
     const char *m = callee->text;
     const char *s = recv.as.s ? recv.as.s : "";
+    if (strcmp(m, "toString") == 0) {
+        *out = v_str(s);
+        return 1;
+    }
+    if (strcmp(m, "equals") == 0) {
+        if (call->args.len != 1) return 0;
+        SnEvalValue other = sn_eval_expr(in, env, (const SnExpr *)call->args.items[0]);
+        *out = v_bool(other.kind == V_STRING && other.as.s && strcmp(s, other.as.s) == 0);
+        return 1;
+    }
+    if (strcmp(m, "hashCode") == 0) {
+        uint32_t hash = 2166136261u;
+        for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+            hash = (hash ^ *p) * 16777619u;
+        }
+        *out = v_int((long long)(int32_t)hash);
+        return 1;
+    }
     if (strcmp(m, "toUpper") == 0) {
         size_t len = strlen(s);
         char *buf = (char *)sn_arena_alloc(in->arena, len + 1);
@@ -256,7 +308,7 @@ static int try_variant_method(SnEvalInterp *in, SnEvalEnv *env, SnEvalValue recv
                 SnEvalValue *slot = (SnEvalValue *)sn_arena_alloc(in->arena, sizeof(SnEvalValue));
                 *slot = mapped;
                 sn_list_push(in->arena, &payload_list, slot);
-                *out = sn_eval_variant(in, vt->name, payload_list);
+                *out = sn_eval_variant_typed(in, vt->name, payload_list, vt->owner_type);
                 return 1;
             }
         }
@@ -264,6 +316,86 @@ static int try_variant_method(SnEvalInterp *in, SnEvalEnv *env, SnEvalValue recv
         return 1;
     }
     return 0;
+}
+
+/* Prefer a method body declared on the enum in Snovalang. The intrinsic
+ * fallback below remains for bootstrap/single-file execution where the
+ * builtin package source is not part of the evaluated unit. */
+static int try_variant_declared_method(SnEvalInterp *in, SnEvalEnv *caller,
+                                       SnEvalValue recv, const SnExpr *call,
+                                       SnEvalValue *out) {
+    if (!in || !in->unit || recv.kind != V_VARIANT || !recv.as.vt ||
+        !call || !call->lhs || !call->lhs->text) {
+        return 0;
+    }
+    const SnDecl *owner = NULL;
+    for (size_t i = 0; i < in->unit->decls.len && !owner; i++) {
+        const SnDecl *decl = (const SnDecl *)in->unit->decls.items[i];
+        if (!decl || decl->kind != SN_DECL_ENUM) continue;
+        for (size_t j = 0; j < decl->variants.len; j++) {
+            const SnDecl *variant = (const SnDecl *)decl->variants.items[j];
+            if (variant && variant->name &&
+                strcmp(variant->name, recv.as.vt->name) == 0) {
+                owner = decl;
+                break;
+            }
+        }
+    }
+    if (!owner) return 0;
+
+    const SnDecl *method = sn_eval_find_overload(in, caller, owner,
+                                                  call->lhs->text, &call->args);
+    if (!method || !method->body) return 0;
+
+    SnEvalEnv *local = sn_eval_env_new(in, NULL);
+    sn_eval_env_define(in, local, "this", recv);
+    for (size_t i = 0; i < method->params.len; i++) {
+        const SnParam *param = (const SnParam *)method->params.items[i];
+        SnEvalValue value;
+        if (i < call->args.len) {
+            value = sn_rt_eval_arg(in, caller,
+                                   (const SnExpr *)call->args.items[i]);
+        } else if (param->def) {
+            value = sn_eval_expr(in, caller, param->def);
+        } else {
+            value = sn_eval_default_for(param->type);
+        }
+        sn_eval_env_define(in, local, param->name, value);
+    }
+    *out = sn_rt_finish_call(in, local, caller, method->body);
+    return 1;
+}
+
+static int try_array_declared_method(SnEvalInterp *in, SnEvalEnv *caller,
+                                     SnEvalValue recv, const SnExpr *call,
+                                     SnEvalValue *out) {
+    if (!in || !in->unit || recv.kind != V_ARRAY || !call || !call->lhs ||
+        !call->lhs->text) {
+        return 0;
+    }
+    const SnDecl *owner = sn_eval_find_top(in, "Array", SN_DECL_CLASS);
+    const SnDecl *method = owner
+        ? sn_eval_find_overload(in, caller, owner, call->lhs->text, &call->args)
+        : NULL;
+    if (!method || !method->body) return 0;
+
+    SnEvalEnv *local = sn_eval_env_new(in, NULL);
+    sn_eval_env_define(in, local, "this", recv);
+    for (size_t i = 0; i < method->params.len; i++) {
+        const SnParam *param = (const SnParam *)method->params.items[i];
+        SnEvalValue value;
+        if (i < call->args.len) {
+            value = sn_rt_eval_arg(in, caller,
+                                   (const SnExpr *)call->args.items[i]);
+        } else if (param->def) {
+            value = sn_eval_expr(in, caller, param->def);
+        } else {
+            value = sn_eval_default_for(param->type);
+        }
+        sn_eval_env_define(in, local, param->name, value);
+    }
+    *out = sn_rt_finish_call(in, local, caller, method->body);
+    return 1;
 }
 
 static SnEvalValue eval_read_bytes(SnEvalInterp *in, SnEvalValue path, SnSpan span) {
@@ -276,7 +408,7 @@ static SnEvalValue eval_read_bytes(SnEvalInterp *in, SnEvalValue path, SnSpan sp
         sn_rt_error(in, SNOVA_TYPE_ERROR, span, "cannot read '%s'", path.as.s);
         return v_unit();
     }
-    ArrayVal *arr = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
+    ArrayVal *arr = (ArrayVal *)sn_rt_alloc(in, sizeof(ArrayVal), 0);
     if (!arr) {
         fclose(fp);
         sn_rt_error(in, SNOVA_TYPE_ERROR, span, "out of memory");
@@ -284,7 +416,7 @@ static SnEvalValue eval_read_bytes(SnEvalInterp *in, SnEvalValue path, SnSpan sp
     }
     int ch;
     while ((ch = fgetc(fp)) != EOF) {
-        SnEvalValue *slot = (SnEvalValue *)sn_arena_alloc(in->arena, sizeof(SnEvalValue));
+        SnEvalValue *slot = (SnEvalValue *)sn_rt_alloc(in, sizeof(SnEvalValue), 0);
         if (!slot) {
             fclose(fp);
             sn_rt_error(in, SNOVA_TYPE_ERROR, span, "out of memory");

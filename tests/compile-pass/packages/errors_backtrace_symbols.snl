@@ -1,8 +1,8 @@
 package tests.packages.errors_backtrace_symbols
 
 
-import builtin.errors.Errors
-import builtin.console.Console
+import builtin.errors.errors
+import builtin.console.console
 
 
 func main(): int {

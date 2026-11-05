@@ -52,9 +52,8 @@ static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) 
             return v_str("type");
         }
         SnEvalValue *local = sn_eval_env_lookup(env, callee->text);
-        if (local && local->kind == V_LAMBDA) {
-            return sn_eval_call_lambda(in, local->as.lam, (SnList *)&e->args, env,
-                               e->span);
+        if (local && (local->kind == V_LAMBDA || local->kind == V_FUNCTION)) {
+            return sn_eval_call_value(in, *local, (SnList *)&e->args, env, e->span);
         }
         const SnDecl *fn = sn_eval_find_top(in, callee->text, SN_DECL_FUNC);
         if (fn) {
@@ -63,7 +62,8 @@ static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) 
         if (strcmp(callee->text, "Array") == 0) {
             SnEvalValue v;
             v.kind = V_ARRAY;
-            v.as.arr = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
+            v.as.arr = (ArrayVal *)sn_rt_alloc(in, sizeof(ArrayVal), 0);
+            memset(v.as.arr, 0, sizeof(ArrayVal));
             return v;
         }
         const SnDecl *cls = sn_eval_find_type(in, callee->text);
@@ -84,6 +84,84 @@ static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) 
 
     /* Method call on a receiver. */
     if (callee->kind == SN_EXPR_MEMBER && callee->lhs) {
+        if (callee->lhs->kind == SN_EXPR_IDENT && callee->lhs->text && callee->text) {
+            const char *owner = callee->lhs->text;
+            const char *method = callee->text;
+            if (strcmp(owner, "Runtime") == 0) {
+                SnEvalValue a0 = e->args.len > 0
+                    ? sn_eval_expr(in, env, SN_LIST_AT(e->args, SnExpr, 0)) : v_unit();
+                SnEvalValue a1 = e->args.len > 1
+                    ? sn_eval_expr(in, env, SN_LIST_AT(e->args, SnExpr, 1)) : v_unit();
+                if (in->failed) return v_unit();
+                if (strcmp(method, "readLine") == 0) {
+                char *line = NULL;
+                SnRuntimeStatus status = sn_runtime_stdin_line(&line);
+                if (status == SN_RUNTIME_END_OF_INPUT) return v_str("");
+                if (status != SN_RUNTIME_OK) {
+                    sn_rt_throw_exception(in, "IoException",
+                        sn_eval_sprintf(in, "stdin read failed: %s",
+                                        sn_runtime_status_name(status)), e->span);
+                    return v_unit();
+                }
+                const char *copy = sn_arena_strndup(in->arena, line, strlen(line));
+                sn_runtime_free(line);
+                return v_str(copy);
+            }
+                if (strcmp(method, "fileExists") == 0) {
+                int exists = 0;
+                SnRuntimeStatus status = sn_runtime_file_exists(
+                    a0.kind == V_STRING ? a0.as.s : NULL, &exists);
+                if (status != SN_RUNTIME_OK) {
+                    sn_rt_throw_exception(in, "IoException",
+                        sn_eval_sprintf(in, "file check failed: %s",
+                                        sn_runtime_status_name(status)), e->span);
+                    return v_unit();
+                }
+                return v_bool(exists);
+            }
+                if (strcmp(method, "readText") == 0) {
+                char *text = NULL;
+                size_t length = 0;
+                SnRuntimeStatus status = sn_runtime_file_read(
+                    a0.kind == V_STRING ? a0.as.s : NULL, &text, &length);
+                if (status != SN_RUNTIME_OK) {
+                    sn_rt_throw_exception(in, "IoException",
+                        sn_eval_sprintf(in, "cannot read '%s': %s",
+                            a0.kind == V_STRING && a0.as.s ? a0.as.s : "",
+                            sn_runtime_status_name(status)), e->span);
+                    return v_unit();
+                }
+                const char *copy = sn_arena_strndup(in->arena, text, length);
+                sn_runtime_free(text);
+                return v_str(copy);
+            }
+                if (strcmp(method, "writeText") == 0) {
+                const char *path = a0.kind == V_STRING ? a0.as.s : NULL;
+                const char *text = a1.kind == V_STRING && a1.as.s ? a1.as.s : "";
+                SnRuntimeStatus status = sn_runtime_file_write(
+                    path, text, strlen(text));
+                if (status != SN_RUNTIME_OK) {
+                    sn_rt_throw_exception(in, "IoException",
+                        sn_eval_sprintf(in, "cannot write '%s': %s", path ? path : "",
+                                        sn_runtime_status_name(status)), e->span);
+                    return v_unit();
+                }
+                return v_bool(1);
+            }
+                if (strcmp(method, "environment") == 0) {
+                const char *name = a0.kind == V_STRING ? a0.as.s : NULL;
+                const char *value = sn_runtime_env_get(name);
+                return v_str(value ? sn_arena_strndup(in->arena, value, strlen(value)) : "");
+            }
+                if (strcmp(method, "argumentCount") == 0)
+                return v_int((long long)sn_runtime_args_count());
+                if (strcmp(method, "argument") == 0) {
+                const char *value = a0.kind == V_INT && a0.as.i >= 0
+                    ? sn_runtime_args_get((size_t)a0.as.i) : NULL;
+                return v_str(value ? sn_arena_strndup(in->arena, value, strlen(value)) : "");
+            }
+            }
+        }
         /* Static method: `Foo.bar()` where Foo is a declared type, not a
          * local binding. This must be checked before evaluating `callee->lhs`
          * as a value expression below: a bare type name is not itself an
@@ -95,7 +173,8 @@ static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) 
             if (strcmp(callee->lhs->text, "Array") == 0) {
                 SnEvalValue v;
                 v.kind = V_ARRAY;
-                v.as.arr = (ArrayVal *)sn_arena_calloc(in->arena, sizeof(ArrayVal));
+                v.as.arr = (ArrayVal *)sn_rt_alloc(in, sizeof(ArrayVal), 0);
+                memset(v.as.arr, 0, sizeof(ArrayVal));
                 return v;
             }
             const SnDecl *cls = sn_eval_find_type(in, callee->lhs->text);
@@ -138,8 +217,21 @@ static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) 
             try_string_method(in, env, recv, e, &out)) {
             return out;
         }
+        if ((recv.kind == V_INT || recv.kind == V_DOUBLE || recv.kind == V_BOOL ||
+             recv.kind == V_CHAR || recv.kind == V_UNIT) && callee->text &&
+            try_scalar_method(in, env, recv, e, &out)) {
+            return out;
+        }
         if (recv.kind == V_ARRAY && callee->text &&
             try_array_method(in, env, recv, e, &out)) {
+            return out;
+        }
+        if (recv.kind == V_ARRAY && callee->text &&
+            try_array_declared_method(in, env, recv, e, &out)) {
+            return out;
+        }
+        if (recv.kind == V_VARIANT && callee->text &&
+            try_variant_declared_method(in, env, recv, e, &out)) {
             return out;
         }
         if (recv.kind == V_VARIANT && callee->text &&
@@ -155,9 +247,8 @@ static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) 
             /* A field that holds a lambda value is callable through the
              * member: `handler.onHit(entry)`. */
             SnEvalValue *f = sn_eval_object_field(recv.as.o, callee->text);
-            if (f && f->kind == V_LAMBDA) {
-                return sn_eval_call_lambda(in, f->as.lam, (SnList *)&e->args, env,
-                                   e->span);
+            if (f && (f->kind == V_LAMBDA || f->kind == V_FUNCTION)) {
+                return sn_eval_call_value(in, *f, (SnList *)&e->args, env, e->span);
             }
         }
         sn_rt_error(in, SNOVA_UNDEFINED_NAME, e->span, "unknown method `%s`",
@@ -170,8 +261,9 @@ static SnEvalValue eval_call(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) 
         if (in->failed) {
             return v_unit();
         }
-        if (fn.kind == V_LAMBDA && fn.as.lam) {
-            return sn_eval_call_lambda(in, fn.as.lam, (SnList *)&e->args, env, e->span);
+        if ((fn.kind == V_LAMBDA && fn.as.lam) ||
+            (fn.kind == V_FUNCTION && fn.as.func)) {
+            return sn_eval_call_value(in, fn, (SnList *)&e->args, env, e->span);
         }
     }
 

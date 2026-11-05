@@ -65,7 +65,7 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
   fprintf(f, "};\n\n");
 
   fprintf(f, "int main(int argc, char **argv) {\n");
-  fprintf(f, "  (void)argc; (void)argv;\n");
+  fprintf(f, "  (void)sn_runtime_process_init(argc > 1 ? argc - 1 : 0, (const char *const *)(argc > 1 ? argv + 1 : NULL));\n");
   fprintf(f, "  SnArena arena;\n");
   fprintf(f, "  sn_arena_init(&arena, 8 * 1024 * 1024);\n");
   fprintf(f, "  SnDiagSink diag;\n");
@@ -141,6 +141,17 @@ int sn_native_compile_runtime(const SnPackageGraph *graph,
     if (!sn_driver_path_is_file(lib_path)) {
       snprintf(inc_dir, sizeof(inc_dir), ".");
       snprintf(lib_path, sizeof(lib_path), "build/libsnovart.a");
+    }
+  }
+
+  char runtime_header[1200];
+  snprintf(runtime_header, sizeof(runtime_header), "%s/runtime_api.h", inc_dir);
+  if (!sn_driver_path_is_file(runtime_header)) {
+    snprintf(runtime_header, sizeof(runtime_header), "%s/src/eval/runtime_api.h", inc_dir);
+    if (sn_driver_path_is_file(runtime_header)) {
+      char repo_root[sizeof(inc_dir)];
+      snprintf(repo_root, sizeof(repo_root), "%s", inc_dir);
+      snprintf(inc_dir, sizeof(inc_dir), "%s/src/eval", repo_root);
     }
   }
 

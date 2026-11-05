@@ -1,0 +1,62 @@
+package builtin.net.net
+
+import builtin.errors.errors
+
+import builtin.types
+
+class Net {
+    public static method listen(host: string, port: int): TcpListener {
+        match Net.tryListen(host, port) {
+            Ok(listener) -> return listener
+            Err(error) -> throw RuntimeException(error)
+        }
+    }
+
+    public static method accept(listener: TcpListener): TcpStream {
+        return listener.accept()
+    }
+
+    public static method connect(host: string, port: int): TcpStream {
+        match Net.tryConnect(host, port) {
+            Ok(stream) -> return stream
+            Err(error) -> throw RuntimeException(error)
+        }
+    }
+
+    public static method tryListen(host: string, port: int): Result<TcpListener, string> {
+        if port < 0 || port > 65535 {
+            return Err("listen port must be between 0 and 65535")
+        }
+        var handle = Socket.listen(host, port)
+        if handle < 0 {
+            return Err("could not open listening socket")
+        }
+        return Ok(TcpListener { handle: handle })
+    }
+
+    public static method tryConnect(host: string, port: int): Result<TcpStream, string> {
+        if host.isEmpty() || port < 1 || port > 65535 {
+            return Err("connect requires a host and a port between 1 and 65535")
+        }
+        var handle = Socket.connect(host, port)
+        if handle < 0 {
+            return Err("could not connect to remote host")
+        }
+        return Ok(TcpStream { handle: handle })
+    }
+
+    public static method resolve(host: string): Array<string> {
+        return Socket.resolve(host)
+    }
+
+    public static method tryResolve(host: string): Result<Array<string>, string> {
+        if host.isEmpty() {
+            return Err("resolve requires a non-empty host")
+        }
+        var addresses = Socket.resolve(host)
+        if addresses.isEmpty() {
+            return Err("host resolution returned no addresses")
+        }
+        return Ok(addresses)
+    }
+}

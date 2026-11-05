@@ -18,6 +18,17 @@ void sn_socket_cleanup(void);
 /* Create, bind and listen on specified host/port. Returns socket fd or -1 on error. */
 int sn_socket_listen(const char *host, int port);
 
+/* Connect to a TCP endpoint. Returns a runtime socket handle or -1 on error. */
+int sn_socket_connect(const char *host, int port);
+
+/* Create a bound datagram socket, send a datagram, or receive one. */
+int sn_socket_udp_bind(const char *host, int port);
+int64_t sn_socket_udp_send_to(int handle, const char *host, int port,
+                              const char *data, size_t length);
+int64_t sn_socket_udp_receive(int handle, char *buffer, size_t max_length);
+int sn_socket_resolve(const char *host, char ***addresses_out, size_t *count_out);
+void sn_socket_free_addresses(char **addresses, size_t count);
+
 /* Accept incoming connection. Returns client fd or -1 on error.
  * If client_ip is non-NULL and ip_len > 0, writes the client IP string into it. */
 int sn_socket_accept(int server_fd, char *client_ip, size_t ip_len);

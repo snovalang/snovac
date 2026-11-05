@@ -3,6 +3,7 @@
 #define SNOVAC_EMIT_INTERNAL_H
 
 #include "emit_bc.h"
+#include "runtime_api.h"
 
 #include <stddef.h>
 #include <stdint.h>

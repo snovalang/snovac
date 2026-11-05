@@ -25,18 +25,24 @@ int sn_eval_truthy(SnEvalInterp *in, SnEvalValue v, SnSpan span) {
 
 static SnEvalValue eval_binary(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
     SnEvalValue a = sn_eval_expr(in, env, e->lhs);
+    if (in->flow == FLOW_THROW) return v_unit();
 
     /* Short-circuit before evaluating the right operand. */
     if (e->op == SN_TOK_ANDAND) {
         if (!sn_eval_truthy(in, a, e->span)) return v_bool(0);
-        return v_bool(sn_eval_truthy(in, sn_eval_expr(in, env, e->rhs), e->span));
+        SnEvalValue right = sn_eval_expr(in, env, e->rhs);
+        if (in->flow == FLOW_THROW) return v_unit();
+        return v_bool(sn_eval_truthy(in, right, e->span));
     }
     if (e->op == SN_TOK_OROR) {
         if (sn_eval_truthy(in, a, e->span)) return v_bool(1);
-        return v_bool(sn_eval_truthy(in, sn_eval_expr(in, env, e->rhs), e->span));
+        SnEvalValue right = sn_eval_expr(in, env, e->rhs);
+        if (in->flow == FLOW_THROW) return v_unit();
+        return v_bool(sn_eval_truthy(in, right, e->span));
     }
 
     SnEvalValue b = sn_eval_expr(in, env, e->rhs);
+    if (in->flow == FLOW_THROW) return v_unit();
 
     if (e->op == SN_TOK_EQ) {
         return v_bool(sn_eval_value_equals(a, b));
@@ -167,7 +173,8 @@ static SnEvalValue make_variant_from_args(SnEvalInterp *in, SnEvalEnv *env, cons
         *slot = v;
         sn_list_push(in->arena, &payload, slot);
     }
-    return sn_eval_variant(in, name, payload);
+    return sn_eval_variant_typed(in, name, payload,
+                                 sn_eval_find_variant_owner(in, name));
 }
 
 /* `Some` / `Ok` / `Err` are built-in variant constructors; any other

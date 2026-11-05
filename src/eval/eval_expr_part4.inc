@@ -1,5 +1,5 @@
 SnEvalValue sn_eval_expr(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
-    if (!e || in->failed) {
+    if (!e || in->failed || in->flow == FLOW_THROW) {
         return v_unit();
     }
 
@@ -41,7 +41,19 @@ SnEvalValue sn_eval_expr(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
          * user enum's empty variant. */
         if (e->text && sn_eval_is_variant_ctor(in, e->text)) {
             SnList empty = {0};
-            return sn_eval_variant(in, e->text, empty);
+            return sn_eval_variant_typed(in, e->text, empty,
+                                         sn_eval_find_variant_owner(in, e->text));
+        }
+        /* Top-level functions are values too. Keeping the declaration in the
+         * value lets a callback preserve its declared effect type at runtime
+         * without synthesizing a closure or relying on checker metadata. */
+        const SnDecl *fn = sn_eval_find_top(in, e->text, SN_DECL_FUNC);
+        if (fn) {
+            SnEvalValue value;
+            memset(&value, 0, sizeof(value));
+            value.kind = V_FUNCTION;
+            value.as.func = fn;
+            return value;
         }
         sn_rt_error(in, SNOVA_UNDEFINED_NAME, e->span, "undefined name `%s`",
                  e->text);
@@ -61,7 +73,7 @@ SnEvalValue sn_eval_expr(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
                     const SnDecl *v = (const SnDecl *)en->variants.items[i];
                     if (v->name && strcmp(v->name, e->text) == 0) {
                         SnList empty = {0};
-                        return sn_eval_variant(in, v->name, empty);
+                        return sn_eval_variant_typed(in, v->name, empty, en);
                     }
                 }
             }
@@ -140,12 +152,14 @@ SnEvalValue sn_eval_expr(SnEvalInterp *in, SnEvalEnv *env, const SnExpr *e) {
     }
     case SN_EXPR_MATCH: {
         SnEvalValue subject = sn_eval_expr(in, env, e->lhs);
+        if (in->flow == FLOW_THROW) return v_unit();
         if (in->failed) {
             return v_unit();
         }
         SnEvalEnv *arm_env = NULL;
         const SnMatchArm *arm =
             sn_eval_match_arm(in, env, &e->arms, subject, &arm_env);
+        if (in->flow == FLOW_THROW) return v_unit();
         if (!arm) {
             sn_rt_error(in, SNOVA_TYPE_ERROR, e->span,
                      "no match arm matched value `%s`",

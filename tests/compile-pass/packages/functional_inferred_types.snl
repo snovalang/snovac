@@ -1,8 +1,8 @@
 package tests.packages.functional_inferred_types
 
 
-import builtin.functional.Functional
-import builtin.console.Console
+import builtin.functional.functional
+import builtin.console.console
 
 
 let globalNumbers = [1, 2, 3, 4]

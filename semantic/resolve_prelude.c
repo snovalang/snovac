@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#define SN_PRELUDE_PACKAGE "builtin.types.Types"
+#define SN_PRELUDE_PACKAGE "builtin.types"
 
 static void add_variants_to_prelude(SnResolver *r, SnSymbol *type_sym) {
     SnScope *member_scope = sn_resolver_type_scope(r, type_sym->decl);
@@ -48,8 +48,8 @@ void sn_resolver_build_prelude(SnResolver *r) {
     /* The prelude's membership is already decided elsewhere in this repo, and
      * this mirrors that decision rather than inventing one:
      * crates/snovalang/src/modules/resolve.rs folds `builtin.datetime.DateTime`
-     * and `builtin.types.Types` in unconditionally (BUILTIN_PRELUDE_PACKAGES)
-     * and `builtin.collections.Collections` on demand
+     * and `builtin.types` in unconditionally (BUILTIN_PRELUDE_PACKAGES)
+     * and `builtin.collections.collections` on demand
      * (COLLECTIONS_PRELUDE_PACKAGE), and
      * specs/20260711/builtin-prelude-types/ plus
      * tests/compile-pass/packages/builtin_prelude_no_import.snova state the
@@ -64,11 +64,11 @@ void sn_resolver_build_prelude(SnResolver *r) {
      * is unchanged either way.
      *
      * Free functions are NOT folded in: `parseInt` lives in
-     * `builtin.strings.Strings`, which no prelude list names, so calling it
+     * `builtin.strings.strings`, which no prelude list names, so calling it
      * without an import stays an error. */
     add_package_types_to_prelude(r, SN_PRELUDE_PACKAGE);
     add_package_types_to_prelude(r, "builtin.datetime.DateTime");
-    add_package_types_to_prelude(r, "builtin.collections.Collections");
+    add_package_types_to_prelude(r, "builtin.collections.collections");
 
     /* Option/Result additionally publish their VARIANTS into the prelude. */
     SnScope *types_pkg =

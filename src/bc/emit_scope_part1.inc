@@ -247,6 +247,28 @@ static int emit_method_call(Compiler *c, const SnExpr *e) {
     if (!callee || callee->kind != SN_EXPR_MEMBER || !callee->text || !callee->lhs) {
         return 0;
     }
+    if (callee->lhs->kind == SN_EXPR_IDENT && callee->lhs->text) {
+        uint32_t runtime_call = 0;
+        if (strcmp(callee->lhs->text, "Runtime") == 0) {
+            if (strcmp(callee->text, "readLine") == 0) runtime_call = SN_RUNTIME_CALL_READ_LINE;
+            else if (strcmp(callee->text, "fileExists") == 0) runtime_call = SN_RUNTIME_CALL_FILE_EXISTS;
+            else if (strcmp(callee->text, "readText") == 0) runtime_call = SN_RUNTIME_CALL_READ_TEXT;
+            else if (strcmp(callee->text, "writeText") == 0) runtime_call = SN_RUNTIME_CALL_WRITE_TEXT;
+            else if (strcmp(callee->text, "environment") == 0) runtime_call = SN_RUNTIME_CALL_ENVIRONMENT;
+            else if (strcmp(callee->text, "argumentCount") == 0) runtime_call = SN_RUNTIME_CALL_ARGUMENT_COUNT;
+            else if (strcmp(callee->text, "argument") == 0) runtime_call = SN_RUNTIME_CALL_ARGUMENT;
+        }
+        if (runtime_call) {
+            for (size_t i = 0; i < e->args.len; i++) {
+                eb_compile_expr(c, SN_LIST_AT(e->args, SnExpr, i));
+            }
+            eb_emit_byte(c, OP_RUNTIME_API, e->span.line);
+            eb_emit_u32(c, runtime_call, e->span.line);
+            eb_emit_u32(c, (uint32_t)e->args.len, e->span.line);
+            c->expr_type_name = NULL;
+            return 1;
+        }
+    }
     if (strcmp(callee->text, "printline") == 0 || strcmp(callee->text, "println") == 0 ||
         strcmp(callee->text, "print") == 0 || strcmp(callee->text, "len") == 0 ||
         strcmp(callee->text, "length") == 0 || strcmp(callee->text, "push") == 0 ||

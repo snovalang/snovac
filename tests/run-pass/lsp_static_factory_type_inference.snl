@@ -1,7 +1,7 @@
 package tests.run_pass.lsp_static_factory_type_inference
 
 
-import builtin.console.Console
+import builtin.console.console
 
 
 // Smoke test: `inferExpressionType` (compiler/src/lsp/source_facts.snl) must infer

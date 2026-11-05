@@ -1,0 +1,28 @@
+package builtin.console.console
+
+import builtin.runtime.runtime
+
+class Console {
+    public static method readLine(): string {
+        return Runtime.readLine()
+    }
+
+    public static method log<T>(value: T): unit {
+        Console.printline(value)
+    }
+
+    @Native
+    public static method print(value: any): unit
+
+    @Native
+    public static method printline(value: any): unit
+
+    @Native
+    public static method println(value: any): unit
+
+    @Native
+    public static method err(value: any): unit
+
+    @Native
+    public static method warn(value: any): unit
+}

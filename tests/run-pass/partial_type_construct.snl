@@ -1,7 +1,7 @@
 package tests.run_pass.partial_type_construct
 
 
-import builtin.console.Console
+import builtin.console.console
 
 
 // Smoke test: constructing a `Partial<User>` and reading one of its real

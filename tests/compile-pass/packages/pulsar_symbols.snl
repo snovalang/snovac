@@ -1,9 +1,9 @@
 package tests.packages.pulsar_symbols
 
 
-import builtin.channels.Channels
+import builtin.channels.channels
 import builtin.pulsars.Pulsars
-import builtin.console.Console
+import builtin.console.console
 
 
 pulsar func streamRange(max: int) ~> Channel<int> {

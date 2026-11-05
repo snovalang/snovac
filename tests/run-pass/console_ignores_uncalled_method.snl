@@ -1,7 +1,7 @@
 package tests.run_pass.console_ignores_uncalled_method
 
 
-import builtin.console.Console
+import builtin.console.console
 
 
 class Logger {
