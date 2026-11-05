@@ -1,6 +1,8 @@
 /* borrow_flow.c — bindings, branches, and loops. */
 #include "borrow_int.h"
 
+#include <string.h>
+
 void sn_borrow_bind(SnBorrowCx *cx, const char *name, int mut, SnExpr *init) {
     SnTypeRep *ty = init ? init->resolved_type : NULL;
     int vi = sn_borrow_define(cx, name, ty, mut, init);
@@ -45,34 +47,52 @@ void sn_borrow_if(SnBorrowCx *cx, SnStmt *s) {
     int ne = 0;
     int narrowed = null_test(s->expr, &nm, &ne);
     sn_borrow_expr(cx, s->expr, SN_BORROW_USE_READ);
-    int moved[SN_BORROW_MAX];
     int n = cx->nv;
-    for (int i = 0; i < n; i++) {
-        moved[i] = cx->vars[i].moved;
-    }
+    SnBorrowVar before[SN_BORROW_MAX];
+    SnBorrowVar then_state[SN_BORROW_MAX];
+    memcpy(before, cx->vars, (size_t)n * sizeof(*before));
+    int hold_watermark = cx->nh;
     SnBorrowVar *v = narrowed ? sn_borrow_lookup(cx, nm) : NULL;
     int prev = v ? v->nonnull : 0;
     if (v && ne) {
         v->nonnull = 1;
     }
     sn_borrow_stmt(cx, s->then_br);
+    sn_borrow_pop_holds(cx, hold_watermark);
     if (v) {
         v->nonnull = prev;
     }
-    int then_moved[SN_BORROW_MAX];
     for (int i = 0; i < n; i++) {
-        then_moved[i] = cx->vars[i].moved;
-        cx->vars[i].moved = moved[i];
+        then_state[i] = cx->vars[i];
+        cx->vars[i] = before[i];
     }
     if (v && !ne) {
         v->nonnull = 1;
     }
     sn_borrow_stmt(cx, s->else_br);
+    sn_borrow_pop_holds(cx, hold_watermark);
     if (v) {
         v->nonnull = prev;
     }
     for (int i = 0; i < n; i++) {
-        cx->vars[i].moved = then_moved[i] || cx->vars[i].moved;
+        SnBorrowVar else_state = cx->vars[i];
+        SnBorrowVar merged = else_state;
+        merged.moved = then_state[i].moved || else_state.moved;
+        merged.escapes = then_state[i].escapes || else_state.escapes;
+        merged.defer_hold = then_state[i].defer_hold || else_state.defer_hold;
+        merged.shared = then_state[i].shared > else_state.shared
+                            ? then_state[i].shared : else_state.shared;
+        merged.exclusive = then_state[i].exclusive || else_state.exclusive;
+        if (then_state[i].points != else_state.points ||
+            then_state[i].hold_excl != else_state.hold_excl) {
+            sn_borrow_fail(cx, SNOVA_BORROW_BRANCH,
+                           s->span,
+                           "reference is rebound to different places across branches");
+            merged.points = -1;
+            merged.hold_excl = 0;
+        }
+        merged.nonnull = before[i].nonnull;
+        cx->vars[i] = merged;
     }
 }
 
