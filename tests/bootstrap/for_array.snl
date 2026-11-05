@@ -1,0 +1,10 @@
+package tests.bootstrap.for_array
+
+func main(): int {
+    var s = 0
+    for n in [1, 2, 3] {
+        if n == 2 { continue }
+        s = s + n
+    }
+    return s
+}

@@ -1,0 +1,23 @@
+package tests.run_pass.own_defer_fail
+
+import builtin.console.Console
+
+func say(s: string): int {
+    Console.printline(s)
+    return 0
+}
+
+func boom(): int {
+    defer say("deferred-fail")
+    throw "x"
+    return 1
+}
+
+func main(): int {
+    try {
+        boom()
+    } catch {
+        say("caught")
+    }
+    return 0
+}

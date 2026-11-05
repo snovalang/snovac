@@ -1,0 +1,1 @@
+error[SNOVA0244]: mutable value `buf` shared with another task

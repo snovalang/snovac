@@ -1,0 +1,9 @@
+package tests.own_shared_task
+
+func main(): int {
+    let buf = [1, 2, 3]
+    pulsar {
+        let n = buf.len()
+    }
+    return 0
+}

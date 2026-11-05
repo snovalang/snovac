@@ -1,0 +1,1 @@
+error[SNOVA0241]: pointer outlives the value it borrows

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "python3 scripts/copilot_feature_gate.py start",
+        "powershell": "python scripts/copilot_feature_gate.py start",
+        "timeoutSec": 15
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "python3 scripts/copilot_feature_gate.py mark",
+        "powershell": "python scripts/copilot_feature_gate.py mark",
+        "timeoutSec": 15
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "python3 scripts/copilot_feature_gate.py stop",
+        "powershell": "python scripts/copilot_feature_gate.py stop",
+        "timeoutSec": 20
+      }
+    ]
+  }
+}

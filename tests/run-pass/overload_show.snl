@@ -1,0 +1,18 @@
+package tests.run_pass.overload_show
+
+import builtin.console.Console
+
+class Box {
+    method show(value: int): string {
+        return "int"
+    }
+    method show(value: string): string {
+        return "string"
+    }
+}
+
+func main(): int {
+    let b = Box()
+    Console.printline(b.show("hi"))
+    return 0
+}

@@ -1,0 +1,8 @@
+package tests.bootstrap.array_buf
+
+func main(): int {
+    var xs: int[] = []
+    xs.push(10)
+    xs.push(32)
+    return xs.get(0) + xs.len()
+}

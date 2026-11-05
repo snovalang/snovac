@@ -1,7 +1,0 @@
-package tests.import_names_file_extension
-
-import com.example.Helper.snova
-
-func main(): int {
-    return 0
-}

@@ -1,0 +1,1 @@
+error[SNOVA0247]: defer still uses this value on function exit

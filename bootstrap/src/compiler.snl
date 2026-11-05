@@ -1,0 +1,81 @@
+func write_image(src: int[], bg: Bags, cx: Cx, image: int[]): unit {
+    image.push(83)
+    image.push(78)
+    image.push(66)
+    image.push(67)
+    push_u32(image, 1)
+    push_u32(image, cx.main_idx)
+    push_u32(image, bg.pool_n.len())
+    var i = 0
+    while i < bg.pool_n.len() {
+        push_u32(image, bg.pool_n[i])
+        var j = 0
+        while j < bg.pool_n[i] {
+            image.push(bg.pool_b[bg.pool_s[i] + j])
+            j = j + 1
+        }
+        i = i + 1
+    }
+    push_u32(image, bg.fn_ns.len())
+    i = 0
+    while i < bg.fn_ns.len() {
+        scope_write_fn_name(src, bg, image, i)
+        push_u32(image, bg.fn_ar[i])
+        push_u32(image, bg.fn_loc[i])
+        push_u32(image, bg.fn_len[i])
+        var j = 0
+        while j < bg.fn_len[i] {
+            image.push(bg.allc[bg.fn_off[i] + j])
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+func compile_source(src: int[], image: int[]): int {
+    var bg = Bags {
+        tk: [], ts: [], tn: [], tv: [], tl: [],
+        nk: [], na: [], nb: [], nc: [], nd: [],
+        loc_slot: [], loc_ns: [], loc_nl: [], loc_ty: [],
+        fd_st: [], fd_ns: [], fd_nl: [], fd_ty: [],
+        st_ns: [], st_nl: [],
+        fn_ns: [], fn_nl: [], fn_ar: [], fn_body: [],
+        fn_off: [], fn_len: [], fn_loc: [],
+        par_fn: [], par_ns: [], par_nl: [], par_ty: [],
+        pool_b: [], pool_s: [], pool_n: [],
+        allc: [],
+        fn_own: [], fn_async: [], fn_pulsar: [],
+        st_kind: [], fd_init: [],
+        va_ns: [], va_nl: [], va_en: [],
+        lp_id: [], lp_known: [], lp_pos: [],
+        brk_at: [], brk_lv: [], cont_at: [], cont_lv: []
+    }
+    var cx = Cx {
+        pos: 0, failed: 0, locals: 0, water: 0, expr_ty: 0,
+        no_struct: 0, loc_base: 0, main_idx: 0,
+        owner: -1, seq: 1, decl_async: 0, decl_pulsar: 0, decl_owner: -1
+    }
+    lex_all(src, bg, cx)
+    if cx.failed != 0 { return 1 }
+    parse_file(src, bg, cx)
+    if cx.failed != 0 { return 1 }
+    if bg.fn_ns.len() == 0 {
+        return 1
+    }
+    emit_unit(src, bg, cx)
+    if cx.failed != 0 { return 1 }
+    if bg.fn_loc.len() != bg.fn_ns.len() { return 1 }
+    write_image(src, bg, cx, image)
+    return 0
+}
+
+func main(): int {
+    let src = read_bytes("in.snl")
+    var image: int[] = []
+    if compile_source(src, image) != 0 {
+        Console.printline("cannot compile in.snl")
+        return 1
+    }
+    write_bytes("out.snbc", image)
+    return 0
+}

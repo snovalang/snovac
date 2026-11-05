@@ -1,0 +1,7 @@
+package tests.bootstrap.bits
+
+func main(): int {
+    let x = (6 & 3) | (1 << 3)
+    let y = (x ^ 2) >> 1
+    return y
+}

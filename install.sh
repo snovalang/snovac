@@ -1,13 +1,52 @@
-#!/usr/bin/env bash
+#!/bin/sh
+# POSIX sh. Linux and macOS.
 set -e
 
 # ==============================================================================
-# Snovalang Compiler (snovac) Universal One-Line Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | bash
+# Snovalang toolchain installer. Installs or updates the `snl` command.
+#
+# With no arguments, installs snl when it is absent and updates it when the
+# command is already installed. Both paths download the latest release, or
+# clone this repository and build it, so an update does not need a manual
+# git pull and rebuild.
+#
+#   curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/snovalang/snovac/master/install.sh | sh -s -- --update
+#   sh install.sh
+#   sh install.sh --update
+#   sh install.sh update
 # ==============================================================================
 
 REPO="snovalang/snovac"
 INSTALL_DIR="${SNOVA_INSTALL_DIR:-$HOME/.snova/bin}"
+EXPLICIT=0
+
+usage() {
+    cat <<'EOF'
+Usage: install.sh [update|--update]
+
+With no arguments, installs snl when it is not already installed and updates
+it when it is. Pass update or --update to fetch the latest snl and replace
+the installed command.
+EOF
+}
+
+for arg in "$@"; do
+    case "$arg" in
+        update|--update)
+            EXPLICIT=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
 
 # Text formatting
 BOLD="$(tput bold 2>/dev/null || echo '')"
@@ -24,9 +63,20 @@ cat << "BANNER"
  \___ \| '_ \ / _ \ \ / / _` | '_ \ / _ \ '__| 
   ___) | | | | (_) \ V / (_| | | | |  __/ |    
  |____/|_| |_|\___/ \_/ \__,_|_| |_|\___|_|    
-           Snovalang Compiler (snovac)
+           Snovalang toolchain (snl)
 BANNER
 echo "${RESET}"
+
+ALREADY=0
+if [ -x "${INSTALL_DIR}/snl" ] || [ -x "${INSTALL_DIR}/snl.exe" ] || command -v snl >/dev/null 2>&1; then
+    ALREADY=1
+fi
+
+if [ "$ALREADY" -eq 1 ]; then
+    echo "${BOLD}==>${RESET} ${GREEN}snl${RESET} is already installed; updating it."
+else
+    echo "${BOLD}==>${RESET} Installing ${GREEN}snl${RESET}."
+fi
 
 # 1. Detect Operating System
 OS="$(uname -s)"
@@ -35,20 +85,38 @@ case "$OS" in
     Darwin*)    PLATFORM="darwin" ;;
     MINGW*|MSYS*|CYGWIN*|Windows_NT*)
         PLATFORM="windows"
+        # `command -v` only checks PATH. MSYS can see powershell.exe and
+        # still fail to exec it (EACCES). Probe before handing off so
+        # `set -e` does not abort the shell installer.
+        PSH=""
         if command -v powershell.exe >/dev/null 2>&1; then
+            PSH=$(command -v powershell.exe)
+        elif command -v pwsh >/dev/null 2>&1; then
+            PSH=$(command -v pwsh)
+        fi
+        if [ -n "$PSH" ] && [ -x "$PSH" ] && "$PSH" -NoProfile -NonInteractive -Command "exit 0" >/dev/null 2>&1; then
             echo "${CYAN}==> Windows environment detected. Invoking native Windows installer...${RESET}"
-            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
-            if [ -f "$SCRIPT_DIR/scripts/install_windows.ps1" ]; then
-                powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/scripts/install_windows.ps1"
-                exit 0
-            elif [ -f "$SCRIPT_DIR/install.ps1" ]; then
-                powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1"
-                exit 0
+            SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || SCRIPT_DIR="."
+            if [ -f "$SCRIPT_DIR/install.ps1" ]; then
+                if [ "$EXPLICIT" -eq 1 ]; then
+                    "$PSH" -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1" -Update && exit 0
+                else
+                    "$PSH" -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install.ps1" && exit 0
+                fi
+                exit $?
+            elif [ -f "$SCRIPT_DIR/scripts/install_windows.ps1" ]; then
+                "$PSH" -ExecutionPolicy Bypass -File "$SCRIPT_DIR/scripts/install_windows.ps1" && exit 0
+                exit $?
             else
-                powershell.exe -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex"
-                exit 0
+                if [ "$EXPLICIT" -eq 1 ]; then
+                    "$PSH" -ExecutionPolicy Bypass -Command "\$env:SNOVA_UPDATE='1'; irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex" && exit 0
+                else
+                    "$PSH" -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/${REPO}/master/install.ps1 | iex" && exit 0
+                fi
+                exit $?
             fi
         fi
+        echo "${BOLD}==>${RESET} PowerShell is not available in this shell. Continuing here."
         ;;
     *)
         echo "${RED}Error: Unsupported Operating System: $OS${RESET}" >&2
@@ -67,11 +135,31 @@ case "$ARCH" in
         ;;
 esac
 
-TARBALL="snovac-${PLATFORM}-${ARCH_NAME}.tar.gz"
-DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${TARBALL}"
+# The release workflow publishes a zip for Windows and a tar.gz elsewhere.
+if [ "$PLATFORM" = "windows" ]; then
+    ARCHIVE="snovac-${PLATFORM}-${ARCH_NAME}.zip"
+else
+    ARCHIVE="snovac-${PLATFORM}-${ARCH_NAME}.tar.gz"
+fi
+DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${ARCHIVE}"
+
+# Feature-test macros for the host that compiles snl. A missing release
+# builds from source, and these flags override the Makefile default so a
+# Darwin host does not compile as Linux, and Windows does not inherit
+# Darwin macros.
+case "$PLATFORM" in
+    darwin)
+        BUILD_CPPFLAGS='-D_DARWIN_C_SOURCE'
+        ;;
+    linux)
+        BUILD_CPPFLAGS='-D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE'
+        ;;
+    windows)
+        BUILD_CPPFLAGS='-DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0601'
+        ;;
+esac
 
 echo "${BOLD}==>${RESET} Detected target: ${GREEN}${PLATFORM}-${ARCH_NAME}${RESET}"
-echo "${BOLD}==>${RESET} Downloading ${CYAN}${TARBALL}${RESET} from ${REPO}..."
 
 TMP_DIR="$(mktemp -d)"
 cleanup() {
@@ -79,41 +167,114 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 3. Download release binary
+compile_from_source() {
+    echo "${BOLD}==>${RESET} Building ${GREEN}snl${RESET} from source."
+    if ! command -v git >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then
+        return 1
+    fi
+    git clone --depth 1 --quiet "https://github.com/${REPO}.git" "$TMP_DIR/snovac-src" || return 1
+    # Quiet recipes. On Windows, force the Winsock link even when MSYS make
+    # has cleared the OS environment variable. CPPFLAGS selects the host
+    # feature-test macros (Darwin, Linux, or Windows).
+    if [ "$PLATFORM" = "windows" ]; then
+        make -s -C "$TMP_DIR/snovac-src" OS=Windows_NT EXTRA_LIBS="-lws2_32" \
+            CPPFLAGS="$BUILD_CPPFLAGS" build/snl.exe build/libsnovart.a || return 1
+    else
+        make -s -C "$TMP_DIR/snovac-src" CPPFLAGS="$BUILD_CPPFLAGS" \
+            build/snl build/libsnovart.a || return 1
+    fi
+    mkdir -p "$TMP_DIR/extracted"
+    if [ -f "$TMP_DIR/snovac-src/build/snl.exe" ]; then
+        cp "$TMP_DIR/snovac-src/build/snl.exe" "$TMP_DIR/extracted/snl.exe"
+    elif [ -f "$TMP_DIR/snovac-src/build/snl" ]; then
+        cp "$TMP_DIR/snovac-src/build/snl" "$TMP_DIR/extracted/snl"
+    else
+        cp "$TMP_DIR/snovac-src/build/snovac" "$TMP_DIR/extracted/snl"
+    fi
+}
+
+# 3. Download the release archive when it exists. A missing asset is not
+# an error: curl and wget stay quiet, and the script builds from source.
+# `-fsSL` would still print the 404 because `-S` is `--show-error`.
+fetched=0
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$TARBALL" || {
-        echo "${YELLOW}Release tarball not found yet on latest release. Attempting source compile fallback...${RESET}"
-        if command -v git >/dev/null 2>&1 && command -v make >/dev/null 2>&1 && command -v cc >/dev/null 2>&1; then
-            git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_DIR/snovac-src"
-            make -C "$TMP_DIR/snovac-src"
-            mkdir -p "$TMP_DIR/extracted"
-            cp "$TMP_DIR/snovac-src/build/snovac" "$TMP_DIR/extracted/snovac"
-        else
-            echo "${RED}Failed to download binary from $DOWNLOAD_URL${RESET}" >&2
-            exit 1
-        fi
-    }
+    if curl -fsL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE" 2>/dev/null; then
+        fetched=1
+    fi
 elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$TMP_DIR/$TARBALL" "$DOWNLOAD_URL" || {
-        echo "${RED}Failed to download binary using wget${RESET}" >&2
-        exit 1
-    }
+    if wget -qO "$TMP_DIR/$ARCHIVE" "$DOWNLOAD_URL" 2>/dev/null; then
+        fetched=1
+    fi
 else
-    echo "${RED}Error: curl or wget is required to install snovac.${RESET}" >&2
+    echo "${RED}Error: curl or wget is required to install snl.${RESET}" >&2
     exit 1
 fi
 
-if [ -f "$TMP_DIR/$TARBALL" ]; then
-    mkdir -p "$TMP_DIR/extracted"
-    tar -xzf "$TMP_DIR/$TARBALL" -C "$TMP_DIR/extracted"
+if [ "$fetched" -eq 1 ]; then
+    echo "${BOLD}==>${RESET} Downloaded ${CYAN}${ARCHIVE}${RESET}."
+else
+    rm -f "$TMP_DIR/$ARCHIVE"
+    compile_from_source || {
+        echo "${RED}Failed to install snl for ${PLATFORM}-${ARCH_NAME}.${RESET}" >&2
+        exit 1
+    }
 fi
 
-# 4. Install binary
-mkdir -p "$INSTALL_DIR"
-cp -f "$TMP_DIR/extracted/snovac" "$INSTALL_DIR/snovac"
-chmod +x "$INSTALL_DIR/snovac"
+if [ -f "$TMP_DIR/$ARCHIVE" ]; then
+    mkdir -p "$TMP_DIR/extracted"
+    case "$ARCHIVE" in
+        *.zip)
+            if command -v unzip >/dev/null 2>&1; then
+                unzip -q "$TMP_DIR/$ARCHIVE" -d "$TMP_DIR/extracted"
+            else
+                tar -xf "$TMP_DIR/$ARCHIVE" -C "$TMP_DIR/extracted"
+            fi
+            ;;
+        *)
+            tar -xzf "$TMP_DIR/$ARCHIVE" -C "$TMP_DIR/extracted"
+            ;;
+    esac
+fi
 
-echo "${GREEN}${BOLD}✓ Installed snovac binary into ${INSTALL_DIR}/snovac${RESET}"
+# Release archives named the binary `snovac` before the `snl` command rename.
+if [ -f "$TMP_DIR/extracted/snovac" ] && [ ! -f "$TMP_DIR/extracted/snl" ]; then
+    mv "$TMP_DIR/extracted/snovac" "$TMP_DIR/extracted/snl"
+fi
+if [ -f "$TMP_DIR/extracted/snovac.exe" ] && [ ! -f "$TMP_DIR/extracted/snl.exe" ]; then
+    mv "$TMP_DIR/extracted/snovac.exe" "$TMP_DIR/extracted/snl.exe"
+fi
+
+BIN_SRC=""
+if [ -f "$TMP_DIR/extracted/snl.exe" ]; then
+    BIN_SRC="$TMP_DIR/extracted/snl.exe"
+elif [ -f "$TMP_DIR/extracted/bin/snl.exe" ]; then
+    BIN_SRC="$TMP_DIR/extracted/bin/snl.exe"
+elif [ -f "$TMP_DIR/extracted/snl" ]; then
+    BIN_SRC="$TMP_DIR/extracted/snl"
+elif [ -f "$TMP_DIR/extracted/snovac" ]; then
+    BIN_SRC="$TMP_DIR/extracted/snovac"
+fi
+
+if [ -z "$BIN_SRC" ]; then
+    echo "${RED}Error: installer did not produce an snl binary.${RESET}" >&2
+    exit 1
+fi
+
+# 4. Install binary. Windows needs the .exe suffix so PATHEXT can find it.
+mkdir -p "$INSTALL_DIR"
+if [ "$PLATFORM" = "windows" ]; then
+    DEST="${INSTALL_DIR}/snl.exe"
+else
+    DEST="${INSTALL_DIR}/snl"
+fi
+cp -f "$BIN_SRC" "$DEST"
+chmod +x "$DEST"
+
+if [ "$ALREADY" -eq 1 ]; then
+    echo "${GREEN}${BOLD}Updated snl binary at ${DEST}${RESET}"
+else
+    echo "${GREEN}${BOLD}Installed snl binary into ${DEST}${RESET}"
+fi
 
 # 5. Check and configure PATH
 SHELL_CONFIG=""
@@ -126,17 +287,25 @@ esac
 
 PATH_STR="export PATH=\"\$PATH:${INSTALL_DIR}\""
 
-if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
-    if [ -f "$SHELL_CONFIG" ]; then
-        if ! grep -q "${INSTALL_DIR}" "$SHELL_CONFIG"; then
-            echo "" >> "$SHELL_CONFIG"
-            echo "# Snovalang Compiler" >> "$SHELL_CONFIG"
-            echo "$PATH_STR" >> "$SHELL_CONFIG"
-            echo "${YELLOW}Added ${INSTALL_DIR} to PATH in ${SHELL_CONFIG}${RESET}"
+case ":${PATH}:" in
+    *":${INSTALL_DIR}:"*)
+        ;;
+    *)
+        if [ -f "$SHELL_CONFIG" ]; then
+            if ! grep -q "${INSTALL_DIR}" "$SHELL_CONFIG"; then
+                echo "" >> "$SHELL_CONFIG"
+                echo "# Snovalang Compiler" >> "$SHELL_CONFIG"
+                echo "$PATH_STR" >> "$SHELL_CONFIG"
+                echo "${YELLOW}Added ${INSTALL_DIR} to PATH in ${SHELL_CONFIG}${RESET}"
+            fi
         fi
-    fi
-fi
+        ;;
+esac
 
 echo ""
-echo "${GREEN}${BOLD}Snovalang Compiler (snovac) was successfully installed!${RESET}"
-echo "Run '${CYAN}snovac --help${RESET}' to get started."
+if [ "$ALREADY" -eq 1 ]; then
+    echo "${GREEN}${BOLD}Snovalang toolchain (snl) was successfully updated!${RESET}"
+else
+    echo "${GREEN}${BOLD}Snovalang toolchain (snl) was successfully installed!${RESET}"
+fi
+echo "Run '${CYAN}snl --help${RESET}' to get started."

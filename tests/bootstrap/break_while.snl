@@ -1,0 +1,10 @@
+package tests.bootstrap.break_while
+
+func main(): int {
+    var i = 0
+    while i < 10 {
+        if i == 3 { break }
+        i = i + 1
+    }
+    return i
+}

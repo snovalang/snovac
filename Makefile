@@ -1,107 +1,126 @@
-# snovac — Snovalang compiler, C11, no cargo.
+# snovac — Snovalang compiler, C11.
 #
-# Standalone on purpose: the repo-root Makefile still wraps `cargo xtask` for
-# the Rust Stage 0, which snovac replaces only at phase P7 (see
-# specs/20260719/snovac-c-toolchain/plan.md). Until then the two build systems
-# coexist and neither depends on the other.
+# Namespaces are directories under src/ plus an identifier prefix:
+#   src/base     sn_arena_  sn_diag_  sn_intern_
+#   src/lex      sn_lex_    sn_tok_
+#   src/parse    sn_parse_
+#   src/ast      sn_list_   sn_dump_
+#   src/sema     sn_scope_  sn_pkggraph_  sn_type_  sn_resolve_
+#                sn_builtin_  sn_check_  sn_borrow_
+#   src/eval     sn_eval_  sn_rt_  sn_async_  sn_pulsar_  sn_socket_
+#   src/bc       sn_chunk_  sn_bcunit_  sn_emit_
+#   src/native   sn_native_  sn_target_
+#   src/driver   sn_driver_  sn_project_  sn_cmd_
+#
+# `make compdb` writes compile_commands.json for clangd from the flags below.
+# compile_flags.txt is the Darwin fallback used before `make compdb`.
+# CPPFLAGS itself is chosen from the host: Windows, Darwin, or Linux.
 
 CC      ?= cc
 CFLAGS  ?= -std=c11 -O2 -g -pthread
-CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE -I. -Ibuiltin -Idriver -Ifrontend/lexer -Ifrontend/parser -Ifrontend/ast -Isemantic -Ibackend/native -Iruntime -Iruntime/concurrency -Iruntime/bytecode -Iruntime/value -Iruntime/eval
 WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes \
-           -Wmissing-prototypes -Wconversion -Wno-sign-conversion
+           -Wmissing-prototypes -Wconversion -Wno-sign-conversion \
+           -Wno-format-truncation
+INCLUDES = -Isrc/base -Isrc/lex -Isrc/parse -Isrc/ast -Isrc/sema \
+           -Isrc/eval -Isrc/bc -Isrc/native -Isrc/driver
 BUILD   ?= build
 
-# OS detection for `install`/`uninstall`: native Windows `make` (and
-# MSYS2/Git Bash, which still inherit OS=Windows_NT from the environment)
-# need a .exe suffix and a PowerShell-based PATH setup instead of the
-# POSIX shell one used for Linux/macOS.
+# Windows needs snl.exe and Winsock (-lws2_32). MSYS make removes the OS
+# environment variable, so a MinGW cc is also detected from uname and
+# `cc -dumpmachine`. Otherwise socket_abi.c fails at link with
+# __imp_inet_addr / __imp_closesocket.
+UNAME_S := $(shell uname -s 2>/dev/null)
+CC_MACHINE := $(shell $(CC) -dumpmachine 2>/dev/null)
+WINDOWS_HOST :=
 ifeq ($(OS),Windows_NT)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring MINGW,$(UNAME_S)),)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring MSYS,$(UNAME_S)),)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring CYGWIN,$(UNAME_S)),)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring mingw,$(CC_MACHINE)),)
+  WINDOWS_HOST := 1
+endif
+ifneq ($(findstring cygwin,$(CC_MACHINE)),)
+  WINDOWS_HOST := 1
+endif
+ifeq ($(WINDOWS_HOST),1)
   EXE := .exe
   EXTRA_LIBS := -lws2_32
+  # Vista+ Win32 API. Do not define Darwin or glibc feature macros here.
+  CPPFLAGS ?= -DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0601
+else ifeq ($(UNAME_S),Darwin)
+  EXE :=
+  EXTRA_LIBS := -lpthread
+  # Full Darwin namespace. _POSIX_C_SOURCE alone hides Apple prototypes.
+  CPPFLAGS ?= -D_DARWIN_C_SOURCE
 else
   EXE :=
   EXTRA_LIBS := -lpthread
+  # POSIX.1-2008 plus the glibc default feature set (Linux and the BSDs).
+  CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
 endif
 
-BIN      = $(BUILD)/sncli$(EXE)
+BIN      = $(BUILD)/snl$(EXE)
 
-CLI_SRCS = driver/main.c driver/cmd_check.c driver/cmd_lex_parse.c driver/cmd_run.c \
-           driver/cmd_build.c driver/cmd_tidy.c driver/cmd_tidy_discovery.c driver/cmd_get.c
-DRIVER_COMMON_SRCS = driver/driver_utils.c driver/exe_path.c driver/path_utils.c driver/project.c
-BACKEND_SRCS = target.c backend/native/link_append.c backend/native/native_backend.c backend/native/native_backend_bytecode.c \
-               backend/native/native_backend_vm_source.c backend/native/native_backend_vm_values.c
-FRONTEND_SRCS = frontend/ast/dump.c frontend/ast/ast.c \
-                frontend/lexer/lex.c frontend/lexer/lex_token.c frontend/lexer/lex_literal.c \
-                frontend/parser/parse.c frontend/parser/parse_type.c frontend/parser/parse_expr.c \
-                frontend/parser/parse_postfix.c frontend/parser/parse_primary.c frontend/parser/parse_stmt.c \
-                frontend/parser/parse_decl.c frontend/parser/parse_decl_helpers.c frontend/parser/parse_decl_parts.c
-SEMANTIC_SRCS = semantic/symbol.c semantic/package.c semantic/package_scan_header.c \
-                semantic/package_scan_section.c semantic/package_scan.c semantic/package_link.c \
-                semantic/types.c semantic/resolve.c semantic/resolve_scopes.c \
-                semantic/resolve_collect_helpers.c semantic/resolve_prelude.c semantic/resolve_names.c \
-                semantic/resolve_member_path.c semantic/check_types.c semantic/check_symbols.c \
-                semantic/check_symbol_resolution.c semantic/check_operators.c semantic/check_calls.c \
-                semantic/check_expr_calls.c semantic/check_expr_control.c semantic/check_match.c \
-                semantic/check.c semantic/check_ownership.c semantic/check_stmt.c semantic/check_control_stmt.c \
-                semantic/check_decl.c semantic/check_flow.c
-RUNTIME_SRCS = runtime/concurrency/pulsar.c runtime/concurrency/async.c \
-               runtime/eval/eval.c runtime/eval/eval_run.c \
-               runtime/eval/eval_lookup.c \
-               runtime/eval/eval_env.c runtime/eval/eval_region.c \
-               runtime/eval/eval_values.c runtime/eval/eval_equal.c \
-               runtime/eval/eval_graph.c \
-               runtime/eval/eval_objects.c runtime/eval/eval_expr.c runtime/eval/eval_operators.c \
-               runtime/eval/eval_calls.c runtime/eval/eval_array_methods.c \
-               runtime/eval/eval_string_variant_methods.c runtime/eval/eval_stmt.c \
-               runtime/eval/eval_string.c runtime/socket_abi.c runtime/native_dispatch.c \
-               runtime/bytecode/snbc.c runtime/bytecode/snbc_io.c \
-               runtime/value/value.c runtime/value/value_graph.c \
-               runtime/value/value_objects.c runtime/value/value_equal.c \
-               runtime/value/value_format.c runtime/bytecode/vm.c \
-               runtime/bytecode/vm_stack.c runtime/bytecode/vm_numeric.c runtime/bytecode/vm_composite.c \
-               runtime/bytecode/emit_bc.c runtime/bytecode/emit_bc_expr.c \
-               runtime/bytecode/emit_bc_stmt.c runtime/bytecode/emit_bc_jump.c \
-               runtime/bytecode/emit_bc_literals.c
-BUILTIN_SRCS = builtin/builtins.c
-CORE_SRCS = diag.c arena.c intern.c
-COMMON_SRCS = $(DRIVER_COMMON_SRCS) $(BACKEND_SRCS) $(FRONTEND_SRCS) $(SEMANTIC_SRCS) \
-              $(RUNTIME_SRCS) $(BUILTIN_SRCS) $(CORE_SRCS)
-SRCS = $(CLI_SRCS) $(COMMON_SRCS)
-OBJS = $(addprefix $(BUILD)/,$(SRCS:.c=.o))
+SRCS = src/driver/main.c src/driver/driver_utils.c src/driver/project.c \
+       src/driver/cmd_check.c src/driver/cmd_lex_parse.c src/driver/cmd_run.c \
+       src/driver/cmd_build.c src/driver/cmd_tidy.c src/driver/cmd_get.c \
+       src/driver/cmd_emit_snbc.c src/driver/cmd_run_snbc.c \
+       src/native/target.c src/native/native_backend.c src/native/native_scope.c \
+       src/eval/pulsar.c src/eval/async.c \
+       src/ast/dump.c src/ast/ast.c \
+       src/lex/lex.c src/lex/lex_token.c src/lex/lex_literal.c \
+       src/parse/parse.c src/parse/parse_type.c src/parse/parse_expr.c \
+       src/parse/parse_primary.c src/parse/parse_stmt.c \
+       src/parse/parse_decl.c src/parse/parse_decl_parts.c src/parse/parse_ptr.c \
+       src/eval/eval.c src/eval/eval_expr.c src/eval/eval_stmt.c \
+       src/eval/eval_string.c src/eval/rt_mem.c src/eval/rt_ptr.c src/eval/rt_defer.c \
+       src/eval/socket_abi.c src/eval/native_dispatch.c \
+       src/base/diag.c src/base/arena.c src/base/intern.c \
+       src/sema/symbol.c src/sema/package.c src/sema/types.c src/sema/resolve.c \
+       src/sema/builtins.c src/sema/check.c src/sema/check_ptr.c \
+       src/sema/borrow.c src/sema/borrow_expr.c src/sema/borrow_flow.c \
+       src/sema/borrow_task.c \
+       src/bc/snbc.c src/bc/emit_bc.c src/bc/emit_scope.c
+OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
 DEPS = $(OBJS:.o=.d)
 
 # intern.c/symbol.c/package.c/types.c have no CLI surface yet (P2.1/P2.2/P2.3)
 # — exercised directly by standalone C test binaries instead of through
 # $(BIN). See tests/test_symbol.c, tests/test_package.c, tests/test_types.c.
 TEST_SYMBOL_BIN = $(BUILD)/test_symbol$(EXE)
+TEST_SNBC_BIN = $(BUILD)/test_snbc$(EXE)
 TEST_PACKAGE_BIN = $(BUILD)/test_package$(EXE)
-TEST_PACKAGE_OBJS = $(BUILD)/driver/driver_utils.o $(BUILD)/driver/path_utils.o $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
-                     $(BUILD)/semantic/symbol.o $(BUILD)/semantic/package.o $(BUILD)/semantic/package_scan_header.o $(BUILD)/semantic/package_scan_section.o $(BUILD)/semantic/package_scan.o $(BUILD)/semantic/package_link.o $(BUILD)/frontend/ast/ast.o \
-                     $(BUILD)/frontend/lexer/lex.o $(BUILD)/frontend/lexer/lex_token.o $(BUILD)/frontend/lexer/lex_literal.o
+TEST_PACKAGE_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/diag.o $(BUILD)/base/intern.o \
+                     $(BUILD)/sema/symbol.o $(BUILD)/sema/package.o $(BUILD)/ast/ast.o \
+                     $(BUILD)/lex/lex.o $(BUILD)/lex/lex_token.o $(BUILD)/lex/lex_literal.o \
+                     $(BUILD)/driver/driver_utils.o
 TEST_TYPES_BIN = $(BUILD)/test_types$(EXE)
-TEST_TYPES_OBJS = $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/semantic/symbol.o \
-                   $(BUILD)/semantic/types.o
+TEST_TYPES_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/intern.o $(BUILD)/sema/symbol.o \
+                   $(BUILD)/sema/types.o $(BUILD)/sema/builtins.o
 TEST_RESOLVE_BIN = $(BUILD)/test_resolve$(EXE)
-TEST_RESOLVE_OBJS = $(BUILD)/driver/driver_utils.o $(BUILD)/driver/path_utils.o $(BUILD)/arena.o $(BUILD)/diag.o $(BUILD)/intern.o \
-                     $(BUILD)/semantic/symbol.o $(BUILD)/semantic/package.o $(BUILD)/semantic/package_scan_header.o $(BUILD)/semantic/package_scan_section.o $(BUILD)/semantic/package_scan.o $(BUILD)/semantic/package_link.o $(BUILD)/semantic/types.o \
-                     $(BUILD)/semantic/resolve.o $(BUILD)/semantic/resolve_scopes.o $(BUILD)/semantic/resolve_collect_helpers.o $(BUILD)/semantic/resolve_prelude.o $(BUILD)/semantic/resolve_names.o $(BUILD)/semantic/resolve_member_path.o $(BUILD)/frontend/ast/ast.o \
-                     $(BUILD)/frontend/lexer/lex.o $(BUILD)/frontend/lexer/lex_token.o $(BUILD)/frontend/lexer/lex_literal.o \
-                     $(BUILD)/frontend/parser/parse.o $(BUILD)/frontend/parser/parse_type.o $(BUILD)/frontend/parser/parse_expr.o $(BUILD)/frontend/parser/parse_postfix.o \
-                     $(BUILD)/frontend/parser/parse_primary.o $(BUILD)/frontend/parser/parse_stmt.o \
-                     $(BUILD)/frontend/parser/parse_decl.o $(BUILD)/frontend/parser/parse_decl_helpers.o $(BUILD)/frontend/parser/parse_decl_parts.o
+TEST_RESOLVE_OBJS = $(BUILD)/base/arena.o $(BUILD)/base/diag.o $(BUILD)/base/intern.o \
+                     $(BUILD)/sema/symbol.o $(BUILD)/sema/package.o $(BUILD)/sema/types.o \
+                     $(BUILD)/sema/builtins.o $(BUILD)/sema/resolve.o $(BUILD)/ast/ast.o \
+                     $(BUILD)/lex/lex.o $(BUILD)/lex/lex_token.o $(BUILD)/lex/lex_literal.o \
+                     $(BUILD)/parse/parse.o $(BUILD)/parse/parse_type.o $(BUILD)/parse/parse_expr.o \
+                     $(BUILD)/parse/parse_primary.o $(BUILD)/parse/parse_stmt.o \
+                     $(BUILD)/parse/parse_decl.o $(BUILD)/parse/parse_decl_parts.o \
+                     $(BUILD)/parse/parse_ptr.o $(BUILD)/driver/driver_utils.o
 TEST_CHECK_BIN = $(BUILD)/test_check$(EXE)
-TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/builtin/builtins.o $(BUILD)/semantic/check_types.o \
-                  $(BUILD)/semantic/check_symbols.o $(BUILD)/semantic/check_operators.o \
-                  $(BUILD)/semantic/check_symbol_resolution.o $(BUILD)/semantic/check_calls.o $(BUILD)/semantic/check.o \
-                  $(BUILD)/semantic/check_ownership.o \
-                  $(BUILD)/semantic/check_expr_calls.o $(BUILD)/semantic/check_expr_control.o \
-                  $(BUILD)/semantic/check_match.o \
-                  $(BUILD)/semantic/check_stmt.o $(BUILD)/semantic/check_control_stmt.o \
-                  $(BUILD)/semantic/check_decl.o $(BUILD)/semantic/check_flow.o
+TEST_CHECK_OBJS = $(TEST_RESOLVE_OBJS) $(BUILD)/sema/check.o \
+                  $(BUILD)/sema/check_ptr.o $(BUILD)/sema/borrow.o $(BUILD)/sema/borrow_expr.o \
+                  $(BUILD)/sema/borrow_flow.o $(BUILD)/sema/borrow_task.o
 
-RT_SRCS = $(COMMON_SRCS)
-RT_OBJS = $(addprefix $(BUILD)/,$(RT_SRCS:.c=.o))
+RT_SRCS = $(filter-out src/driver/main.c,$(SRCS))
+RT_OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(RT_SRCS))
 LIB_RT  = $(BUILD)/libsnovart.a
 
 # Default install prefix (~/.snova on Unix, %USERPROFILE%/.snova on Windows)
@@ -120,24 +139,24 @@ INCDIR  ?= $(PREFIX)/include
 STD_SRC_DIR := ../snova-std/src
 STD_INSTALL_DIR ?= $(HOME)/.snovalang/std/src
 
-.PHONY: all clean test unit conformance install uninstall installer-windows
+.PHONY: all clean test unit conformance install uninstall installer-windows compdb
 
-all: $(BIN) $(LIB_RT)
+all: $(BIN) $(LIB_RT) compile_commands.json
 
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(EXTRA_LIBS)
 ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Copy-Item '$@' '$(BUILD)/snovac$(EXE)' -Force"
 else
-	@cp $@ $(BUILD)/snovac$(EXE) 2>/dev/null || true
+	@cp $@ $(BUILD)/snovac$(EXE)
 endif
 
 $(LIB_RT): $(RT_OBJS)
 	ar rcs $@ $(RT_OBJS)
 
-# Installs the snovac binary into BINDIR, its runtime static lib + headers
-# (needed by `snovac build --runtime`, which shells out to $(CC) again at
-# run time) into LIBDIR/INCDIR, snova-std (if present) into
+# Installs the toolchain binary as `snl` into BINDIR, its runtime static lib
+# + headers (needed by `snl build --runtime`, which shells out to $(CC) again
+# at run time) into LIBDIR/INCDIR, snova-std (if present) into
 # STD_INSTALL_DIR, and wires BINDIR onto PATH for every common shell:
 #   - bash   (~/.bashrc and ~/.bash_profile)
 #   - zsh    (~/.zshrc)
@@ -149,10 +168,10 @@ ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install_windows.ps1 -Prefix "$(PREFIX)" -BinDir "$(BINDIR)" -LibDir "$(LIBDIR)" -IncDir "$(INCDIR)" -Bin "$(BIN)" -LibRt "$(LIB_RT)"
 else
 	@mkdir -p $(BINDIR) $(LIBDIR) $(INCDIR)
-	install -m 755 $(BIN) $(BINDIR)/snovac$(EXE)
-	@echo "✓ Installed snovac CLI to $(BINDIR)/snovac$(EXE)"
+	install -m 755 $(BIN) $(BINDIR)/snl$(EXE)
+	@echo "✓ Installed snl to $(BINDIR)/snl$(EXE)"
 	install -m 644 $(LIB_RT) $(LIBDIR)/libsnovart.a
-	install -m 644 *.h $(INCDIR)/
+	find src -name '*.h' -type f -exec install -m 644 {} $(INCDIR)/ \;
 	@echo "✓ Installed runtime lib + headers to $(LIBDIR), $(INCDIR)"
 	@if [ -d $(STD_SRC_DIR) ]; then \
 		mkdir -p "$(STD_INSTALL_DIR)"; \
@@ -166,10 +185,10 @@ uninstall:
 ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall_windows.ps1 -Prefix "$(PREFIX)" -BinDir "$(BINDIR)" -LibDir "$(LIBDIR)" -IncDir "$(INCDIR)"
 else
-	rm -f $(BINDIR)/snovac$(EXE)
+	rm -f $(BINDIR)/snl$(EXE) $(BINDIR)/snovac$(EXE) $(BINDIR)/sncli$(EXE)
 	rm -f $(LIBDIR)/libsnovart.a
-	rm -f $(addprefix $(INCDIR)/,$(notdir $(wildcard *.h)))
-	@echo "✓ Removed snovac from $(BINDIR)/snovac$(EXE) (and its runtime lib/headers)"
+	rm -f $(addprefix $(INCDIR)/,$(notdir $(shell find src -name '*.h' -type f)))
+	@echo "✓ Removed snl from $(BINDIR)/snl$(EXE) (and its runtime lib/headers)"
 	@echo "Note: PATH entries added by 'make install' in shell rc files /"
 	@echo "the PowerShell profile are left untouched; remove them manually if desired."
 	@echo "Note: snova-std installed to $(STD_INSTALL_DIR) is left untouched."
@@ -178,9 +197,13 @@ endif
 installer-windows: $(BIN) $(LIB_RT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File installer/windows/build_installer.ps1
 
-$(BUILD)/%.o: %.c | $(BUILD)
-	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -MMD -MP -c -o $@ $<
+$(BUILD)/%.o: src/%.c | $(BUILD)
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force -Path '$(subst /,\,$(dir $@))' | Out-Null"
+else
+	@mkdir -p $(dir $@)
+endif
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -MMD -MP -c -o $@ $<
 
 $(BUILD):
 ifeq ($(OS),Windows_NT)
@@ -189,43 +212,51 @@ else
 	mkdir -p $(BUILD)
 endif
 
-$(TEST_SYMBOL_BIN): tests/test_symbol.c $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/semantic/symbol.o | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_symbol.c \
-	    $(BUILD)/arena.o $(BUILD)/intern.o $(BUILD)/semantic/symbol.o
+$(TEST_SYMBOL_BIN): tests/test_symbol.c $(BUILD)/base/arena.o $(BUILD)/base/intern.o $(BUILD)/sema/symbol.o | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_symbol.c \
+	    $(BUILD)/base/arena.o $(BUILD)/base/intern.o $(BUILD)/sema/symbol.o
 
-$(TEST_PACKAGE_BIN): tests/test_package.c tests/test_package_corpus.c $(TEST_PACKAGE_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_package.c tests/test_package_corpus.c $(TEST_PACKAGE_OBJS)
+$(TEST_SNBC_BIN): tests/test_snbc.c $(BUILD)/bc/snbc.o | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_snbc.c \
+	    $(BUILD)/bc/snbc.o
 
-$(TEST_TYPES_BIN): tests/test_types.c $(TEST_TYPES_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_types.c $(TEST_TYPES_OBJS)
+$(TEST_PACKAGE_BIN): tests/test_package.c $(TEST_PACKAGE_OBJS) | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_package.c $(TEST_PACKAGE_OBJS)
 
-$(TEST_RESOLVE_BIN): tests/test_resolve.c $(TEST_RESOLVE_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_resolve.c $(TEST_RESOLVE_OBJS)
+$(TEST_TYPES_BIN): tests/test_types.c $(wildcard tests/test_types_part*.inc) $(TEST_TYPES_OBJS) | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_types.c $(TEST_TYPES_OBJS)
 
-$(TEST_CHECK_BIN): tests/test_check.c $(TEST_CHECK_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) -o $@ tests/test_check.c $(TEST_CHECK_OBJS)
+$(TEST_RESOLVE_BIN): tests/test_resolve.c $(wildcard tests/test_resolve_part*.inc) $(TEST_RESOLVE_OBJS) | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_resolve.c $(TEST_RESOLVE_OBJS)
+
+$(TEST_CHECK_BIN): tests/test_check.c $(wildcard tests/test_check_part*.inc) $(TEST_CHECK_OBJS) | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARN) $(INCLUDES) -o $@ tests/test_check.c $(TEST_CHECK_OBJS)
 
 # Assertions for the lexer decisions derived from the corpus, plus the
 # standalone symbol-table, package-graph, type-representation, resolver and
-# checker unit tests.
-unit: $(BIN) $(TEST_SYMBOL_BIN) $(TEST_PACKAGE_BIN) $(TEST_TYPES_BIN) $(TEST_RESOLVE_BIN) $(TEST_CHECK_BIN)
+# checker unit tests, plus the little-endian SnBC writer.
+unit: $(BIN) $(TEST_SYMBOL_BIN) $(TEST_PACKAGE_BIN) $(TEST_TYPES_BIN) $(TEST_RESOLVE_BIN) $(TEST_CHECK_BIN) $(TEST_SNBC_BIN)
 ifeq ($(OS),Windows_NT)
 	@$(TEST_SYMBOL_BIN)
 	@$(TEST_PACKAGE_BIN)
 	@$(TEST_TYPES_BIN)
 	@$(TEST_RESOLVE_BIN)
 	@$(TEST_CHECK_BIN)
-	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Get-Command sh -ErrorAction SilentlyContinue) { sh tests/run.sh $(BIN) } elseif (Test-Path 'C:\Program Files\Git\bin\sh.exe') { & 'C:\Program Files\Git\bin\sh.exe' tests/run.sh $(BIN) } else { Write-Host 'Note: tests/run.sh skipped (requires bash/sh shell)' }"
+	@$(TEST_SNBC_BIN)
+	@sh tests/run.sh $(BIN)
+	@sh tests/battery.sh $(BIN)
 else
 	@sh tests/run.sh $(BIN)
+	@sh tests/battery.sh $(BIN)
 	@./$(TEST_SYMBOL_BIN)
 	@./$(TEST_PACKAGE_BIN)
 	@./$(TEST_TYPES_BIN)
 	@./$(TEST_RESOLVE_BIN)
 	@./$(TEST_CHECK_BIN)
+	@./$(TEST_SNBC_BIN)
 endif
 
-# Lexes every .snova in the repository and reports coverage.
+# Lexes every .snl in the repository and reports coverage.
 conformance: $(BIN)
 	@sh scripts/snovac-conformance.sh $(BIN)
 
@@ -236,6 +267,16 @@ ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path '$(BUILD)') { Remove-Item -Path '$(BUILD)' -Recurse -Force }"
 else
 	rm -rf $(BUILD)
+endif
+	rm -f compile_commands.json
+
+compdb: compile_commands.json
+
+compile_commands.json: $(SRCS) tests/test_symbol.c tests/test_package.c tests/test_types.c tests/test_resolve.c tests/test_check.c tests/test_snbc.c scripts/gen_compile_commands.py
+ifeq ($(OS),Windows_NT)
+	@python scripts/gen_compile_commands.py "$(CURDIR)" "$(CC)" "$(CPPFLAGS)" "$(CFLAGS)" "$(WARN)" "$(INCLUDES)"
+else
+	@python3 scripts/gen_compile_commands.py "$(CURDIR)" "$(CC)" "$(CPPFLAGS)" "$(CFLAGS)" "$(WARN)" "$(INCLUDES)"
 endif
 
 -include $(DEPS)

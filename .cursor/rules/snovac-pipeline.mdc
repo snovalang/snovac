@@ -1,0 +1,23 @@
+---
+description: Namespaced snovac pipeline, prefixes, and which file owns syntax, types, pointers, async, and pulsar
+globs: src/**/*.c,src/**/*.h,Makefile
+alwaysApply: false
+---
+
+# snovac pipeline
+
+ISO C11 compiler. `make` builds `build/snl` (and copies `build/snovac`) plus `build/libsnovart.a`. Headers are included by basename. `Makefile` `INCLUDES` adds each `src/<namespace>` directory. Keep the identifier prefixes in the `Makefile` comment: `sn_arena_` / `sn_diag_` / `sn_intern_`, `sn_lex_` / `sn_tok_`, `sn_parse_`, `sn_list_` / `sn_dump_`, `sn_scope_` / `sn_pkggraph_` / `sn_type_` / `sn_resolve_` / `sn_builtin_` / `sn_check_` / `sn_borrow_`, `sn_eval_` / `sn_rt_` / `sn_async_` / `sn_pulsar_` / `sn_socket_`, `sn_chunk_` / `sn_bcunit_` / `sn_emit_`, `sn_native_` / `sn_target_`, `sn_driver_` / `sn_project_` / `sn_cmd_`.
+
+Phases, in order:
+
+1. `src/driver`: CLI. Source is `.snl`. Scripts are `.sns`. Manifests `mod.sns` and `snova.sns` are not compiled.
+2. `src/lex`: `sn_lex`. Keyword spellings live in `KEYWORDS[]` in `src/lex/lex_token.c`. Keywords are contextual: the parser demotes them to names where a name is expected. `SN_TOK_SHL` and `SN_TOK_SHR` are never lexed; the parser folds two adjacent `<` or `>` into one shift expression. `SN_TOK_COLONCOLON` exists so `::` can be diagnosed. It is not a language feature.
+3. `src/parse`: `sn_parse` recovers and still returns a partial `SnUnit`. `src/parse/parse_ptr.c` parses `&`, `*`, and `null`.
+4. `src/ast`: arena-allocated AST and dump.
+5. `src/sema`: packages, symbols, hash-consed types (`==` is type equality), resolve, check, borrow. `int`, `int64`, and `long` are the same width and distinct types. No implicit conversion. Narrowing is an error even with `as`. `char` is not an integer. `string` is a sequence of `char`. `SN_T_REF` stores the pointee in `ret`; `nargs == 1` means nullable `&T?`. `sn_check_ptr_unary`, `sn_ptr_peel`, and `sn_ptr_adapt_arg` record deref and reborrow on `SnExpr.adjust`. `sn_borrow_func` runs from the checker. Pulsar capture rules are in `src/sema/borrow_task.c` (`Send`, mutable capture). `await` is legal only in an `async` function or method. A function is not both `async` and `pulsar`. A pulsar function returns `unit`, `Channel<T>`, or `Select<T>`, and is launched with `pulsar`, not called directly.
+6. `src/eval`: `snl run` calls `sn_eval_run`, a tree walk. Pointers, frames, and `defer` are `src/eval/rt_ptr.c`, `rt_mem.c`, and `rt_defer.c`. No garbage collector. `src/eval/async.c` (`sn_async_loop_run`) and `src/eval/pulsar.c` (`sn_pulsar_pool_create`) are linked into `snl` and `libsnovart.a`. On this tree the tree walk does not call them. Do not delete them and do not describe a `vm.c` interpreter.
+7. `src/bc` and `src/native`: `snl build` typechecks, emits SnBC (`sn_emit_bytecode`), then `sn_native_compile` writes a C runner and invokes the host C compiler. That runner has its own pulsar work queue. `sn_bcunit_write_file` remains. Read-back and merge of bytecode units do not.
+
+`src/base` is the arena, diagnostics, and interner used by the phases above.
+
+Header comments in `src/lex/token.h` and `src/sema/resolve.h` record measurements against the corpus. Treat them as constraints. The sentence in `src/eval/eval.h` that calls async and pulsars a later phase is behind this tree: the files are present and linked.

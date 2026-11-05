@@ -1,7 +1,7 @@
 # install_path.ps1 — persist BinDir on PATH for PowerShell (and future
 # sessions via the User environment variable), on Windows.
 #
-# Called by `make install` (see Makefile) once the snovac binary has been
+# Called by `make install` (see Makefile) once the snl binary has been
 # copied into BinDir. Idempotent: re-running it after BinDir is already on
 # PATH is a no-op.
 
@@ -46,10 +46,10 @@ if (Test-Path -Path $PROFILE) {
 
 if (-not $profileContent -or ($profileContent -notlike "*$BinDir*")) {
     $exportLine = "if (`$env:Path.Split(';') -notcontains '$BinDir') { `$env:Path = '$BinDir;' + `$env:Path }"
-    Add-Content -Path $PROFILE -Value "`n# Added by snovac install (make install)`n$exportLine"
+    Add-Content -Path $PROFILE -Value "`n# Added by snl install (make install)`n$exportLine"
     Write-Host "Updated PowerShell profile: $PROFILE"
 }
 
 Write-Host ""
-Write-Host "snovac is now available in new PowerShell sessions."
+Write-Host "snl is now available in new PowerShell sessions."
 Write-Host "To use it in this session right away, it has already been added to `$env:Path."

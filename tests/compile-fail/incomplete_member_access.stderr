@@ -1,5 +1,5 @@
 error[SNOVA026]: Expected a member name after `.`; this member access is incomplete.
- --> tests/compile-fail/incomplete_member_access.snova:13:46
+ --> tests/compile-fail/incomplete_member_access.snl:13:46
    |
 13 |     Console.printline("Todo: " + jsonValue[0].)
    |                                              ^ expected a member name after `.`

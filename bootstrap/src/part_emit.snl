@@ -1,0 +1,366 @@
+func push_u32(code: int[], n: int): unit {
+    var x = n
+    var i = 0
+    while i < 4 {
+        code.push(x & 255)
+        x = x >> 8
+        i = i + 1
+    }
+}
+
+func push_i64(code: int[], n: int): unit {
+    var x = n
+    var i = 0
+    while i < 8 {
+        code.push(x & 255)
+        x = x >> 8
+        i = i + 1
+    }
+}
+
+func emit_jump(code: int[], op: int): int {
+    code.push(op)
+    let at = code.len()
+    push_u32(code, 0)
+    return at
+}
+
+func patch_at(code: int[], fat: int[], fb: int[], at: int): unit {
+    let off = code.len() - (at + 4)
+    var x = off
+    var i = 0
+    while i < 4 {
+        fat.push(at + i)
+        fb.push(x & 255)
+        x = x >> 8
+        i = i + 1
+    }
+}
+
+func byte_at(code: int[], fat: int[], fb: int[], i: int): int {
+    var j = fat.len() - 1
+    while j >= 0 {
+        if fat[j] == i { return fb[j] }
+        j = j - 1
+    }
+    return code[i]
+}
+
+func pool_eq(bg: Bags, idx: int, bytes: int[]): bool {
+    if bg.pool_n[idx] != bytes.len() { return false }
+    let s = bg.pool_s[idx]
+    var j = 0
+    while j < bytes.len() {
+        if bg.pool_b[s + j] != bytes[j] { return false }
+        j = j + 1
+    }
+    return true
+}
+
+func intern_bytes(bytes: int[], bg: Bags): int {
+    var i = 0
+    while i < bg.pool_n.len() {
+        if pool_eq(bg, i, bytes) { return i }
+        i = i + 1
+    }
+    let s = bg.pool_b.len()
+    var j = 0
+    while j < bytes.len() {
+        bg.pool_b.push(bytes[j])
+        j = j + 1
+    }
+    bg.pool_s.push(s)
+    bg.pool_n.push(bytes.len())
+    return bg.pool_n.len() - 1
+}
+
+func intern_span(src: int[], s: int, n: int, bg: Bags): int {
+    var tmp: int[] = []
+    var j = 0
+    while j < n {
+        tmp.push(src[s + j])
+        j = j + 1
+    }
+    return intern_bytes(tmp, bg)
+}
+
+func decode_string(src: int[], s: int, n: int, out: int[]): unit {
+    if n < 2 { return }
+    var i = s + 1
+    let end = s + n - 1
+    while i < end {
+        let c = src[i]
+        if c == 92 && i + 1 < end {
+            let e = src[i + 1]
+            var ch = e
+            if e == 110 { ch = 10 }
+            if e == 116 { ch = 9 }
+            if e == 114 { ch = 13 }
+            if e == 48 { ch = 0 }
+            if e == 92 { ch = 92 }
+            if e == 34 { ch = 34 }
+            out.push(ch)
+            i = i + 2
+        } else {
+            out.push(c)
+            i = i + 1
+        }
+    }
+}
+
+func cons_count(bg: Bags, c: int): int {
+    var n = 0
+    var cur = c
+    while cur >= 0 {
+        n = n + 1
+        cur = bg.nc[cur]
+    }
+    return n
+}
+
+func cons_first(bg: Bags, c: int): int {
+    var cur = c
+    var item = -1
+    while cur >= 0 {
+        item = bg.nb[cur]
+        cur = bg.nc[cur]
+    }
+    return item
+}
+
+func find_local(src: int[], bg: Bags, cx: Cx, s: int, n: int): int {
+    var seen: int[] = []
+    var i = bg.loc_slot.len() - 1
+    while i >= cx.loc_base {
+        let sl = bg.loc_slot[i]
+        if sl < cx.locals && has_int(seen, sl) {
+        } else {
+            if sl < cx.locals {
+                if span_eq(src, bg.loc_ns[i], bg.loc_nl[i], s, n) {
+                    return sl
+                }
+                seen.push(sl)
+            }
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+func local_type_of(bg: Bags, cx: Cx, slot: int): int {
+    var i = bg.loc_slot.len() - 1
+    while i >= cx.loc_base {
+        if bg.loc_slot[i] == slot { return bg.loc_ty[i] }
+        i = i - 1
+    }
+    return 0
+}
+
+func set_local_ty(bg: Bags, cx: Cx, slot: int, ty: int): unit {
+    var i = bg.loc_slot.len() - 1
+    while i >= cx.loc_base {
+        if bg.loc_slot[i] == slot {
+            bg.loc_slot.push(slot)
+            bg.loc_ns.push(bg.loc_ns[i])
+            bg.loc_nl.push(bg.loc_nl[i])
+            bg.loc_ty.push(ty)
+            return
+        }
+        i = i - 1
+    }
+}
+
+func add_local(bg: Bags, cx: Cx, ns: int, nl: int, ty: int): int {
+    if cx.locals >= 256 {
+        fail(cx)
+        return 0
+    }
+    let slot = cx.locals
+    cx.locals = cx.locals + 1
+    if cx.locals > cx.water {
+        cx.water = cx.locals
+    }
+    bg.loc_slot.push(slot)
+    bg.loc_ns.push(ns)
+    bg.loc_nl.push(nl)
+    bg.loc_ty.push(ty)
+    return slot
+}
+
+func find_func(src: int[], bg: Bags, s: int, n: int): int {
+    var i = 0
+    while i < bg.fn_ns.len() {
+        if bg.fn_own[i] < 0 {
+            if span_eq(src, bg.fn_ns[i], bg.fn_nl[i], s, n) { return i }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+func field_index(src: int[], bg: Bags, st: int, ns: int, nl: int): int {
+    var i = 0
+    var idx = 0
+    var found = -1
+    while i < bg.fd_st.len() {
+        if bg.fd_st[i] == st {
+            if found < 0 && span_eq(src, bg.fd_ns[i], bg.fd_nl[i], ns, nl) {
+                found = idx
+            }
+            idx = idx + 1
+        }
+        i = i + 1
+    }
+    return found
+}
+
+func field_type_at(src: int[], bg: Bags, st: int, ns: int, nl: int): int {
+    var i = 0
+    while i < bg.fd_st.len() {
+        if bg.fd_st[i] == st && span_eq(src, bg.fd_ns[i], bg.fd_nl[i], ns, nl) {
+            return bg.fd_ty[i]
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+func emit_forward(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], c: int, as_stmt: int): unit {
+    if cx.failed != 0 { return }
+    if c < 0 { return }
+    emit_forward(src, bg, cx, code, fat, fb, bg.nc[c], as_stmt)
+    if as_stmt == 1 {
+        emit_stmt(src, bg, cx, code, fat, fb, bg.nb[c])
+    } else {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[c])
+    }
+}
+
+func emit_and(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], lhs: int, rhs: int): unit {
+    emit_expr(src, bg, cx, code, fat, fb, lhs)
+    let j1 = emit_jump(code, 31)
+    emit_expr(src, bg, cx, code, fat, fb, rhs)
+    let j2 = emit_jump(code, 31)
+    code.push(4)
+    code.push(1)
+    let j3 = emit_jump(code, 30)
+    patch_at(code, fat, fb, j1)
+    patch_at(code, fat, fb, j2)
+    code.push(4)
+    code.push(0)
+    patch_at(code, fat, fb, j3)
+    cx.expr_ty = 0
+}
+
+func emit_or(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], lhs: int, rhs: int): unit {
+    emit_expr(src, bg, cx, code, fat, fb, lhs)
+    let j1 = emit_jump(code, 32)
+    emit_expr(src, bg, cx, code, fat, fb, rhs)
+    let j2 = emit_jump(code, 32)
+    code.push(4)
+    code.push(0)
+    let j3 = emit_jump(code, 30)
+    patch_at(code, fat, fb, j1)
+    patch_at(code, fat, fb, j2)
+    code.push(4)
+    code.push(1)
+    patch_at(code, fat, fb, j3)
+    cx.expr_ty = 0
+}
+
+func bin_op(op: int): int {
+    if op == 34 { return 12 }
+    if op == 35 { return 13 }
+    if op == 36 { return 14 }
+    if op == 37 { return 15 }
+    if op == 38 { return 16 }
+    if op == 39 { return 19 }
+    if op == 40 { return 20 }
+    if op == 41 { return 21 }
+    if op == 45 { return 22 }
+    if op == 46 { return 23 }
+    if op == 28 { return 24 }
+    if op == 29 { return 25 }
+    if op == 30 { return 26 }
+    if op == 31 { return 27 }
+    if op == 32 { return 28 }
+    if op == 33 { return 29 }
+    return -1
+}
+
+func emit_default(bg: Bags, code: int[], ty: int): unit {
+    if ty == -2 {
+        code.push(4)
+        code.push(0)
+        return
+    }
+    if ty == -3 {
+        var empty: int[] = []
+        let si = intern_bytes(empty, bg)
+        code.push(3)
+        push_u32(code, si)
+        return
+    }
+    code.push(1)
+    push_i64(code, 0)
+}
+
+func field_value(src: int[], bg: Bags, cons: int, ns: int, nl: int): int {
+    var found = -1
+    var c = cons
+    while c >= 0 {
+        let item = bg.nb[c]
+        if item >= 0 && bg.nk[item] == 14 {
+            if span_eq(src, bg.na[item], bg.nb[item], ns, nl) {
+                found = bg.nc[item]
+            }
+        }
+        c = bg.nc[c]
+    }
+    return found
+}
+
+func struct_fields_known(src: int[], bg: Bags, st: int, cons: int): bool {
+    var c = cons
+    var ok = 1
+    while c >= 0 {
+        let item = bg.nb[c]
+        if item < 0 || bg.nk[item] != 14 {
+            ok = 0
+        } else {
+            if field_index(src, bg, st, bg.na[item], bg.nb[item]) < 0 {
+                ok = 0
+            }
+        }
+        c = bg.nc[c]
+    }
+    if ok == 1 { return true }
+    return false
+}
+
+func name_print(src: int[], s: int, n: int): int {
+    if is_word(src, s, n, 9, 112, 114, 105, 110, 116, 108, 105, 110, 101, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 7, 112, 114, 105, 110, 116, 108, 110, 0, 0, 0, 0, 0) { return 1 }
+    if is_word(src, s, n, 5, 112, 114, 105, 110, 116, 0, 0, 0, 0, 0, 0, 0) { return 2 }
+    return 0
+}
+
+func emit_print(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], args: int, which: int): unit {
+    if cons_count(bg, args) == 0 {
+        var empty: int[] = []
+        let si = intern_bytes(empty, bg)
+        code.push(3)
+        push_u32(code, si)
+    } else {
+        emit_expr(src, bg, cx, code, fat, fb, cons_first(bg, args))
+    }
+    code.push(45)
+    if which == 2 {
+        code.push(0)
+    } else {
+        code.push(1)
+    }
+    code.push(5)
+    cx.expr_ty = 0
+}
+

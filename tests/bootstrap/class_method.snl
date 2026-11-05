@@ -1,0 +1,15 @@
+package tests.bootstrap.class_method
+
+class Box {
+    public var n: int
+
+    public method bump(): int {
+        n = n + 1
+        return n
+    }
+}
+
+func main(): int {
+    let b = Box(3)
+    return b.bump()
+}

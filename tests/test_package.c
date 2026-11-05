@@ -1,7 +1,7 @@
 /* test_package.c — package.c: discovery, linking, cycle detection.
  *
  * specs/20260719/snovac-p2-resolver-typechecker/plan.md §8 step 4 verification
- * ("corpus inteiro mapeado sem erro; ciclo sintético detectado"). Two parts:
+ * ("whole corpus mapped with no errors; synthetic cycle detected"). Two parts:
  *
  *   1. Synthetic fixtures written to a scratch directory under the OS tmp
  *      dir, covering discovery, multi-file packages, missing imports, real
@@ -33,10 +33,10 @@
 #define mkdir(dir, mode) _mkdir(dir)
 #endif
 
-#include "../arena.h"
-#include "../diag.h"
-#include "../intern.h"
-#include "../package.h"
+#include "arena.h"
+#include "diag.h"
+#include "intern.h"
+#include "package.h"
 
 #include "test_package_corpus.h"
 #include "test_package_helpers.h"
@@ -63,9 +63,9 @@ static void test_basic_discovery(SnInternTable *it, SnArena *a, const char *tmp)
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/basic", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "a1.snova", "package pkg.a\nimport pkg.b\n");
-    write_file(dir, "a2.snova", "package pkg.a\n");
-    write_file(dir, "b.snova", "package pkg.b\n");
+    write_file(dir, "a1.snl", "package pkg.a\nimport pkg.b\n");
+    write_file(dir, "a2.snl", "package pkg.a\n");
+    write_file(dir, "b.snl", "package pkg.b\n");
 
     SnDiagSink diag;
     sn_diag_init(&diag, "<test>", "", 0);
@@ -105,7 +105,7 @@ static void test_missing_import_target(SnInternTable *it, SnArena *a, const char
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/missing", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "x.snova", "package pkg.x\nimport pkg.does_not_exist\n");
+    write_file(dir, "x.snl", "package pkg.x\nimport pkg.does_not_exist\n");
 
     SnDiagSink diag;
     sn_diag_init(&diag, "<test>", "", 0);
@@ -121,9 +121,9 @@ static void test_cycle_detection(SnInternTable *it, SnArena *a, const char *tmp)
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/cycle", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "c1.snova", "package pkg.c1\nimport pkg.c2\n");
-    write_file(dir, "c2.snova", "package pkg.c2\nimport pkg.c3\n");
-    write_file(dir, "c3.snova", "package pkg.c3\nimport pkg.c1\n");
+    write_file(dir, "c1.snl", "package pkg.c1\nimport pkg.c2\n");
+    write_file(dir, "c2.snl", "package pkg.c2\nimport pkg.c3\n");
+    write_file(dir, "c3.snl", "package pkg.c3\nimport pkg.c1\n");
 
     SnDiagSink diag;
     sn_diag_init(&diag, "<test>", "", 0);
@@ -167,8 +167,8 @@ static void test_same_package_self_import_is_legal(SnInternTable *it, SnArena *a
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/selfimport", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "d1.snova", "package pkg.d\nimport pkg.d\n");
-    write_file(dir, "d2.snova", "package pkg.d\n");
+    write_file(dir, "d1.snl", "package pkg.d\nimport pkg.d\n");
+    write_file(dir, "d2.snl", "package pkg.d\n");
 
     SnDiagSink diag;
     sn_diag_init(&diag, "<test>", "", 0);
@@ -194,9 +194,9 @@ static void test_multi_section_file(SnInternTable *it, SnArena *a, const char *t
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/multisection", tmp);
     mkdir(dir, 0755);
-    /* Mirrors tests/compile-fail/visibility_internal_cross_package.snova:
+    /* Mirrors tests/compile-fail/visibility_internal_cross_package.snl:
      * two `package` sections in one physical file. */
-    write_file(dir, "e.snova",
+    write_file(dir, "e.snl",
                "package pkg.e1\n\nfunc providerFn(): int { return 1 }\n\n"
                "package pkg.e2\n\nfunc consumerFn(): int { return providerFn() }\n");
 
@@ -222,7 +222,7 @@ static void test_missing_package_decl(SnInternTable *it, SnArena *a, const char 
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/nopkg", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "f.snova", "import pkg.whatever\n");
+    write_file(dir, "f.snl", "import pkg.whatever\n");
 
     SnDiagSink diag;
     sn_diag_init(&diag, "<test>", "", 0);
@@ -239,8 +239,10 @@ static void test_sno_script_file(SnInternTable *it, SnArena *a, const char *tmp)
     char dir[1024];
     snprintf(dir, sizeof(dir), "%s/sno_script", tmp);
     mkdir(dir, 0755);
-    write_file(dir, "script.sno", "func runScript(): int { return 42; }\n");
-    write_file(dir, "mod.sno", "module test.mod\n");
+    write_file(dir, "script.sns", "func runScript(): int { return 42; }\n");
+    write_file(dir, "mod.sns", "module test.mod\n");
+    write_file(dir, "snova.sns", "module test.other\n");
+    write_file(dir, "old.sno", "func main(): int { return 1; }\n");
 
     SnDiagSink diag;
     sn_diag_init(&diag, "<test>", "", 0);
@@ -248,7 +250,7 @@ static void test_sno_script_file(SnInternTable *it, SnArena *a, const char *tmp)
     sn_pkggraph_init(&g, a, it, &diag);
     size_t found = sn_pkggraph_scan_root(&g, dir);
 
-    CHECK("sno-script: scans .sno and ignores mod.sno as source file", found == 1);
+    CHECK("sns-script: scans .sns and skips manifests and .sno", found == 1);
     CHECK("sno-script: reports no missing package diagnostic", diag.error_count == 0);
     CHECK("sno-script: assigned to main package", g.node_count == 1);
     CHECK("sno-script: main package node exists", sn_pkggraph_find(&g, sn_intern_cstr(it, "main")) != NULL);
@@ -257,14 +259,27 @@ static void test_sno_script_file(SnInternTable *it, SnArena *a, const char *tmp)
 /* ── real corpus (report-only, see the file header for why) ────────────── */
 
 
+static int scratch_dir(char *buf, size_t n, const char *leaf) {
+#if defined(_WIN32)
+    const char *root = getenv("TEMP");
+    if (root == NULL || root[0] == '\0') root = getenv("TMP");
+    if (root == NULL || root[0] == '\0') root = ".";
+    int wrote = snprintf(buf, n, "%s\\%s", root, leaf);
+#else
+    int wrote = snprintf(buf, n, "/tmp/%s", leaf);
+#endif
+    if (wrote < 0 || (size_t)wrote >= n) return 0;
+    return mkdtemp(buf) != NULL;
+}
+
 int main(void) {
     SnArena arena;
     sn_arena_init(&arena, 0);
     SnInternTable it;
     sn_intern_init(&it, &arena);
 
-    char tmp[] = "/tmp/snovac_pkg_test_XXXXXX";
-    if (!mkdtemp(tmp)) {
+    char tmp[1024];
+    if (!scratch_dir(tmp, sizeof(tmp), "snovac_pkg_test_XXXXXX")) {
         printf("FAIL setup: mkdtemp failed\n");
         return 1;
     }

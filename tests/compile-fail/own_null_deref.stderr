@@ -1,0 +1,1 @@
+error[SNOVA0245]: dereference of a nullable pointer without a null check

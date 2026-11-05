@@ -1,0 +1,179 @@
+package snova.compiler
+
+import builtin.console.Console
+
+// Snova compiler for the slice this file is written in.
+// bootstrap/src/join.sh concatenates the part_*.snl files with compiler.snl.
+//
+// It reads in.snl and writes canonical SnBC to out.snbc. The lowering matches
+// emit-snbc: source order of functions, local high-water, first-use string
+// pool, short-circuit jumps, and the const-unit epilogue. A program outside
+// the slice returns 1 and writes no image.
+//
+// Token kinds are internal. They are not SnBC opcodes.
+// 0 eof, 1 ident, 2 int, 3 string, 4 true, 5 false,
+// 6 package, 7 import, 8 struct, 9 func, 10 public, 11 let, 12 var,
+// 13 return, 14 if, 15 else, 16 while,
+// 17 ( 18 ) 19 { 20 } 21 [ 22 ] 23 : 24 ; 25 , 26 .
+// 27 = 28 == 29 != 30 < 31 <= 32 > 33 >=
+// 34 + 35 - 36 * 37 / 38 % 39 & 40 | 41 ^ 42 !
+// 43 && 44 || 45 << 46 >>
+
+struct Bags {
+    public var tk: int[]
+    public var ts: int[]
+    public var tn: int[]
+    public var tv: int[]
+    public var tl: int[]
+    public var nk: int[]
+    public var na: int[]
+    public var nb: int[]
+    public var nc: int[]
+    public var nd: int[]
+    public var loc_slot: int[]
+    public var loc_ns: int[]
+    public var loc_nl: int[]
+    public var loc_ty: int[]
+    public var fd_st: int[]
+    public var fd_ns: int[]
+    public var fd_nl: int[]
+    public var fd_ty: int[]
+    public var st_ns: int[]
+    public var st_nl: int[]
+    public var fn_ns: int[]
+    public var fn_nl: int[]
+    public var fn_ar: int[]
+    public var fn_body: int[]
+    public var fn_off: int[]
+    public var fn_len: int[]
+    public var fn_loc: int[]
+    public var par_fn: int[]
+    public var par_ns: int[]
+    public var par_nl: int[]
+    public var par_ty: int[]
+    public var pool_b: int[]
+    public var pool_s: int[]
+    public var pool_n: int[]
+    public var allc: int[]
+    public var fn_own: int[]
+    public var fn_async: int[]
+    public var fn_pulsar: int[]
+    public var st_kind: int[]
+    public var fd_init: int[]
+    public var va_ns: int[]
+    public var va_nl: int[]
+    public var va_en: int[]
+    public var lp_id: int[]
+    public var lp_known: int[]
+    public var lp_pos: int[]
+    public var brk_at: int[]
+    public var brk_lv: int[]
+    public var cont_at: int[]
+    public var cont_lv: int[]
+}
+
+struct Cx {
+    public var pos: int
+    public var failed: int
+    public var locals: int
+    public var water: int
+    public var expr_ty: int
+    public var no_struct: int
+    public var loc_base: int
+    public var main_idx: int
+    public var owner: int
+    public var seq: int
+    public var decl_async: int
+    public var decl_pulsar: int
+    public var decl_owner: int
+}
+
+struct Lex {
+    public var i: int
+    public var line: int
+}
+
+func fail(cx: Cx): unit {
+    cx.failed = 1
+}
+
+func is_space(c: int): bool {
+    if c == 32 { return true }
+    if c == 9 { return true }
+    if c == 10 { return true }
+    if c == 13 { return true }
+    return false
+}
+
+func is_digit(c: int): bool {
+    if c >= 48 && c <= 57 { return true }
+    return false
+}
+
+func is_ident_start(c: int): bool {
+    if c >= 65 && c <= 90 { return true }
+    if c >= 97 && c <= 122 { return true }
+    if c == 95 { return true }
+    return false
+}
+
+func is_ident_cont(c: int): bool {
+    if is_ident_start(c) { return true }
+    if is_digit(c) { return true }
+    return false
+}
+
+func is_word(src: int[], s: int, n: int, en: int, b0: int, b1: int, b2: int, b3: int, b4: int, b5: int, b6: int, b7: int, b8: int, b9: int, b10: int, b11: int): bool {
+    if n != en { return false }
+    if n > 0 && src[s] != b0 { return false }
+    if n > 1 && src[s + 1] != b1 { return false }
+    if n > 2 && src[s + 2] != b2 { return false }
+    if n > 3 && src[s + 3] != b3 { return false }
+    if n > 4 && src[s + 4] != b4 { return false }
+    if n > 5 && src[s + 5] != b5 { return false }
+    if n > 6 && src[s + 6] != b6 { return false }
+    if n > 7 && src[s + 7] != b7 { return false }
+    if n > 8 && src[s + 8] != b8 { return false }
+    if n > 9 && src[s + 9] != b9 { return false }
+    if n > 10 && src[s + 10] != b10 { return false }
+    if n > 11 && src[s + 11] != b11 { return false }
+    return true
+}
+
+func span_eq(src: int[], a: int, an: int, b: int, bn: int): bool {
+    if an != bn { return false }
+    var i = 0
+    while i < an {
+        if src[a + i] != src[b + i] { return false }
+        i = i + 1
+    }
+    return true
+}
+
+func has_int(xs: int[], v: int): bool {
+    var i = 0
+    while i < xs.len() {
+        if xs[i] == v { return true }
+        i = i + 1
+    }
+    return false
+}
+
+func push_tok(bg: Bags, k: int, s: int, n: int, v: int, line: int): unit {
+    bg.tk.push(k)
+    bg.ts.push(s)
+    bg.tn.push(n)
+    bg.tv.push(v)
+    bg.tl.push(line)
+}
+
+func node(bg: Bags, k: int, a: int, b: int, c: int, d: int): int {
+    let id = bg.nk.len()
+    bg.nk.push(k)
+    bg.na.push(a)
+    bg.nb.push(b)
+    bg.nc.push(c)
+    bg.nd.push(d)
+    return id
+}
+

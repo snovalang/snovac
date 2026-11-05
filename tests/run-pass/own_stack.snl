@@ -1,0 +1,12 @@
+package tests.run_pass.own_stack
+
+import builtin.console.Console
+
+func main(): int {
+    var box = [1, 2, 3]
+    let p = &box
+    let n = p[0]
+    Console.printline(heapAllocs())
+    Console.printline(n)
+    return 0
+}

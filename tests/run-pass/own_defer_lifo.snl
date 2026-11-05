@@ -1,0 +1,14 @@
+package tests.run_pass.own_defer_lifo
+
+import builtin.console.Console
+
+func say(s: string): int {
+    Console.printline(s)
+    return 0
+}
+
+func main(): int {
+    defer say("second")
+    defer say("first")
+    return 0
+}

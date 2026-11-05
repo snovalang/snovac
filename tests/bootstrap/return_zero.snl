@@ -1,0 +1,5 @@
+package tests.bootstrap.return_zero
+
+func main(): int {
+    return 0
+}

@@ -1,7 +1,7 @@
 #!/bin/sh
 # install_path.sh — persist BINDIR on PATH for bash, zsh and fish.
 #
-# Called by `make install` (see Makefile) once the snovac binary has been
+# Called by `make install` (see Makefile) once the snl binary has been
 # copied into BINDIR. Idempotent: re-running it after BINDIR is already on
 # PATH in a given rc file is a no-op for that file.
 
@@ -22,7 +22,7 @@ add_line_if_missing() {
     fi
 
     mkdir -p "$(dirname "$file")"
-    printf '\n# Added by snovac install (make install)\n%s\n' "$line" >> "$file"
+    printf '\n# Added by snl install (make install)\n%s\n' "$line" >> "$file"
     echo "  updated $file"
 }
 

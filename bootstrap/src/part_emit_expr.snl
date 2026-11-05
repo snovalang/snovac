@@ -1,0 +1,177 @@
+func emit_call(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], callee: int, args: int): unit {
+    if callee < 0 {
+        fail(cx)
+        return
+    }
+    let ck = bg.nk[callee]
+    var ns = 0
+    var nl = 0
+    if ck == 4 {
+        ns = bg.na[callee]
+        nl = bg.nb[callee]
+    }
+    if ck == 10 {
+        ns = bg.nc[callee]
+        nl = bg.nd[callee]
+    }
+    if ck == 4 || ck == 10 {
+        let which = name_print(src, ns, nl)
+        if which != 0 {
+            emit_print(src, bg, cx, code, fat, fb, args, which)
+            return
+        }
+    }
+    if ck == 4 && is_word(src, ns, nl, 10, 114, 101, 97, 100, 95, 98, 121, 116, 101, 115, 0, 0) && cons_count(bg, args) == 1 {
+        emit_expr(src, bg, cx, code, fat, fb, cons_first(bg, args))
+        code.push(47)
+        cx.expr_ty = 0
+        return
+    }
+    if ck == 4 && is_word(src, ns, nl, 11, 119, 114, 105, 116, 101, 95, 98, 121, 116, 101, 115, 0) && cons_count(bg, args) == 2 {
+        emit_forward(src, bg, cx, code, fat, fb, args, 0)
+        code.push(48)
+        cx.expr_ty = 0
+        return
+    }
+    if ck == 10 {
+        let argc = cons_count(bg, args)
+        let recv = bg.nb[callee]
+        if argc == 0 && (is_word(src, ns, nl, 3, 108, 101, 110, 0, 0, 0, 0, 0, 0, 0, 0, 0) || is_word(src, ns, nl, 6, 108, 101, 110, 103, 116, 104, 0, 0, 0, 0, 0, 0)) {
+            emit_expr(src, bg, cx, code, fat, fb, recv)
+            code.push(49)
+            cx.expr_ty = -1
+            return
+        }
+        if argc == 1 && is_word(src, ns, nl, 4, 112, 117, 115, 104, 0, 0, 0, 0, 0, 0, 0, 0) {
+            emit_expr(src, bg, cx, code, fat, fb, recv)
+            emit_expr(src, bg, cx, code, fat, fb, cons_first(bg, args))
+            code.push(50)
+            cx.expr_ty = -1
+            return
+        }
+        if argc == 1 && is_word(src, ns, nl, 3, 103, 101, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0) {
+            emit_expr(src, bg, cx, code, fat, fb, recv)
+            emit_expr(src, bg, cx, code, fat, fb, cons_first(bg, args))
+            code.push(40)
+            cx.expr_ty = 0
+            return
+        }
+    }
+    var fn = -1
+    if ck == 4 {
+        fn = find_func(src, bg, ns, nl)
+    }
+    emit_forward(src, bg, cx, code, fat, fb, args, 0)
+    if fn >= 0 {
+        code.push(33)
+        push_u32(code, fn)
+        push_u32(code, cons_count(bg, args))
+        cx.expr_ty = 0
+    } else {
+        fail(cx)
+    }
+}
+
+func emit_struct(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], nd: int): unit {
+    let ns = bg.na[nd]
+    let nl = bg.nb[nd]
+    let st = find_struct(src, bg, ns, nl)
+    if st < 0 {
+        fail(cx)
+        return
+    }
+    var known = 0
+    if struct_fields_known(src, bg, st, bg.nc[nd]) {
+        known = 1
+    }
+    if known == 0 {
+        fail(cx)
+        return
+    }
+    var nfields = 0
+    var i = 0
+    while i < bg.fd_st.len() {
+        if bg.fd_st[i] == st {
+            let val = field_value(src, bg, bg.nc[nd], bg.fd_ns[i], bg.fd_nl[i])
+            if val >= 0 {
+                if bg.fd_ty[i] == -1 && bg.nk[val] == 3 {
+                    fail(cx)
+                    return
+                } else {
+                    if bg.fd_ty[i] == -3 && bg.nk[val] == 1 {
+                        fail(cx)
+                        return
+                    } else {
+                        emit_expr(src, bg, cx, code, fat, fb, val)
+                    }
+                }
+            } else {
+                emit_default(bg, code, bg.fd_ty[i])
+            }
+            nfields = nfields + 1
+        }
+        i = i + 1
+    }
+    let si = intern_span(src, ns, nl, bg)
+    code.push(36)
+    push_u32(code, si)
+    push_u32(code, nfields)
+    cx.expr_ty = st + 1
+}
+
+func emit_assign(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], lhs: int, rhs: int): unit {
+    emit_expr(src, bg, cx, code, fat, fb, rhs)
+    let rhs_ty = cx.expr_ty
+    if lhs < 0 {
+        fail(cx)
+        return
+    }
+    if bg.nk[lhs] == 4 {
+        let slot = find_local(src, bg, cx, bg.na[lhs], bg.nb[lhs])
+        if slot < 0 {
+            fail(cx)
+            return
+        }
+        code.push(9)
+        push_u32(code, slot)
+        set_local_ty(bg, cx, slot, rhs_ty)
+        cx.expr_ty = rhs_ty
+        return
+    }
+    if bg.nk[lhs] == 10 {
+        emit_expr(src, bg, cx, code, fat, fb, bg.nb[lhs])
+        let ty = cx.expr_ty
+        var st = -1
+        if ty > 0 {
+            st = ty - 1
+        }
+        let fi = field_index(src, bg, st, bg.nc[lhs], bg.nd[lhs])
+        if fi < 0 {
+            fail(cx)
+            return
+        }
+        code.push(38)
+        push_u32(code, fi)
+        cx.expr_ty = field_type_at(src, bg, st, bg.nc[lhs], bg.nd[lhs])
+        return
+    }
+    fail(cx)
+}
+
+func emit_member(src: int[], bg: Bags, cx: Cx, code: int[], fat: int[], fb: int[], nd: int): unit {
+    emit_expr(src, bg, cx, code, fat, fb, bg.nb[nd])
+    let ty = cx.expr_ty
+    var st = -1
+    if ty > 0 {
+        st = ty - 1
+    }
+    let fi = field_index(src, bg, st, bg.nc[nd], bg.nd[nd])
+    if fi < 0 {
+        fail(cx)
+        return
+    }
+    code.push(37)
+    push_u32(code, fi)
+    cx.expr_ty = field_type_at(src, bg, st, bg.nc[nd], bg.nd[nd])
+}
+

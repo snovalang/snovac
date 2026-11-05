@@ -19,34 +19,30 @@ O código está sendo agrupado por responsabilidade (driver, frontend, semântic
 
 ## Taxonomia de diretórios aplicada nesta etapa
 
-A migração é incremental e, nesta etapa, os módulos foram agrupados sem alterar suas interfaces C:
+A integração com `master` adotou a árvore ativa `src/`; os nomes antigos `frontend/`, `semantic/`, `runtime/`, `backend/` e `builtin/` descrevem a organização da linha anterior e não são caminhos de compilação da arquitetura atual. Evita-se manter duas implementações ativas do mesmo compilador.
 
-- `driver/`: `main`, comandos, utilitários de caminho e projeto.
-- `frontend/lexer/`, `frontend/parser/`, `frontend/ast/`: análise léxica, sintática e representação da AST.
-- `semantic/`: pacotes, símbolos, tipos, resolução, checker e regras de ownership/borrow (`check_ownership.c`).
-- `runtime/bytecode/`: formato SNBC e serialização (`snbc.c`, `snbc_io.c`), protótipos/unidade no emitter, lowering de expressões (`emit_bc_expr.c`), statements/jumps/literais e VM por dispatcher/operação.
-- `runtime/value/`: representação, ownership, retain/release e operações de valores.
-- `runtime/eval/`: interpretador da AST; `eval_run.c` concentra bootstrap/teardown, `eval.c` invocação e diagnóstico, e `eval_lookup.c` busca de declarações e membros herdados.
-- `runtime/concurrency/`: loop assíncrono e pool de threads expostos pelo runtime.
-- `runtime/`: integração nativa/socket do runtime compartilhado.
-- `backend/native/`: geração do runtime embutido, integração nativa e geração de executáveis autônomos.
-- `builtin/`: implementação C de intrínsecos, organizada separadamente da biblioteca-fonte da linguagem.
-- `tests/`: testes unitários e fixtures de compilação, agrupados por camada.
+**Nota de leitura:** as seções detalhadas abaixo sobre `runtime/bytecode`, `runtime/value`, evaluator regional, ARC e seus contadores descrevem a implementação da linha anterior (`codex/ast-memory-release-p4`) e são contexto de decisão, não uma garantia de que esses módulos ou contratos existam na `master` integrada. O código ativo da `master` é `src/` e deve ser consultado antes de qualquer decisão sobre comportamento. Nesta árvore, o runtime AST contém `src/eval/rt_mem.c`, `rt_ptr.c` e `rt_defer.c`; a análise estática de borrow está em `src/sema/borrow*.c`; a arena de compilação está em `src/base/arena.c`. A ausência de tracing GC é mantida como requisito, mas ausência de GC, por si só, não prova ausência de leaks.
 
-Não foi criado `runtimes/`: `runtime/` é a categoria única para as implementações de execução. O Makefile organiza agora os fontes compartilhados por camada (`DRIVER_COMMON_SRCS`, `BACKEND_SRCS`, `FRONTEND_SRCS`, `SEMANTIC_SRCS`, `RUNTIME_SRCS`, `BUILTIN_SRCS` e `CORE_SRCS`); `SRCS` acrescenta a CLI e `RT_SRCS` reutiliza a composição comum, eliminando a duplicação da lista principal. Os objetos de testes ainda são explicitados separadamente porque cada binário unitário liga um subconjunto diferente. Mover arquivo não deve alterar seu comportamento nem criar cópias.
+### Estado confirmado na árvore ativa (`src/`)
 
-### Inventário da mudança
+- `SnArena` libera em lote, tem alinhamento e overflow guard, e os drivers escolhem arenas sob demanda. Métricas de arena podem ser habilitadas com `SNOVA_MEMORY_STATS=1`.
+- `src/eval/rt_mem.c` usa regiões por frame e promove valores que escapam; regiões escapadas permanecem até o encerramento da execução. Portanto, a coleta é determinística no teardown, mas não há drop individual completo de cada valor escapado durante uma execução longa.
+- `src/sema/borrow*.c` implementa verificações de move/borrow para os fluxos cobertos pelo checker atual. Isso não deve ser descrito como verificação completa de lifetimes/CFG sem auditoria adicional.
+- `src/eval/async.c` permite transferir cleanup para tarefas. `src/eval/pulsar.c` oferece `sn_pulsar_pool_submit_owned`; o cleanup é executado após a função ou no caminho de falha de submissão.
+- A compilação atual foi verificada com `make -j2`. As suites de testes não foram executadas nesta integração.
 
-- `driver/`: `main.c`, comandos CLI e suporte a caminhos/projetos.
-- `frontend/lexer/`: lexer e seus cabeçalhos internos/públicos.
-- `frontend/parser/`: parser e cabeçalhos internos/públicos.
-- `frontend/ast/`: AST, tokens e impressão legível da AST (`dump`).
-- `semantic/`: checker, regras de controle de statements (`check_control_stmt.c`), resolução, tipos, símbolos e módulos/pacotes.
-- `backend/native/`: backend nativo, integração com bytecode, emissão separada do loop VM e dos valores/RC/ciclo de vida embutidos, e o adaptador de compatibilidade `link_append`.
-- `runtime/concurrency/`: implementação de `async` e do pool `pulsar`.
-- `runtime/`: ABI nativa/socket; `runtime/bytecode/` separa serialização de unidade (`snbc_io.c`) do formato e ciclo de vida estrutural (`snbc.c`), além de dispatcher, operações numéricas (`vm_numeric.c`), composites (`vm_composite.c`), lifecycle e emitter de expressões (`emit_bc_expr.c`); `runtime/value/` separa ciclo de vida/RC (`value.c`), barreiras contra ciclos (`value_graph.c`), constructors/accessors (`value_objects.c`), igualdade iterativa (`value_equal.c`) e impressão (`value_format.c`); `runtime/eval/` separa bootstrap/teardown (`eval_run.c`), lookup (`eval_lookup.c`), invocação, ambientes, regiões, expressões, statements, grafo de ownership e igualdade iterativa (`eval_equal.c`).
-- `builtin/`: intrínsecos semânticos em C.
-- `arena`, `intern` e `diag` continuam na raiz porque são APIs compartilhadas pelo compilador e pelos runtimes; concentrá-los em `core/` exigirá atualizar também os includes relativos dos testes e as regras de instalação. `target.c` permanece na raiz porque a seleção de plataforma é compartilhada pelo driver e pelo backend.
+- `src/base/`: arena, diagnósticos e internamento compartilhados.
+- `src/lex/`, `src/parse/`, `src/ast/`: lexer, parser e representação/inspeção da AST.
+- `src/sema/`: resolução, pacotes, tipos, verificação e análise de borrow/ownership.
+- `src/eval/`: evaluator AST, alocação por região, runtime nativo/socket, async e pool Pulsar.
+- `src/bc/`: bytecode SNBC, serialização, emitter e execução.
+- `src/native/`: backend nativo e seleção de target.
+- `src/driver/`: CLI e comandos.
+- `tests/`: testes unitários e fixtures do compilador e bootstrap.
+
+O `Makefile` da arquitetura ativa é a fonte da verdade para os alvos e listas de fontes. `runtime/`, `runtimes/` e `builtin/` são categorias conceituais úteis para separar runtimes e intrínsecos quando esses componentes existirem como módulos independentes; não se deve criar cópias artificiais só para corresponder aos nomes. Ao dividir o runtime no futuro, distinguir `runtime/` (infraestrutura compartilhada), `runtimes/` (implementações por backend/target) e `builtin/` (intrínsecos) e atualizar os alvos CLI, biblioteca, bootstrap e instalação no mesmo checkpoint.
+
+O `git merge` incorporou os 53 commits da `origin/master` à linha local que continha a implementação de ownership/memória. Nesta integração, a árvore upstream `src/` é canônica e as alterações compatíveis foram portadas para ela; conflitos sem equivalência compatível foram resolvidos mantendo a implementação upstream. O backup `codex/ast-memory-release-p4` preserva integralmente a linha anterior.
 
 ## Memória: comportamento atual observado
 
