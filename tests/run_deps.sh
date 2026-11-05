@@ -35,6 +35,25 @@ if [ -f "$PULSAR_OUT" ]; then
   rm -f "$PULSAR_OUT" "$pulsar_got" "$pulsar_exp"
 fi
 
+SPAWN_STR_OUT="$PROJ/pulsar_spawn_string"
+assert "build: compile pulsar spawn string native binary" 0 \
+  "$(rc_of "$SNOVAC" build "$RP/pulsar_spawn_string.snl" -o "$SPAWN_STR_OUT")"
+if [ -f "$SPAWN_STR_OUT" ]; then
+  spawn_got="$(mktemp)"
+  spawn_exp="$(mktemp)"
+  if "$SPAWN_STR_OUT" >"$spawn_got" 2>&1; then
+    spawn_rc=0
+  else
+    spawn_rc=$?
+  fi
+  printf 'hello\n' >"$spawn_exp"
+  spawn_out_match=0
+  same_text "$spawn_exp" "$spawn_got" || spawn_out_match=$?
+  assert "build: pulsar spawn clones string args" 0 "$spawn_rc"
+  assert "build: pulsar spawn string output" 0 "$spawn_out_match"
+  rm -f "$SPAWN_STR_OUT" "$spawn_got" "$spawn_exp"
+fi
+
 # ── snovac get & dependency graph tests ─────────────────────────────────────
 GET_TEST_DIR="$(pwd)/build/get_test_$$"
 mkdir -p "$GET_TEST_DIR"

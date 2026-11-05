@@ -45,7 +45,7 @@ RP="$DIR/run-pass"
 [ -d "$RP" ] || RP="$DIR/../../tests/run-pass"
 for name in hello string_comment_url array_field_access counter extension_invocation \
   own_ptr own_stack own_loop_live own_replace_returned_array try_typed_catch own_defer_ok own_defer_lifo own_defer_fail defer_throw_priority own_defer_use \
-  pulsar_launch pulsar_pool_submit overload_show; do
+  pulsar_launch pulsar_pool_submit pulsar_block_method pulsar_iife_capture pulsar_spawn_string overload_show; do
   if [ -f "$RP/$name.snl" ] && [ -f "$RP/$name.stdout" ]; then
     got_file="$(mktemp)"
     "$SNOVAC" run "$RP/$name.snl" >"$got_file" 2>&1 || true

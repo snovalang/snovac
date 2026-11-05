@@ -269,7 +269,9 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
   fprintf(f, "static int g_pulsar_busy = 0;\n");
   fprintf(f, "static bool g_pulsar_stop = false;\n\n");
 
-  fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc);\n\n");
+  fprintf(f, "static int run_function(size_t fn_idx, const Val *args, uint32_t argc);\n");
+  fprintf(f, "static Val val_clone(Val v);\n");
+  fprintf(f, "static void val_release(Val v);\n\n");
 
   if (target->os == SN_OS_WINDOWS) {
     fprintf(f, "static unsigned __stdcall pulsar_thread_proc(void *arg) {\n");
@@ -289,6 +291,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    if (work) {\n");
     fprintf(f, "      g_sp = g_stack;\n");
     fprintf(f, "      run_function(work->fn_idx, work->args, work->argc);\n");
+    fprintf(f, "      { uint32_t ai; for (ai = 0; ai < work->argc; ai++) val_release(work->args[ai]); }\n");
     fprintf(f, "      EnterCriticalSection(&g_pulsar_mutex);\n");
     fprintf(f, "      g_pulsar_busy = 0;\n");
     fprintf(f, "      WakeConditionVariable(&g_pulsar_done);\n");
@@ -313,6 +316,7 @@ int sn_native_compile(const SnBCUnit *bc, const SnTargetInfo *target,
     fprintf(f, "    if (work) {\n");
     fprintf(f, "      g_sp = g_stack;\n");
     fprintf(f, "      run_function(work->fn_idx, work->args, work->argc);\n");
+    fprintf(f, "      { uint32_t ai; for (ai = 0; ai < work->argc; ai++) val_release(work->args[ai]); }\n");
     fprintf(f, "      pthread_mutex_lock(&g_pulsar_mutex);\n");
     fprintf(f, "      g_pulsar_busy = 0;\n");
     fprintf(f, "      pthread_cond_signal(&g_pulsar_done);\n");
