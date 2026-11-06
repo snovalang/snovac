@@ -3,6 +3,7 @@ package app
 import builtin.network.http.server
 import builtin.network.http.data.types
 import builtin.collections.collections.types
+import builtin.io.console.output.Console
 
 func hello(request: HttpRequest): HttpResponse {
     return HttpResponse.text(200, "hello " + request.target)

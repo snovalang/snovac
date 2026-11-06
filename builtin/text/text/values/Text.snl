@@ -1,6 +1,7 @@
 package builtin.text.text.values
 
 import builtin.errors.hierarchy.types
+import builtin.core.types.values.PrimitiveExtensions
 
 import builtin.collections.collections.types
 

@@ -50,8 +50,7 @@ void sn_pkggraph_load_native_manifest(SnPackageGraph *g, const char *builtin_dir
     // Embedded default native packages in pure C
     static const char *const DEFAULT_NATIVES[] = {
         "builtin.metadata.Documented",
-        "builtin.syntax.Syntax",
-        "builtin.io.console.output"
+        "builtin.syntax.Syntax"
     };
     for (size_t i = 0; i < sizeof(DEFAULT_NATIVES) / sizeof(DEFAULT_NATIVES[0]); i++) {
         const char *name = sn_intern_cstr(g->intern, DEFAULT_NATIVES[i]);
@@ -130,29 +129,6 @@ static const char *scan_qualified(SnArena *arena, const SnTokenVec *toks,
         *span_out = span;
     }
     return sn_arena_strndup(arena, buf, n);
-}
-
-/* `builtin.metadata` is the one bootstrap package whose declared name does
- * NOT repeat its file stem (`builtin/metadata/Documented.snl` declares
- * `package builtin.metadata`, where every other builtin declares
- * `builtin.<lower(Stem)>.<Stem>`). Its importers still spell it
- * `import builtin.metadata.Documented` — Types/DateTime/Collections all do,
- * and the file's own doc comment instructs it. That is deliberate, not a
- * corpus typo: the same exception is hardcoded in
- * `crates/snovalang/src/packages.rs::canonical_package_name` and in
- * `tools/launcher/snova.c::builtin_stdlib_package_name`, because `Documented`
- * is also one of the two native packages in packages_gen.c.
- *
- * Folding the import back to the declared name here (rather than aliasing the
- * node) keeps the exception in one place: link, package scopes and import
- * lookup all then match on the single name the file actually declares. */
-static const char *canonical_import_name(const char *name) {
-    if (!name) return name;
-    static const char PREFIX[] = "builtin.metadata.";
-    if (strncmp(name, PREFIX, sizeof(PREFIX) - 1u) == 0) {
-        return "builtin.metadata";
-    }
-    return name;
 }
 
 static int find_nearest_manifest_rel_pkg(const char *file_path, char *out, size_t out_sz) {
@@ -257,7 +233,7 @@ static int scan_section(SnPackageGraph *g, const SnDiagFile *file,
             (*pos)++;
         }
         sn_list_push(a, &pf->imports,
-                     (void *)sn_intern_cstr(g->intern, canonical_import_name(name)));
+                     (void *)sn_intern_cstr(g->intern, name));
         SnSpan *sp = (SnSpan *)sn_arena_alloc(a, sizeof(SnSpan));
         *sp = span;
         sn_list_push(a, &pf->import_spans, sp);

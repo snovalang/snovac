@@ -253,6 +253,7 @@ static void test_optional_struct_literal(const char *tmp) {
     mkdir(dir, 0755);
     write_file(dir, "f.snl",
               "package pkg.optlit\n\n"
+              "import builtin.io.console.output.Console\n\n"
               "public struct Snovalang {\n"
               "    public let field: int?\n"
               "}\n"

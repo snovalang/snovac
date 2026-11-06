@@ -133,6 +133,17 @@ static void run_check_on_func(World *w, const char *dir, const char *package_nam
 
     w->checker.current_package = pkg;
     w->checker.current_imports = NULL;
+    if (fn_sym->origin) {
+        for (SnPackageNode *node = w->graph.nodes; node && !w->checker.current_imports;
+             node = node->next) {
+            for (SnPackageFile *file = node->files; file; file = file->next) {
+                if (strcmp(file->path, fn_sym->origin->path) == 0) {
+                    w->checker.current_imports = &file->imports;
+                    break;
+                }
+            }
+        }
+    }
     w->checker.enclosing_type = NULL;
     sn_check_decl_body(&w->checker, fn_sym->decl);
     world_finish_diag(w);

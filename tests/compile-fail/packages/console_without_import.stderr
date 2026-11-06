@@ -1,1 +1,1 @@
-error[SNOVA017]: `Console` is provided by the `Snovalang.Console` package, which is not imported.
+error[SNOVA0023]: `Console` is not defined because its package was not imported.

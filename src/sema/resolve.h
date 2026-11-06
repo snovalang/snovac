@@ -161,6 +161,8 @@ SnScope *sn_resolver_package_scope(const SnResolver *r, const char *package_name
 SnScope *sn_resolver_type_scope(const SnResolver *r, const SnDecl *type_decl);
 SnScope *sn_resolver_primitive_extension_scope(const SnResolver *r,
                                                 const char *primitive_name);
+int sn_resolver_imports_symbol(const SnResolver *r, const SnList *imports,
+                               const SnSymbol *symbol);
 
 /* Value-position identifier resolution, plan.md §4.3's 5 levels: local scope,
  * enclosing type's members (incl. single-inheritance walk — plan.md's

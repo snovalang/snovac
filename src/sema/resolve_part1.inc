@@ -71,6 +71,57 @@ static SnScope *resolve_import_scope(const SnResolver *r, const char *imp_pkg) {
     return real_pkg ? sn_resolver_package_scope(r, real_pkg) : NULL;
 }
 
+static int builtin_import_selects_origin(const char *imp, const char *path) {
+    static const char PREFIX[] = "builtin.";
+    if (!imp || !path || strncmp(imp, PREFIX, sizeof(PREFIX) - 1u) != 0) {
+        return 0;
+    }
+    char relative[2048];
+    static const char ROOT[] = "builtin/";
+    size_t used = sizeof(ROOT) - 1u;
+    memcpy(relative, ROOT, used);
+    for (const char *p = imp + sizeof(PREFIX) - 1u; *p; p++) {
+        if (used + 1u >= sizeof(relative)) return 0;
+        relative[used++] = *p == '.' ? '/' : *p;
+    }
+    static const char EXT[] = ".snl";
+    if (used + sizeof(EXT) > sizeof(relative)) return 0;
+    memcpy(relative + used, EXT, sizeof(EXT));
+    used += sizeof(EXT) - 1u;
+    size_t path_len = strlen(path);
+    if (path_len < used) return 0;
+    const char *tail = path + path_len - used;
+    for (size_t i = 0; i < used; i++) {
+        char c = tail[i] == '\\' ? '/' : tail[i];
+        if (c != relative[i]) return 0;
+    }
+    return tail == path || tail[-1] == '/' || tail[-1] == '\\';
+}
+
+static int import_selects_symbol(const SnResolver *r, const char *imp,
+                                 const SnSymbol *symbol) {
+    if (!imp || !symbol) return 0;
+    if (strncmp(imp, "builtin.", 8u) != 0) {
+        return resolve_import_package_name(r, imp) != NULL;
+    }
+    const char *package = resolve_import_package_name(r, imp);
+    if (!package) return 0;
+    if (strcmp(package, imp) == 0) return 1;
+    const char *last = strrchr(imp, '.');
+    if (last && strcmp(last + 1, symbol->name) == 0) return 1;
+    return symbol->origin && builtin_import_selects_origin(imp, symbol->origin->path);
+}
+
+int sn_resolver_imports_symbol(const SnResolver *r, const SnList *imports,
+                               const SnSymbol *symbol) {
+    if (!r || !imports || !symbol) return 0;
+    for (size_t i = 0; i < imports->len; i++) {
+        const char *imp = SN_LIST_AT(*imports, const char, i);
+        if (import_selects_symbol(r, imp, symbol)) return 1;
+    }
+    return 0;
+}
+
 SnScope *sn_resolver_type_scope(const SnResolver *r, const SnDecl *type_decl) {
     for (SnTypeScopeEntry *e = r->type_scopes; e; e = e->next) {
         if (e->type_decl == type_decl) {

@@ -138,6 +138,8 @@ assert "ext: relative path does not print Oi!" 0 "$(printf '%s\n' "$rel_out" | g
 cat > "$EXTDIR/opt_field.snl" <<'EOF'
 package com.aggitech
 
+import builtin.io.console.output.Console
+
 public struct Snovalang {
     public let field: int?
 }
@@ -162,6 +164,8 @@ assert "build: string into int? writes no executable" 0 "$opt_present"
 cat > "$EXTDIR/inner_call.snl" <<'EOF'
 package tests.inner.call
 
+import builtin.io.console.output.Console
+
 func main(): int {
     func test() {
         Console.println("inner")
@@ -177,6 +181,8 @@ assert "iife: plain inner call prints" 1 "$(printf '%s\n' "$inner_out" | grep -c
 cat > "$EXTDIR/pulsar_call.snl" <<'EOF'
 package tests.inner.pulsar
 
+import builtin.io.console.output.Console
+
 func main(): int {
     pulsar func test(x: int) {
         Console.println(x)
@@ -191,6 +197,8 @@ assert "iife: pulsar inner call prints" 1 "$(printf '%s\n' "$pulsar_out" | grep 
 
 cat > "$EXTDIR/missing_call.snl" <<'EOF'
 package tests.inner.missing
+
+import builtin.io.console.output.Console
 
 func main(): int {
     func test() {

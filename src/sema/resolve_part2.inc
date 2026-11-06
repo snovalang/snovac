@@ -1,3 +1,48 @@
+static int import_resolves_to_symbol_or_builtin_file(SnResolver *r,
+                                                      const char *imp,
+                                                      const char *package) {
+    if (strncmp(imp, "builtin.", 8u) != 0) return 1;
+    if (strcmp(imp, package) == 0) return 1;
+    const char *last = strrchr(imp, '.');
+    SnScope *scope = sn_resolver_package_scope(
+        r, sn_intern_cstr(r->intern, package));
+    if (last && scope && sn_scope_lookup_local(
+                             scope, sn_intern_cstr(r->intern, last + 1))) {
+        return 1;
+    }
+    SnPackageNode *node = sn_pkggraph_find(
+        r->graph, sn_intern_cstr(r->intern, package));
+    for (SnPackageFile *file = node ? node->files : NULL; file; file = file->next) {
+        if (builtin_import_selects_origin(imp, file->path)) return 1;
+    }
+    return 0;
+}
+
+static void validate_imported_symbols(SnResolver *r) {
+    for (SnPackageNode *node = r->graph->nodes; node; node = node->next) {
+        for (SnPackageFile *file = node->files; file; file = file->next) {
+            SnDiagFile self = {file->path, file->src, file->src_len};
+            SnDiagFile outer = sn_diag_set_file(r->diag, self);
+            for (size_t i = 0; i < file->imports.len; i++) {
+                const char *imp = SN_LIST_AT(file->imports, const char, i);
+                if (strncmp(imp, "builtin.", 8u) != 0) continue;
+                const char *package = resolve_import_package_name(r, imp);
+                if (!package || !sn_resolver_package_scope(r, package) ||
+                    import_resolves_to_symbol_or_builtin_file(r, imp, package)) {
+                    continue;
+                }
+                const char *last = strrchr(imp, '.');
+                const char *name = last ? last + 1 : imp;
+                SnSpan *span = SN_LIST_AT(file->import_spans, SnSpan, i);
+                sn_diag_emit(r->diag, SN_DIAG_ERROR, SNOVA_IMPORT_NOT_FOUND,
+                             *span, "`%s` is not declared in imported package `%s`",
+                             name, package);
+            }
+            sn_diag_set_file(r->diag, outer);
+        }
+    }
+}
+
 size_t sn_resolver_collect(SnResolver *r) {
     size_t skipped = 0;
     ExtEntry *pending_ext = NULL;
@@ -130,6 +175,7 @@ size_t sn_resolver_collect(SnResolver *r) {
         r->current_origin = NULL;
     }
 
+    validate_imported_symbols(r);
     return skipped;
 }
 
@@ -358,7 +404,7 @@ SnSymbol *sn_resolve_ident(SnResolver *r, const char *current_package,
                 continue;
             }
             SnSymbol *sym = sn_scope_lookup_local(imp_scope, iname);
-            if (sym) {
+            if (sym && import_selects_symbol(r, imp_pkg, sym)) {
                 return sym;
             }
         }

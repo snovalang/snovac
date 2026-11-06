@@ -16,7 +16,10 @@ SnTypeRep *sn_resolve_type_name(SnResolver *r, const char *current_package,
             const char *imp_pkg = SN_LIST_AT(*imports, const char, i);
             SnScope *imp_scope = resolve_import_scope(r, imp_pkg);
             if (imp_scope) {
-                sym = sn_scope_lookup_local(imp_scope, iname);
+                SnSymbol *candidate = sn_scope_lookup_local(imp_scope, iname);
+                if (candidate && import_selects_symbol(r, imp_pkg, candidate)) {
+                    sym = candidate;
+                }
             }
         }
     }
@@ -105,7 +108,7 @@ SnSymbol *sn_resolve_member_path(SnResolver *r, const char *current_package,
                 continue;
             }
             SnSymbol *sym = sn_scope_lookup_local(imp_scope, head_i);
-            if (sym) {
+            if (sym && import_selects_symbol(r, imp_pkg, sym)) {
                 return sym;
             }
         }

@@ -7,6 +7,7 @@ static void test_inner_func_call(const char *tmp) {
     mkdir(miss_dir, 0755);
     write_file(dir, "f.snl",
               "package pkg.iife\n\n"
+              "import builtin.io.console.output.Console\n\n"
               "func top(): int {\n"
               "    return 1\n"
               "}\n"
@@ -30,6 +31,7 @@ static void test_inner_func_call(const char *tmp) {
               "}\n");
     write_file(miss_dir, "miss.snl",
               "package pkg.iife.miss\n\n"
+              "import builtin.io.console.output.Console\n\n"
               "func missing(): int {\n"
               "    func test() {\n"
               "        Console.println(\"no\")\n"

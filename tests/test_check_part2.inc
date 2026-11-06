@@ -133,6 +133,7 @@ static void test_scalar_and_string_members(const char *tmp) {
     mkdir(dir, 0755);
     write_file(dir, "f.snl",
               "package pkg.prim\n\n"
+              "import builtin.core.types.values.PrimitiveExtensions\n\n"
               "func good(): int {\n"
               "    let n = 7\n"
               "    let s = n.toString()\n"

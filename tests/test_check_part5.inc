@@ -117,6 +117,7 @@ static void test_builtin_member_signatures(const char *tmp) {
     mkdir(dir, 0755);
     write_file(dir, "f.snl",
               "package pkg.builtin_member_signatures\n\n"
+              "import builtin.core.types.values.PrimitiveExtensions\n\n"
               "func good(values: int[]): int {\n"
               "    values.push(3)\n"
               "    let first: int = values.get(0)\n"

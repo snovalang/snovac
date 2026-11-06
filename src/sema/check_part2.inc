@@ -291,16 +291,6 @@ static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
         return sym;
     }
     if (e->kind == SN_EXPR_MEMBER) {
-        if (e->lhs && e->lhs->kind == SN_EXPR_IDENT && e->lhs->text && e->text &&
-            strcmp(e->lhs->text, "Console") == 0 &&
-            (strcmp(e->text, "print") == 0 || strcmp(e->text, "printline") == 0 ||
-             strcmp(e->text, "println") == 0 || strcmp(e->text, "err") == 0 ||
-             strcmp(e->text, "warn") == 0)) {
-            SnTypeRep *any_ty = sn_type_any(c->types);
-            e->lhs->resolved_type = sn_type_unit(c->types);
-            e->resolved_type = sn_type_func(c->types, &any_ty, 1, sn_type_unit(c->types));
-            return NULL;
-        }
         /* `Array<Post>.new()` — receiver is an intrinsic type, not a value.
          * Checked before the package-prefix walk so the receiver is never
          * evaluated as an expression (which would report SNOVA0023 for it). */
@@ -370,6 +360,11 @@ static SnSymbol *resolve_value_symbol(SnChecker *c, SnScope *local, SnExpr *e) {
                 SnScope *scope = sn_resolver_primitive_extension_scope(
                     c->resolver, sn_type_name(target_ty));
                 SnSymbol *member = scope ? sn_scope_lookup_local(scope, mname) : NULL;
+                if (member && !sn_resolver_imports_symbol(c->resolver,
+                                                           c->current_imports,
+                                                           member)) {
+                    member = NULL;
+                }
                 if (member && member->kind == SN_SYM_METHOD) {
                     source_member = member;
                     bm = symbol_type(c, member);

@@ -48,7 +48,7 @@ static void scan_header(SnPackageGraph *g, const char *path, const char *src,
                     if (name) {
                         if (toks.data[p].kind == SN_TOK_SEMI) p++;
                         sn_list_push(a, &pf->imports,
-                                     (void *)sn_intern_cstr(g->intern, canonical_import_name(name)));
+                                     (void *)sn_intern_cstr(g->intern, name));
                         SnSpan *sp = (SnSpan *)sn_arena_alloc(a, sizeof(SnSpan));
                         *sp = span;
                         sn_list_push(a, &pf->import_spans, sp);
